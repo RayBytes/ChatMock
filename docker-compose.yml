@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  chatmock:
+    build: .
+    container_name: chatmock
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8000}:8000"
+    environment:
+      # Server configuration
+      - HOST=0.0.0.0
+      - PORT=8000
+      
+      # ChatGPT Local configuration
+      - CHATGPT_LOCAL_CLIENT_ID=${CHATGPT_LOCAL_CLIENT_ID:-app_EMoamEEZ73f0CkXaXp7hrann}
+      - CHATGPT_LOCAL_HOME=${CHATGPT_LOCAL_HOME:-/app/.chatgpt}
+      - CHATGPT_LOCAL_DEBUG_MODEL=${CHATGPT_LOCAL_DEBUG_MODEL:-}
+      
+      # Reasoning configuration
+      - CHATGPT_LOCAL_REASONING_EFFORT=${CHATGPT_LOCAL_REASONING_EFFORT:-medium}
+      - CHATGPT_LOCAL_REASONING_SUMMARY=${CHATGPT_LOCAL_REASONING_SUMMARY:-auto}
+      - CHATGPT_LOCAL_REASONING_COMPAT=${CHATGPT_LOCAL_REASONING_COMPAT:-think-tags}
+      
+      # Verbose logging
+      - VERBOSE=${VERBOSE:-false}
+      
+      # Flask configuration
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+    volumes:
+      - chatmock_data:/app/.chatgpt
+    networks:
+      - chatmock_network
+
+volumes:
+  chatmock_data:
+    driver: local
+
+networks:
+  chatmock_network:
+    driver: bridge
