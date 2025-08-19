@@ -17,6 +17,13 @@ def get_home_dir() -> str:
     home = os.getenv("CHATGPT_LOCAL_HOME") or os.getenv("CODEX_HOME")
     if not home:
         home = os.path.expanduser("~/.chatgpt-local")
+    
+    # If running in a container and the home directory is not writable, fall back to /tmp
+    if os.getenv("CHATGPT_LOCAL_HOME") and not os.access(os.path.dirname(home), os.W_OK):
+        fallback_home = "/tmp/.chatgpt"
+        print(f"WARNING: {home} is not writable, falling back to {fallback_home}")
+        return fallback_home
+    
     return home
 
 

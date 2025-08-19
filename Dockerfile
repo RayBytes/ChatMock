@@ -21,6 +21,12 @@ COPY . .
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app && \
     chown -R app:app /app
+
+# Create the .chatgpt directory with proper permissions
+RUN mkdir -p /app/.chatgpt && \
+    chown -R app:app /app/.chatgpt && \
+    chmod 755 /app/.chatgpt
+
 USER app
 
 # Expose default port
