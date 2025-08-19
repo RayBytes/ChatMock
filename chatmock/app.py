@@ -6,6 +6,8 @@ from .config import BASE_INSTRUCTIONS
 from .http import build_cors_headers
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
+from .routes_auth import auth_bp
+from .routes_auth_utils import _get_or_generate_admin_key
 
 
 def create_app(
@@ -39,6 +41,9 @@ def create_app(
 
     app.register_blueprint(openai_bp)
     app.register_blueprint(ollama_bp)
+
+    _get_or_generate_admin_key()
+    app.register_blueprint(auth_bp, url_prefix="/auth")
 
     return app
 
