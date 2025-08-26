@@ -5,10 +5,7 @@ import requests
 from typing import Any, Dict, List, Optional
 from flask import Response, jsonify, make_response, request as flask_request
 
-from .config import (
-    CHATGPT_RESPONSES_URL,
-    BASE_INSTRUCTIONS,
-)
+from .config import CHATGPT_RESPONSES_URL
 from .http import build_cors_headers
 from .session import ensure_session_id
 from .utils import get_effective_chatgpt_auth
