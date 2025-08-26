@@ -46,7 +46,10 @@ def chat_completions() -> Response:
             return jsonify({"error": {"message": "Invalid JSON body"}}), 400
 
     requested_model = payload.get("model")
-    model = normalize_model_name(requested_model, debug_model)
+    try:
+        model = normalize_model_name(requested_model, debug_model)
+    except ValueError as e:
+        return jsonify({"error": {"message": str(e)}}), 400
     messages = payload.get("messages")
     if messages is None and isinstance(payload.get("prompt"), str):
         messages = [{"role": "user", "content": payload.get("prompt") or ""}]
@@ -238,7 +241,10 @@ def completions() -> Response:
         return jsonify({"error": {"message": "Invalid JSON body"}}), 400
 
     requested_model = payload.get("model")
-    model = normalize_model_name(requested_model, debug_model)
+    try:
+        model = normalize_model_name(requested_model, debug_model)
+    except ValueError as e:
+        return jsonify({"error": {"message": str(e)}}), 400
     prompt = payload.get("prompt")
     if isinstance(prompt, list):
         prompt = "".join([p if isinstance(p, str) else "" for p in prompt])
@@ -353,21 +359,13 @@ def completions() -> Response:
 
 @openai_bp.route("/v1/models", methods=["GET"])
 def list_models() -> Response:
-    expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    data = []
-    if expose_variants:
-        variant_ids = [
-            "gpt-5",
-            "gpt-5-high",
-            "gpt-5-medium",
-            "gpt-5-low",
-            "gpt-5-minimal",
-        ]
-        data = [{"id": mid, "object": "model", "owned_by": "owner"} for mid in variant_ids]
-    else:
-        data = [{"id": "gpt-5", "object": "model", "owned_by": "owner"}]
-    models = {"object": "list", "data": data}
-    resp = make_response(jsonify(models), 200)
+    from .upstream import list_advertised_models
+
+    mids = list_advertised_models()
+    resp = make_response(
+        jsonify({"object": "list", "data": [{"id": mid, "object": "model", "owned_by": "owner"} for mid in mids]}),
+        200,
+    )
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp

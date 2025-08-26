@@ -1,42 +1,26 @@
 from __future__ import annotations
 
 import json
-import time
-from typing import Any, Dict, List, Tuple
-
 import requests
-from flask import Response, jsonify, make_response
+from typing import Any, Dict, List, Optional
+from flask import Response, jsonify, make_response, request as flask_request
 
 from .config import CHATGPT_RESPONSES_URL
 from .http import build_cors_headers
 from .session import ensure_session_id
-from flask import request as flask_request
 from .utils import get_effective_chatgpt_auth
 
-
 def normalize_model_name(name: str | None, debug_model: str | None = None) -> str:
-    if isinstance(debug_model, str) and debug_model.strip():
-        return debug_model.strip()
-    if not isinstance(name, str) or not name.strip():
-        return "gpt-5"
-    base = name.split(":", 1)[0].strip()
-    for sep in ("-", "_"):
-        lowered = base.lower()
-        for effort in ("minimal", "low", "medium", "high"):
-            suffix = f"{sep}{effort}"
-            if lowered.endswith(suffix):
-                base = base[: -len(suffix)]
-                break
-    mapping = {
-        "gpt5": "gpt-5",
-        "gpt-5-latest": "gpt-5",
-        "gpt-5": "gpt-5",
-        "codex": "codex-mini-latest",
-        "codex-mini": "codex-mini-latest",
-        "codex-mini-latest": "codex-mini-latest",
-    }
-    return mapping.get(base, base)
-
+    """Only allow the two supported models."""
+    allowed = ("codex-mini-latest", "gpt-5")
+    selected = (
+        debug_model.strip()
+        if isinstance(debug_model, str) and debug_model.strip()
+        else (name or "").strip()
+    )
+    if selected not in allowed:
+        raise ValueError(f"Unsupported model: {selected}")
+    return selected
 
 def start_upstream_request(
     model: str,
@@ -64,11 +48,6 @@ def start_upstream_request(
             resp.headers.setdefault(k, v)
         return None, resp
 
-    include: List[str] = []
-    if isinstance(reasoning_param, dict):
-        include.append("reasoning.encrypted_content")
-
-    client_session_id = None
     try:
         client_session_id = (
             flask_request.headers.get("X-Session-Id")
@@ -79,7 +58,7 @@ def start_upstream_request(
         client_session_id = None
     session_id = ensure_session_id(instructions, input_items, client_session_id)
 
-    responses_payload = {
+    payload: Dict[str, Any] = {
         "model": model,
         "instructions": instructions if isinstance(instructions, str) and instructions.strip() else instructions,
         "input": input_items,
@@ -90,11 +69,9 @@ def start_upstream_request(
         "stream": True,
         "prompt_cache_key": session_id,
     }
-    if include:
-        responses_payload["include"] = include
-
-    if reasoning_param is not None:
-        responses_payload["reasoning"] = reasoning_param
+    if isinstance(reasoning_param, dict):
+        payload["include"] = ["reasoning.encrypted_content"]
+        payload["reasoning"] = reasoning_param
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -109,7 +86,7 @@ def start_upstream_request(
         upstream = requests.post(
             CHATGPT_RESPONSES_URL,
             headers=headers,
-            json=responses_payload,
+            json=payload,
             stream=True,
             timeout=600,
         )
@@ -118,4 +95,9 @@ def start_upstream_request(
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)
         return None, resp
+
     return upstream, None
+
+def list_advertised_models(force_refresh: bool = False) -> List[str]:
+    """Return only the two supported models."""
+    return ["codex-mini-latest", "gpt-5"]

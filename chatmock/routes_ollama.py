@@ -33,19 +33,11 @@ def ollama_tags() -> Response:
     if bool(current_app.config.get("VERBOSE")):
         print("IN GET /api/tags")
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    model_ids = [
-        "gpt-5",
-        *(
-            [
-                "gpt-5-high",
-                "gpt-5-medium",
-                "gpt-5-low",
-                "gpt-5-minimal",
-            ]
-            if expose_variants
-            else []
-        ),
-    ]
+
+    # Use the same advertised list as OpenAI models, then adapt to Ollama-style tag objects.
+    from .upstream import list_advertised_models
+    model_ids = list_advertised_models()
+
     models = []
     for model_id in model_ids:
         models.append(
@@ -154,8 +146,12 @@ def ollama_chat() -> Response:
 
     # Infer effort from model variant (gpt-5-high, etc.) but send base model upstream
     model_reasoning = extract_reasoning_from_model_name(model)
+    try:
+        norm_model = normalize_model_name(model)
+    except ValueError as e:
+        return jsonify({"error": {"message": str(e)}}), 400
     upstream, error_resp = start_upstream_request(
-        normalize_model_name(model),
+        norm_model,
         input_items,
         instructions=BASE_INSTRUCTIONS,
         tools=tools_responses,
