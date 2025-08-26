@@ -10,6 +10,7 @@ from flask import Response, jsonify, make_response
 
 from .config import (
     CHATGPT_RESPONSES_URL,
+    BASE_INSTRUCTIONS,
 )
 from .http import build_cors_headers
 from .session import ensure_session_id
@@ -164,16 +165,96 @@ def _fetch_canonical_model_ids_from_codex_sources(timeout: float = 10.0) -> Set[
             continue
     return out
 
+# log to the console the name of the model we're trying to validate, and the response from upstream
+def _probe_model_via_responses(model: str, timeout: float = 8.0) -> Optional[bool]:
+    access_token, account_id = get_effective_chatgpt_auth()
+    if not access_token or not account_id:
+        return None
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+        "chatgpt-account-id": account_id,
+        "OpenAI-Beta": "responses=experimental",
+    }
+    payload = {
+        "model": model,
+        "instructions": BASE_INSTRUCTIONS,
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "ping"}],
+            }
+        ],
+        "store": False,
+        "stream": True,
+    }
+    try:
+        resp = requests.post(CHATGPT_RESPONSES_URL, headers=headers, json=payload, timeout=timeout)
+        status = int(resp.status_code or 0)
+        return 200 <= status < 300
+    except Exception:
+        # Network/timeouts treated as inconclusive
+        return None
+
+
+def _validate_models_via_responses(models: List[str]) -> List[str]:
+    results: List[Tuple[str, Optional[bool]]] = []
+    # Progress bar via tqdm if available; otherwise simple notice
+    try:
+        from tqdm import tqdm as _tqdm  # type: ignore
+        iterator = _tqdm(models, desc="Validating models", unit="model")
+    except Exception:
+        iterator = models
+        try:
+            print(f"[models] validating {len(models)} models...")
+        except Exception:
+            pass
+
+    ok: List[str] = []
+    for m in iterator:
+        r = _probe_model_via_responses(m)
+        results.append((m, r))
+        if r is True:
+            ok.append(m)
+
+    # Final tabular log
+    try:
+        width = max(5, min(60, max((len(name) for name, _ in results), default=0)))
+        header = f"{'MODEL'.ljust(width)} | VALID"
+        print(header)
+        print("-" * len(header))
+        invalid = 0
+        unknown = 0
+        for name, r in results:
+            if r is True:
+                valid_str = "yes"
+            elif r is False:
+                valid_str = "no"
+                invalid += 1
+            else:
+                valid_str = "?"
+                unknown += 1
+            print(f"{name.ljust(width)} | {valid_str}")
+        print(f"Total: {len(results)}; valid: {len(ok)}; invalid: {invalid}; unknown: {unknown}")
+    except Exception:
+        pass
+
+    return ok
+
 
 def _fetch_upstream_models() -> Optional[List[str]]:
     """
-    Return canonical model ids from Codex public sources.
+    Return canonical model ids from Codex public sources and filter with a 2xx probe.
     """
     try:
         ids = _fetch_canonical_model_ids_from_codex_sources(timeout=10.0)
         if not ids:
             return None
-        return sorted(ids)
+        models = sorted(ids)
+        validated = _validate_models_via_responses(models)
+        return validated
     except Exception as e:
         try:
             print(f"[models] codex-source fetch exception: {e!r}")
@@ -193,12 +274,13 @@ def get_cached_models(force_refresh: bool = False) -> Optional[List[str]]:
     if (not force_refresh) and cached and (now - ts) < ttl:
         return cached  # type: ignore
     models = _fetch_upstream_models()
-    if models:
+    # Cache and return even when the validated list is empty ([]).
+    if models is not None:
         _MODEL_CACHE["data"] = models
         _MODEL_CACHE["ts"] = now
         return models
-    # keep stale cache if present
-    if cached:
+    # If fetch failed (None), only keep stale cache when not forcing refresh.
+    if (cached is not None) and (not force_refresh):
         return cached  # type: ignore
     return None
 
