@@ -35,17 +35,8 @@ def ollama_tags() -> Response:
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
 
     # Use the same advertised list as OpenAI models, then adapt to Ollama-style tag objects.
-    from .upstream import list_advertised_models, fetch_upstream_models_debug
-    # Allow bypassing cache with ?refresh=1
-    refresh_param = (request.args.get("refresh") or "").strip().lower()
-    force_refresh = refresh_param in ("1", "true", "yes", "y")
-    model_ids = list_advertised_models(force_refresh=force_refresh)
-    if not model_ids:
-        _, debug = fetch_upstream_models_debug()
-        resp = make_response(jsonify({"error": "No models available (codex source)", "debug": debug}), 503)
-        for k, v in build_cors_headers().items():
-            resp.headers.setdefault(k, v)
-        return resp
+    from .upstream import list_advertised_models
+    model_ids = list_advertised_models()
 
     models = []
     for model_id in model_ids:
@@ -155,8 +146,12 @@ def ollama_chat() -> Response:
 
     # Infer effort from model variant (gpt-5-high, etc.) but send base model upstream
     model_reasoning = extract_reasoning_from_model_name(model)
+    try:
+        norm_model = normalize_model_name(model)
+    except ValueError as e:
+        return jsonify({"error": {"message": str(e)}}), 400
     upstream, error_resp = start_upstream_request(
-        normalize_model_name(model),
+        norm_model,
         input_items,
         instructions=BASE_INSTRUCTIONS,
         tools=tools_responses,

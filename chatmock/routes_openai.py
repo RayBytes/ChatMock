@@ -46,7 +46,10 @@ def chat_completions() -> Response:
             return jsonify({"error": {"message": "Invalid JSON body"}}), 400
 
     requested_model = payload.get("model")
-    model = normalize_model_name(requested_model, debug_model)
+    try:
+        model = normalize_model_name(requested_model, debug_model)
+    except ValueError as e:
+        return jsonify({"error": {"message": str(e)}}), 400
     messages = payload.get("messages")
     if messages is None and isinstance(payload.get("prompt"), str):
         messages = [{"role": "user", "content": payload.get("prompt") or ""}]
@@ -238,7 +241,10 @@ def completions() -> Response:
         return jsonify({"error": {"message": "Invalid JSON body"}}), 400
 
     requested_model = payload.get("model")
-    model = normalize_model_name(requested_model, debug_model)
+    try:
+        model = normalize_model_name(requested_model, debug_model)
+    except ValueError as e:
+        return jsonify({"error": {"message": str(e)}}), 400
     prompt = payload.get("prompt")
     if isinstance(prompt, list):
         prompt = "".join([p if isinstance(p, str) else "" for p in prompt])
@@ -353,23 +359,13 @@ def completions() -> Response:
 
 @openai_bp.route("/v1/models", methods=["GET"])
 def list_models() -> Response:
-    from .upstream import list_advertised_models, fetch_upstream_models_debug
+    from .upstream import list_advertised_models
 
-    # Allow bypassing cache with ?refresh=1
-    refresh_param = (request.args.get("refresh") or "").strip().lower()
-    force_refresh = refresh_param in ("1", "true", "yes", "y")
-    mids = list_advertised_models(force_refresh=force_refresh)
-    if not mids:
-        models, debug = fetch_upstream_models_debug()
-        payload = {"error": {"message": "No models available (codex source)", "debug": debug}}
-        resp = make_response(jsonify(payload), 503)
-        for k, v in build_cors_headers().items():
-            resp.headers.setdefault(k, v)
-        return resp
-
-    data = [{"id": mid, "object": "model", "owned_by": "owner"} for mid in mids]
-    models = {"object": "list", "data": data}
-    resp = make_response(jsonify(models), 200)
+    mids = list_advertised_models()
+    resp = make_response(
+        jsonify({"object": "list", "data": [{"id": mid, "object": "model", "owned_by": "owner"} for mid in mids]}),
+        200,
+    )
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp
