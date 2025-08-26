@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional, Set
+import re
 
 import requests
 from flask import Response, jsonify, make_response
 
-from .config import CHATGPT_RESPONSES_URL
+from .config import (
+    CHATGPT_RESPONSES_URL,
+)
 from .http import build_cors_headers
 from .session import ensure_session_id
 from flask import request as flask_request
@@ -119,3 +122,119 @@ def start_upstream_request(
             resp.headers.setdefault(k, v)
         return None, resp
     return upstream, None
+
+
+_MODEL_CACHE: Dict[str, Any] = {"data": None, "ts": 0.0}
+_MODEL_CACHE_TTL_SECS: int = 3600  # 1 hour
+
+
+def _fetch_canonical_model_ids_from_codex_sources(timeout: float = 10.0) -> Set[str]:
+    """
+    Fetch canonical model identifiers from Codex public sources.
+    """
+    urls = [
+        "https://raw.githubusercontent.com/openai/codex/main/codex-rs/core/src/openai_model_info.rs",
+        "https://raw.githubusercontent.com/openai/codex/main/codex-rs/core/src/model_family.rs",
+        "https://raw.githubusercontent.com/openai/codex/main/codex-rs/core/src/config.rs",
+    ]
+    pattern_any = re.compile(r'"([^"]+)"')
+    pattern_keep = re.compile(r'^(?:gpt-|o[0-9]|codex-)', re.IGNORECASE)
+
+    out: Set[str] = set()
+    headers = {
+        "User-Agent": "ChatMock/1.0 (+https://github.com/RayBytes/ChatMock)",
+        "Accept": "text/plain,*/*;q=0.1",
+    }
+    for u in urls:
+        try:
+            r = requests.get(u, headers=headers, timeout=timeout)
+            if r.status_code != 200:
+                continue
+            text = r.text or ""
+            for m in pattern_any.finditer(text):
+                s = m.group(1)
+                if not isinstance(s, str):
+                    continue
+                if not pattern_keep.search(s):
+                    continue
+                # Normalize any trailing dashes (e.g., "codex-" -> "codex")
+                s = s.rstrip("-")
+                out.add(s)
+        except Exception:
+            continue
+    return out
+
+
+def _fetch_upstream_models() -> Optional[List[str]]:
+    """
+    Return canonical model ids from Codex public sources.
+    """
+    try:
+        ids = _fetch_canonical_model_ids_from_codex_sources(timeout=10.0)
+        if not ids:
+            return None
+        return sorted(ids)
+    except Exception as e:
+        try:
+            print(f"[models] codex-source fetch exception: {e!r}")
+        except Exception:
+            pass
+        return None
+
+
+def get_cached_models(force_refresh: bool = False) -> Optional[List[str]]:
+    """
+    Return cached model list; refresh when forced or expired.
+    """
+    now = time.time()
+    ttl = max(60, int(_MODEL_CACHE_TTL_SECS))
+    cached = _MODEL_CACHE.get("data")
+    ts = float(_MODEL_CACHE.get("ts") or 0.0)
+    if (not force_refresh) and cached and (now - ts) < ttl:
+        return cached  # type: ignore
+    models = _fetch_upstream_models()
+    if models:
+        _MODEL_CACHE["data"] = models
+        _MODEL_CACHE["ts"] = now
+        return models
+    # keep stale cache if present
+    if cached:
+        return cached  # type: ignore
+    return None
+
+
+def list_advertised_models(force_refresh: bool = False) -> List[str]:
+    """
+    Return the model list. Use force_refresh=True to bypass cache.
+    """
+    fetched = get_cached_models(force_refresh=bool(force_refresh))
+    if not isinstance(fetched, list):
+        return []
+    try:
+        return sorted(set([m for m in fetched if isinstance(m, str) and m.strip()]))
+    except Exception:
+        return [m for m in fetched if isinstance(m, str) and m.strip()]
+
+
+def prefetch_models_on_startup(verbose: bool = False) -> None:
+    """
+    Prefetch models at startup.
+    """
+    models = get_cached_models(force_refresh=True)
+    if verbose:
+        print(f"[models] prefetch fetched={bool(models)} count={(len(models) if models else 0)}")
+
+
+def fetch_upstream_models_debug() -> Tuple[Optional[List[str]], Dict[str, Any]]:
+    """
+    Diagnostic fetch using Codex public sources. Does not touch the cache.
+    """
+    debug: Dict[str, Any] = {"source": "codex_public_repo"}
+    try:
+        ids = _fetch_canonical_model_ids_from_codex_sources(timeout=10.0)
+        models = sorted(ids)
+        debug["parsed_count"] = len(models)
+        return (models if models else None), debug
+    except Exception as e:
+        debug.update({"exception": repr(e)})
+        return None, debug

@@ -33,19 +33,20 @@ def ollama_tags() -> Response:
     if bool(current_app.config.get("VERBOSE")):
         print("IN GET /api/tags")
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    model_ids = [
-        "gpt-5",
-        *(
-            [
-                "gpt-5-high",
-                "gpt-5-medium",
-                "gpt-5-low",
-                "gpt-5-minimal",
-            ]
-            if expose_variants
-            else []
-        ),
-    ]
+
+    # Use the same advertised list as OpenAI models, then adapt to Ollama-style tag objects.
+    from .upstream import list_advertised_models, fetch_upstream_models_debug
+    # Allow bypassing cache with ?refresh=1
+    refresh_param = (request.args.get("refresh") or "").strip().lower()
+    force_refresh = refresh_param in ("1", "true", "yes", "y")
+    model_ids = list_advertised_models(force_refresh=force_refresh)
+    if not model_ids:
+        _, debug = fetch_upstream_models_debug()
+        resp = make_response(jsonify({"error": "No models available (codex source)", "debug": debug}), 503)
+        for k, v in build_cors_headers().items():
+            resp.headers.setdefault(k, v)
+        return resp
+
     models = []
     for model_id in model_ids:
         models.append(

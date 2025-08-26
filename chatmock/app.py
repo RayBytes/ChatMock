@@ -6,6 +6,7 @@ from .config import BASE_INSTRUCTIONS
 from .http import build_cors_headers
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
+from .upstream import prefetch_models_on_startup
 
 
 def create_app(
@@ -41,5 +42,11 @@ def create_app(
 
     app.register_blueprint(openai_bp)
     app.register_blueprint(ollama_bp)
+
+    # Prefetch upstream models on startup (always attempts)
+    try:
+        prefetch_models_on_startup(verbose=bool(verbose))
+    except Exception:
+        pass
 
     return app
