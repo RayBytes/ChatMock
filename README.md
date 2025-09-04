@@ -114,6 +114,16 @@ GPT-5 has a configurable amount of "effort" it can put into thinking, which may 
 - `--reasoning-summary` (choice of auto,concise,detailed,none)<br>
 Models like GPT-5 do not return raw thinking content, but instead return thinking summaries. These can also be customised by you.
 
+### Rate Limiting
+
+ChatMock includes built-in rate limiting to manage concurrent requests and prevent server overload.
+
+- `CHATMOCK_MAX_CONCURRENCY`: Maximum number of simultaneous upstream requests (default: 1)
+- `CHATMOCK_QUEUE_LIMIT`: Maximum number of queued requests before rejecting with 429 (default: 100)
+- `CHATMOCK_QUEUE_TIMEOUT_S`: Timeout in seconds for acquiring a permit from the queue (default: 60)
+
+When the server is busy, requests will be queued fairly or rejected with a 429 status and Retry-After header. The system also includes automatic retry with exponential backoff for upstream 429 errors.
+
 ## Notes
 If you wish to have the fastest responses, I'd recommend setting `--reasoning-effort` to low, and `--reasoning-summary` to none.
 All parameters and choices can be seen by sending `python chatmock.py serve --h`<br>
@@ -125,6 +135,15 @@ The context size of this route is also larger than what you get access to in the
 - ~~Implement Ollama support~~ ✅
 - Explore to see if we can make more model settings accessible
 - Implement analytics (token counting, etc, to track usage)
+
+# Changelog
+
+- [main] [vladislav manoilov] Add rate limiting and concurrency control, update README
+  - Added `chatmock/rate_limit.py`: Implements a fair concurrency gate to limit simultaneous upstream requests, with configurable queue limits and timeouts to prevent server overload.
+  - Updated `chatmock/routes_openai.py`: Integrated rate limiting with permit acquisition/release, added automatic retry with exponential backoff for upstream 429 errors to handle rate limits gracefully.
+  - Updated README.md: Added documentation for new rate limiting environment variables and behavior.
+  - Deleted `prompt.md`: Removed unused prompt file.
+  - Reasoning: Improves stability and reliability by managing concurrent requests and handling upstream rate limits, preventing crashes and improving user experience under load. Cleanup of unused files.
 
 ## Star History
 
