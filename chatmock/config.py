@@ -33,3 +33,26 @@ def read_base_instructions() -> str:
 
 
 BASE_INSTRUCTIONS = read_base_instructions()
+
+
+def read_prefix_content() -> str:
+    candidates = [
+        Path(__file__).parent.parent / "prefix.md",
+        Path(__file__).parent / "prefix.md",
+        Path(getattr(sys, "_MEIPASS", "")) / "prefix.md" if getattr(sys, "_MEIPASS", None) else None,
+        Path.cwd() / "prefix.md",
+    ]
+    for p in candidates:
+        if not p:
+            continue
+        try:
+            if p.exists():
+                content = p.read_text(encoding="utf-8")
+                if isinstance(content, str) and content.strip():
+                    return content.strip()
+        except Exception:
+            continue
+    return ""  # Return empty string if prefix.md not found or empty
+
+
+PREFIX_CONTENT = read_prefix_content()

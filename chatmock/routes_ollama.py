@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
 
-from .config import BASE_INSTRUCTIONS
+from .config import BASE_INSTRUCTIONS, PREFIX_CONTENT
 from .http import build_cors_headers
 from .reasoning import build_reasoning_param, extract_reasoning_from_model_name
 from .transform import convert_ollama_messages, normalize_ollama_tools
@@ -138,6 +138,11 @@ def ollama_chat() -> Response:
             sys_msg = messages.pop(sys_idx)
             content = sys_msg.get("content") if isinstance(sys_msg, dict) else ""
             messages.insert(0, {"role": "user", "content": content})
+            # Skip verbose system message conversion debugging
+        
+        # Insert prefix.md as second message if it exists
+        if PREFIX_CONTENT:
+            messages.insert(1, {"role": "user", "content": PREFIX_CONTENT})
     stream_req = payload.get("stream")
     if stream_req is None:
         stream_req = True

@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
-from .config import BASE_INSTRUCTIONS
+from .config import BASE_INSTRUCTIONS, PREFIX_CONTENT
 from .http import build_cors_headers
 from .reasoning import apply_reasoning_to_message, build_reasoning_param, extract_reasoning_from_model_name
 from .upstream import normalize_model_name, start_upstream_request
@@ -31,8 +31,25 @@ def chat_completions() -> Response:
 
     if verbose:
         try:
-            body_preview = (request.get_data(cache=True, as_text=True) or "")[:2000]
-            print("IN POST /v1/chat/completions\n" + body_preview)
+            body = (request.get_data(cache=True, as_text=True) or "")
+            try:
+                payload_json = json.loads(body)
+                # Create display copy with trimmed system instructions only - don't modify original
+                display_payload = json.loads(body)  # Fresh copy for display only
+                if "messages" in display_payload:
+                    for i, msg in enumerate(display_payload["messages"]):
+                        # Only trim system role content
+                        if msg.get("role") == "system" and "content" in msg:
+                            original_content = msg["content"]
+                            msg["content"] = original_content[:20] + ("..." if len(original_content) > 20 else "")
+                        # Only trim first message content if it's a user message
+                        elif i == 0 and msg.get("role") == "user" and "content" in msg:
+                            original_content = msg["content"]
+                            msg["content"] = original_content[:20] + ("..." if len(original_content) > 20 else "")
+                print("\n\n\n=== FROM CLIENT ===\n")
+                print(json.dumps(display_payload, indent=2))
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -63,6 +80,11 @@ def chat_completions() -> Response:
             sys_msg = messages.pop(sys_idx)
             content = sys_msg.get("content") if isinstance(sys_msg, dict) else ""
             messages.insert(0, {"role": "user", "content": content})
+            # Skip verbose system message conversion debugging
+        
+        # Insert prefix.md as second message if it exists
+        if PREFIX_CONTENT:
+            messages.insert(1, {"role": "user", "content": PREFIX_CONTENT})
     is_stream = bool(payload.get("stream"))
     stream_options = payload.get("stream_options") if isinstance(payload.get("stream_options"), dict) else {}
     include_usage = bool(stream_options.get("include_usage", False))
@@ -146,10 +168,19 @@ def chat_completions() -> Response:
         except Exception:
             return None
     try:
+        first_api_event = True
         for raw in upstream.iter_lines(decode_unicode=False):
             if not raw:
                 continue
             line = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else raw
+            
+            # Handle SSE event headers like "event: response.created"
+            if line.startswith("event: "):
+                if verbose and first_api_event:
+                    print(f"\n\n\n=== FROM API ===\n")
+                    first_api_event = False
+                continue
+            
             if not line.startswith("data: "):
                 continue
             data = line[len("data: "):].strip()
@@ -159,6 +190,13 @@ def chat_completions() -> Response:
                 break
             try:
                 evt = json.loads(data)
+                if verbose:
+                    if not first_api_event:  # Already printed header
+                        pass
+                    else:
+                        print(f"\n\n\n=== FROM API ===\n")
+                        first_api_event = False
+                    print(json.dumps(evt, indent=2))
             except Exception:
                 continue
             kind = evt.get("type")
@@ -218,6 +256,11 @@ def chat_completions() -> Response:
         ],
         **({"usage": usage_obj} if usage_obj else {}),
     }
+    
+    if verbose:
+        print(f"\n\n\n=== TO CLIENT ===\n")
+        print(json.dumps(completion, indent=2))
+        
     resp = make_response(jsonify(completion), upstream.status_code)
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
@@ -345,6 +388,11 @@ def completions() -> Response:
         ],
         **({"usage": usage_obj} if usage_obj else {}),
     }
+    
+    if verbose:
+        print(f"\n\n\n=== TO CLIENT ===\n")
+        print(json.dumps(completion, indent=2))
+        
     resp = make_response(jsonify(completion), upstream.status_code)
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)

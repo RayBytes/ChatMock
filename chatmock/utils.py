@@ -109,6 +109,10 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
         except Exception:
             return url
 
+    import inspect
+    from flask import current_app
+    verbose = bool(current_app.config.get("VERBOSE"))
+    
     input_items: List[Dict[str, Any]] = []
     for message in messages:
         role = message.get("role")
@@ -267,8 +271,7 @@ def sse_translate_chat(
             if not raw:
                 continue
             line = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else raw
-            if verbose and vlog:
-                vlog(line)
+            # Skip raw debug output
             if not line.startswith("data: "):
                 continue
             data = line[len("data: "):].strip()
@@ -510,8 +513,7 @@ def sse_translate_text(upstream, model: str, created: int, verbose: bool = False
             if not raw_line:
                 continue
             line = raw_line.decode("utf-8", errors="ignore") if isinstance(raw_line, (bytes, bytearray)) else raw_line
-            if verbose and vlog:
-                vlog(line)
+            # Skip raw debug output
             if not line.startswith("data: "):
                 continue
             data = line[len("data: "):].strip()

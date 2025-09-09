@@ -5,7 +5,7 @@ import time
 from typing import Any, Dict, List, Tuple
 
 import requests
-from flask import Response, jsonify, make_response
+from flask import Response, jsonify, make_response, current_app
 
 from .config import CHATGPT_RESPONSES_URL
 from .http import build_cors_headers
@@ -105,6 +105,30 @@ def start_upstream_request(
         "session_id": session_id,
     }
 
+    verbose = bool(current_app.config.get("VERBOSE"))
+    if verbose:
+        # Create display copy with trimmed content - don't modify original
+        import copy
+        display_payload = copy.deepcopy(responses_payload)
+        
+        # Only trim system instructions for display
+        if "instructions" in display_payload and display_payload["instructions"]:
+            original_instructions = display_payload["instructions"]
+            display_payload["instructions"] = original_instructions[:20] + ("..." if len(original_instructions) > 20 else "")
+        
+        # Only trim first message content for display
+        if "input" in display_payload and display_payload["input"] and len(display_payload["input"]) > 0:
+            first_item = display_payload["input"][0]
+            if first_item.get("type") == "message" and "content" in first_item:
+                for content_item in first_item["content"]:
+                    if "text" in content_item:
+                        original_text = content_item["text"]
+                        content_item["text"] = original_text[:20] + ("..." if len(original_text) > 20 else "")
+                        break  # Only trim the first text content
+        
+        print("\n\n\n=== TO API ===\n")
+        print(json.dumps(display_payload, indent=2))
+
     try:
         upstream = requests.post(
             CHATGPT_RESPONSES_URL,
@@ -113,6 +137,8 @@ def start_upstream_request(
             stream=True,
             timeout=600,
         )
+        
+        # Skip verbose response header debugging
     except requests.RequestException as e:
         resp = make_response(jsonify({"error": {"message": f"Upstream ChatGPT request failed: {e}"}}), 502)
         for k, v in build_cors_headers().items():
