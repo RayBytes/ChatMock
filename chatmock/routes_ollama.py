@@ -173,8 +173,15 @@ def ollama_chat() -> Response:
             err_body = {"raw": upstream.text}
         if verbose:
             print("/api/chat upstream error status=", upstream.status_code, " body:", json.dumps(err_body)[:2000])
+        error_obj = err_body.get("error", {}) or {}
+        base_msg = error_obj.get("message", "Upstream error")
+        attrs = []
+        for key, value in error_obj.items():
+            if key != "message":
+                attrs.append(f"{key}={value}")
+        combined_msg = base_msg + (" " + " ".join(attrs) if attrs else "")
         return (
-            jsonify({"error": (err_body.get("error", {}) or {}).get("message", "Upstream error")}),
+            jsonify({"error": combined_msg}),
             upstream.status_code,
         )
 
