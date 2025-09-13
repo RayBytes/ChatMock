@@ -133,8 +133,6 @@ Add `responses_tools` (and optional `responses_tool_choice`) to a `/v1/chat/comp
 - `responses_tools`: e.g. `[{"type":"web_search"}]` or `{ "type":"mcp", "server_label":"manuals", "server_url":"https://example" }`
 - `responses_tool_choice`: `"auto"` or `"none"`
 
-Behavior: forwarded tools are merged with function tools; streaming tool calls are translated. If upstream rejects the tools, the server retries without them and returns `RESPONSES_TOOLS_REJECTED` on failure.
-
 ### Example
 ```json
 {
