@@ -72,12 +72,10 @@ def chat_completions() -> Response:
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
     tool_choice = payload.get("tool_choice", "auto")
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
-    # Responses tools passthrough: active when `responses_tools` present
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
     if isinstance(responses_tools_payload, list):
-        # Optional allowlist for MCP hosts
         allow_hosts_env = os.getenv("MCP_ALLOW_HOSTS", "").strip()
         allowed_hosts = [h.strip().lower() for h in allow_hosts_env.split(",") if h.strip()] if allow_hosts_env else None
 
@@ -95,7 +93,6 @@ def chat_completions() -> Response:
             extra_tools.append(_t)
 
         if extra_tools:
-            # Size guardrail
             import json as _json
 
             max_bytes = int(os.getenv("RESPONSES_TOOLS_MAX_BYTES", "32768") or "32768")
@@ -448,4 +445,3 @@ def list_models() -> Response:
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp
-

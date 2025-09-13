@@ -128,12 +128,12 @@ The context size of this route is also larger than what you get access to in the
 
 ## Responses Tools Passthrough
 
-Forward OpenAI Responses tools when calling `/v1/chat/completions` by adding the fields below to your request. No extra flags are required; passthrough is active whenever `responses_tools` is present.
+Add `responses_tools` (and optional `responses_tool_choice`) to a `/v1/chat/completions` request and ChatMock will forward them to the Responses API. No flags required.
 
-- `responses_tools`: e.g. `[{"type":"web_search"}]` or MCP entries like `{ "type":"mcp", "server_label":"manuals", "server_url":"https://example" }`
+- `responses_tools`: e.g. `[{"type":"web_search"}]` or `{ "type":"mcp", "server_label":"manuals", "server_url":"https://example" }`
 - `responses_tool_choice`: `"auto"` or `"none"`
 
-Behavior: Responses tools merge with normal function tools; streaming `tool_calls` deltas are preserved. If upstream rejects tools, ChatMock retries without extras and returns a clear JSON error if both attempts fail.
+Behavior: forwarded tools are merged with function tools; streaming tool calls are translated. If upstream rejects the tools, the server retries without them and returns `RESPONSES_TOOLS_REJECTED` on failure.
 
 ### Example
 ```json
