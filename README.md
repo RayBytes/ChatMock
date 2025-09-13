@@ -130,3 +130,27 @@ The context size of this route is also larger than what you get access to in the
 
 [![Star History Chart](https://api.star-history.com/svg?repos=RayBytes/ChatMock&type=Timeline)](https://www.star-history.com/#RayBytes/ChatMock&Timeline)
 
+
+
+## Responses Tools Passthrough (Optional)
+
+Enable forwarding of OpenAI Responses tools while calling `/v1/chat/completions`.
+
+- Env flag: `CHATMOCK_ALLOW_RESPONSES_TOOLS=1` (default: off)
+- Add to request body:
+  - `responses_tools`: e.g. `[{"type":"web_search"}]` or MCP entries like `{ "type":"mcp", "server_label":"manuals", "server_url":"https://example" }`
+  - `responses_tool_choice`: `"auto"` or a tool-choice object supported by Responses
+
+Behavior: Responses tools are merged with normal function tools; streaming `tool_calls` deltas are preserved. When the flag is off or fields are omitted, behavior is unchanged.
+
+### Example
+```json
+{
+  "model": "gpt-4o",
+  "messages": [{"role":"user","content":"Find current METAR rules"}],
+  "stream": true,
+  "responses_tools": [{"type": "web_search"}],
+  "responses_tool_choice": "auto"
+}
+```
+
