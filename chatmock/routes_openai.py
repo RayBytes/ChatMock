@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from typing import Any, Dict, List
+import os
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
@@ -70,6 +71,21 @@ def chat_completions() -> Response:
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
     tool_choice = payload.get("tool_choice", "auto")
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
+    # Passthrough Responses API tools (optional)
+    responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
+    allow_responses_tools = os.getenv("CHATMOCK_ALLOW_RESPONSES_TOOLS", "1").strip().lower() in ("1","true","yes","on")
+    extra_tools: List[Dict[str, Any]] = []
+    if allow_responses_tools and isinstance(responses_tools_payload, list):
+        for _t in responses_tools_payload:
+            if isinstance(_t, dict) and isinstance(_t.get("type"), str):
+                extra_tools.append(_t)
+
+    responses_tool_choice = payload.get("responses_tool_choice")
+    if allow_responses_tools and responses_tool_choice is not None:
+        tool_choice = responses_tool_choice
+
+    if extra_tools:
+        tools_responses = (tools_responses or []) + extra_tools
 
     input_items = convert_chat_messages_to_responses_input(messages)
     if not input_items and isinstance(payload.get("prompt"), str) and payload.get("prompt").strip():
@@ -371,3 +387,5 @@ def list_models() -> Response:
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp
+
+
