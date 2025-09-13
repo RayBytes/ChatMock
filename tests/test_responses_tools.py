@@ -82,15 +82,13 @@ def _teardown(patch_tuple) -> None:  # noqa: ANN001
     routes_openai.start_upstream_request = orig2  # type: ignore[assignment]
 
 
-def test_responses_tools_off_by_default():
-    os.environ.pop("CHATMOCK_ALLOW_RESPONSES_TOOLS", None)
+def test_no_responses_tools_keeps_default_behavior():
     client, captured, patch_tuple = _setup_app()
     try:
         payload = {
             "model": "gpt-4o",
             "messages": [{"role": "user", "content": "hi"}],
             "stream": True,
-            "responses_tools": [{"type": "web_search"}],
         }
         resp = client.post("/v1/chat/completions", data=json.dumps(payload), content_type="application/json")
         assert resp.status_code == 200
@@ -100,8 +98,7 @@ def test_responses_tools_off_by_default():
         _teardown(patch_tuple)
 
 
-def test_responses_tools_forwarded_when_enabled():
-    os.environ["CHATMOCK_ALLOW_RESPONSES_TOOLS"] = "1"
+def test_responses_tools_forwarded_by_default():
     client, captured, patch_tuple = _setup_app()
     try:
         payload = {
@@ -125,4 +122,3 @@ def test_responses_tools_forwarded_when_enabled():
         assert "mcp" in kinds
     finally:
         _teardown(patch_tuple)
-

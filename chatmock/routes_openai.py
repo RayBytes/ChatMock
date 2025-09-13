@@ -71,12 +71,11 @@ def chat_completions() -> Response:
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
     tool_choice = payload.get("tool_choice", "auto")
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
-    # Passthrough Responses API tools (optional)
+    # Passthrough Responses API tools (enabled by default when provided)
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
-    allow_responses_tools = os.getenv("CHATMOCK_ALLOW_RESPONSES_TOOLS", "0").strip().lower() in ("1", "true", "yes", "on")
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
-    if allow_responses_tools and isinstance(responses_tools_payload, list):
+    if isinstance(responses_tools_payload, list):
         # Optional allowlist for MCP hosts
         allow_hosts_env = os.getenv("MCP_ALLOW_HOSTS", "").strip()
         allowed_hosts = [h.strip().lower() for h in allow_hosts_env.split(",") if h.strip()] if allow_hosts_env else None
@@ -111,7 +110,7 @@ def chat_completions() -> Response:
 
     # Only allow string tool_choice values from passthrough (object shapes are rejected upstream)
     responses_tool_choice = payload.get("responses_tool_choice")
-    if allow_responses_tools and isinstance(responses_tool_choice, str) and responses_tool_choice in ("auto", "none"):
+    if isinstance(responses_tool_choice, str) and responses_tool_choice in ("auto", "none"):
         tool_choice = responses_tool_choice
 
     input_items = convert_chat_messages_to_responses_input(messages)
@@ -449,6 +448,5 @@ def list_models() -> Response:
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp
-
 
 

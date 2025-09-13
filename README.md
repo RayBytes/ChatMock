@@ -126,22 +126,14 @@ The context size of this route is also larger than what you get access to in the
 - Explore to see if we can make more model settings accessible
 - Implement analytics (token counting, etc, to track usage)
 
-## Star History
+## Responses Tools Passthrough
 
-[![Star History Chart](https://api.star-history.com/svg?repos=RayBytes/ChatMock&type=Timeline)](https://www.star-history.com/#RayBytes/ChatMock&Timeline)
+Forward OpenAI Responses tools when calling `/v1/chat/completions` by adding the fields below to your request. No extra flags are required; passthrough is active whenever `responses_tools` is present.
 
+- `responses_tools`: e.g. `[{"type":"web_search"}]` or MCP entries like `{ "type":"mcp", "server_label":"manuals", "server_url":"https://example" }`
+- `responses_tool_choice`: `"auto"` or `"none"`
 
-
-## Responses Tools Passthrough (Optional)
-
-Enable forwarding of OpenAI Responses tools while calling `/v1/chat/completions`.
-
-- Env flag: `CHATMOCK_ALLOW_RESPONSES_TOOLS=1` (default: off)
-- Add to request body:
-  - `responses_tools`: e.g. `[{"type":"web_search"}]` or MCP entries like `{ "type":"mcp", "server_label":"manuals", "server_url":"https://example" }`
-  - `responses_tool_choice`: `"auto"` or a tool-choice object supported by Responses
-
-Behavior: Responses tools are merged with normal function tools; streaming `tool_calls` deltas are preserved. When the flag is off or fields are omitted, behavior is unchanged.
+Behavior: Responses tools merge with normal function tools; streaming `tool_calls` deltas are preserved. If upstream rejects tools, ChatMock retries without extras and returns a clear JSON error if both attempts fail.
 
 ### Example
 ```json
@@ -154,3 +146,6 @@ Behavior: Responses tools are merged with normal function tools; streaming `tool
 }
 ```
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=RayBytes/ChatMock&type=Timeline)](https://www.star-history.com/#RayBytes/ChatMock&Timeline)
