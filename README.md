@@ -138,7 +138,7 @@ Behavior: Responses tools merge with normal function tools; streaming `tool_call
 ### Example
 ```json
 {
-  "model": "gpt-4o",
+  "model": "gpt-5",
   "messages": [{"role":"user","content":"Find current METAR rules"}],
   "stream": true,
   "responses_tools": [{"type": "web_search"}],

@@ -86,7 +86,7 @@ def test_no_responses_tools_keeps_default_behavior():
     client, captured, patch_tuple = _setup_app()
     try:
         payload = {
-            "model": "gpt-4o",
+            "model": "gpt-5",
             "messages": [{"role": "user", "content": "hi"}],
             "stream": True,
         }
@@ -102,7 +102,7 @@ def test_responses_tools_forwarded_by_default():
     client, captured, patch_tuple = _setup_app()
     try:
         payload = {
-            "model": "gpt-4o",
+            "model": "gpt-5",
             "messages": [{"role": "user", "content": "hi"}],
             "stream": True,
             "tools": [

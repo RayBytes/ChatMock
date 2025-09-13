@@ -4,6 +4,7 @@ import json
 import time
 from typing import Any, Dict, List
 import os
+from urllib.parse import urlparse
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
@@ -71,7 +72,7 @@ def chat_completions() -> Response:
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
     tool_choice = payload.get("tool_choice", "auto")
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
-    # Passthrough Responses API tools (enabled by default when provided)
+    # Responses tools passthrough: active when `responses_tools` present
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
@@ -79,7 +80,6 @@ def chat_completions() -> Response:
         # Optional allowlist for MCP hosts
         allow_hosts_env = os.getenv("MCP_ALLOW_HOSTS", "").strip()
         allowed_hosts = [h.strip().lower() for h in allow_hosts_env.split(",") if h.strip()] if allow_hosts_env else None
-        from urllib.parse import urlparse  # local import to avoid global dependency
 
         for _t in responses_tools_payload:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
@@ -448,5 +448,4 @@ def list_models() -> Response:
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp
-
 
