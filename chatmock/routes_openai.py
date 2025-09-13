@@ -73,7 +73,7 @@ def chat_completions() -> Response:
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
     # Passthrough Responses API tools (optional)
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
-    allow_responses_tools = os.getenv("CHATMOCK_ALLOW_RESPONSES_TOOLS", "1").strip().lower() in ("1","true","yes","on")
+    allow_responses_tools = os.getenv("CHATMOCK_ALLOW_RESPONSES_TOOLS", "0").strip().lower() in ("1","true","yes","on")
     extra_tools: List[Dict[str, Any]] = []
     if allow_responses_tools and isinstance(responses_tools_payload, list):
         for _t in responses_tools_payload:
@@ -387,5 +387,6 @@ def list_models() -> Response:
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp
+
 
 
