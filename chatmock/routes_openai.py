@@ -73,19 +73,46 @@ def chat_completions() -> Response:
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
     # Passthrough Responses API tools (optional)
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
-    allow_responses_tools = os.getenv("CHATMOCK_ALLOW_RESPONSES_TOOLS", "0").strip().lower() in ("1","true","yes","on")
+    allow_responses_tools = os.getenv("CHATMOCK_ALLOW_RESPONSES_TOOLS", "0").strip().lower() in ("1", "true", "yes", "on")
     extra_tools: List[Dict[str, Any]] = []
+    had_responses_tools = False
     if allow_responses_tools and isinstance(responses_tools_payload, list):
+        # Optional allowlist for MCP hosts
+        allow_hosts_env = os.getenv("MCP_ALLOW_HOSTS", "").strip()
+        allowed_hosts = [h.strip().lower() for h in allow_hosts_env.split(",") if h.strip()] if allow_hosts_env else None
+        from urllib.parse import urlparse  # local import to avoid global dependency
+
         for _t in responses_tools_payload:
-            if isinstance(_t, dict) and isinstance(_t.get("type"), str):
-                extra_tools.append(_t)
+            if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
+                continue
+            if _t.get("type") == "mcp" and allowed_hosts is not None:
+                try:
+                    server_url = _t.get("server_url") or ""
+                    host = urlparse(server_url).hostname or ""
+                    if host.lower() not in allowed_hosts:
+                        continue  # drop disallowed host
+                except Exception:
+                    continue
+            extra_tools.append(_t)
 
+        if extra_tools:
+            # Size guardrail
+            import json as _json
+
+            max_bytes = int(os.getenv("RESPONSES_TOOLS_MAX_BYTES", "32768") or "32768")
+            try:
+                size = len(_json.dumps(extra_tools))
+            except Exception:
+                size = 0
+            if size > max_bytes:
+                return jsonify({"error": {"message": "responses_tools too large", "code": "RESPONSES_TOOLS_TOO_LARGE"}}), 400
+            had_responses_tools = True
+            tools_responses = (tools_responses or []) + extra_tools
+
+    # Only allow string tool_choice values from passthrough (object shapes are rejected upstream)
     responses_tool_choice = payload.get("responses_tool_choice")
-    if allow_responses_tools and responses_tool_choice is not None:
+    if allow_responses_tools and isinstance(responses_tool_choice, str) and responses_tool_choice in ("auto", "none"):
         tool_choice = responses_tool_choice
-
-    if extra_tools:
-        tools_responses = (tools_responses or []) + extra_tools
 
     input_items = convert_chat_messages_to_responses_input(messages)
     if not input_items and isinstance(payload.get("prompt"), str) and payload.get("prompt").strip():
@@ -116,12 +143,47 @@ def chat_completions() -> Response:
             err_body = json.loads(raw.decode("utf-8", errors="ignore")) if raw else {"raw": upstream.text}
         except Exception:
             err_body = {"raw": upstream.text}
-        if verbose:
-            print("Upstream error status=", upstream.status_code, " body:", json.dumps(err_body)[:2000])
-        return (
-            jsonify({"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}),
-            upstream.status_code,
-        )
+        # Fallback: if passthrough tools were used, retry without extras and with safe tool_choice
+        if had_responses_tools:
+            if verbose:
+                # Do not log tool arguments
+                print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
+            # Rebuild base tools without extras
+            base_tools_only = convert_tools_chat_to_responses(payload.get("tools"))
+            safe_choice = payload.get("tool_choice", "auto")
+            upstream2, err2 = start_upstream_request(
+                model,
+                input_items,
+                instructions=BASE_INSTRUCTIONS,
+                tools=base_tools_only,
+                tool_choice=safe_choice,
+                parallel_tool_calls=parallel_tool_calls,
+                reasoning_param=reasoning_param,
+            )
+            if err2 is None and upstream2 is not None and upstream2.status_code < 400:
+                upstream = upstream2  # proceed as normal below
+            else:
+                # Surface clear JSON without breaking
+                if verbose:
+                    print("[Passthrough] Fallback request also failed")
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "message": (err_body.get("error", {}) or {}).get("message", "Upstream error"),
+                                "code": "RESPONSES_TOOLS_REJECTED",
+                            }
+                        }
+                    ),
+                    upstream.status_code,
+                )
+        else:
+            if verbose:
+                print("Upstream error status=", upstream.status_code, " body:", json.dumps(err_body)[:2000])
+            return (
+                jsonify({"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}),
+                upstream.status_code,
+            )
 
     if is_stream:
         resp = Response(
