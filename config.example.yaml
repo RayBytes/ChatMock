@@ -1,0 +1,54 @@
+# ChatMock configuration (YAML)
+# Canonical filename: config.yaml
+# Place a copy as config.yaml in your project root, or in one of:
+#   $CHATGPT_LOCAL_HOME/config.yaml
+#   $CODEX_HOME/config.yaml
+#   ~/.chatgpt-local/config.yaml
+#
+# This file is an example and is not loaded as-is.
+
+server:
+  # Bind host (e.g., 127.0.0.1 or 0.0.0.0)
+  host: 127.0.0.1
+
+  # Listening port
+  port: 8000
+
+  # Enable verbose logging
+  # verbose: false
+
+  # Expose gpt-5 reasoning effort variants as separate models
+  # expose_reasoning_models: false
+
+  # Force all requests to use a specific model name
+  # debug_model: null
+
+reasoning:
+  # minimal | low | medium | high
+  effort: medium
+
+  # auto | concise | detailed | none
+  summary: auto
+
+  # legacy | o3 | think-tags ("current" is accepted as alias of legacy)
+  compat: think-tags
+
+# OAuth / Login options
+oauth:
+  # Optional: override Codex client id (normally set via env CHATGPT_LOCAL_CLIENT_ID)
+  # client_id: "app_xxxxxxxxxxxxxxxxx"
+
+login:
+  # Bind host for local OAuth redirect helper
+  bind_host: 127.0.0.1
+
+# Upstream overrides
+upstream:
+  # Override Responses API URL if needed
+  # responses_url: https://chatgpt.com/backend-api/codex/responses
+
+# Instructions override
+instructions:
+  # Path to a custom prompt instructions file (defaults to prompt.md in repo/app)
+  # Relative paths resolve from current working directory
+  # path: ./my-prompt.md
