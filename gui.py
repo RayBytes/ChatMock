@@ -8,6 +8,7 @@ import multiprocessing as mp
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from chatmock.app import create_app
+from chatmock.settings import load_config, resolve_server_host_port
 from chatmock.cli import cmd_login
 from chatmock.utils import load_chatgpt_tokens, parse_jwt_claims
 
@@ -266,13 +267,20 @@ class MainWindow(QtWidgets.QMainWindow):
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(8)
         form.addWidget(QtWidgets.QLabel("Host"), 0, 0)
-        self.host_edit = QtWidgets.QLineEdit("127.0.0.1")
+        # Load defaults from config if available
+        try:
+            _cfg = load_config(None)
+            _host, _port = resolve_server_host_port(_cfg, None, None)
+        except Exception:
+            _host, _port = "127.0.0.1", 8000
+
+        self.host_edit = QtWidgets.QLineEdit(_host)
         self.host_edit.setClearButtonEnabled(True)
         self.host_edit.setMinimumWidth(220)
         self.host_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         form.addWidget(self.host_edit, 0, 1)
         form.addWidget(QtWidgets.QLabel("Port"), 0, 2)
-        self.port_edit = QtWidgets.QLineEdit("8000")
+        self.port_edit = QtWidgets.QLineEdit(str(_port))
         self.port_edit.setValidator(QtGui.QIntValidator(1, 65535, self))
         self.port_edit.setMaximumWidth(100)
         form.addWidget(self.port_edit, 0, 3)
@@ -299,14 +307,23 @@ class MainWindow(QtWidgets.QMainWindow):
         opts.addWidget(QtWidgets.QLabel("Reasoning Effort"), 0, 0)
         self.effort = QtWidgets.QComboBox()
         self.effort.addItems(["minimal", "low", "medium", "high"])  # default medium
-        self.effort.setCurrentText("medium")
+        try:
+            _cfg2 = load_config(None)
+            _reasoning_effort = str((_cfg2.get("reasoning") or {}).get("effort") or "medium").lower()
+        except Exception:
+            _reasoning_effort = "medium"
+        self.effort.setCurrentText(_reasoning_effort if _reasoning_effort in ("minimal","low","medium","high") else "medium")
         self.effort.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.effort.setMinimumContentsLength(7)
         opts.addWidget(self.effort, 0, 1)
         opts.addWidget(QtWidgets.QLabel("Reasoning Summary"), 0, 2)
         self.summary = QtWidgets.QComboBox()
         self.summary.addItems(["auto", "concise", "detailed", "none"])  # default auto
-        self.summary.setCurrentText("auto")
+        try:
+            _reasoning_summary = str((_cfg2.get("reasoning") or {}).get("summary") or "auto").lower()
+        except Exception:
+            _reasoning_summary = "auto"
+        self.summary.setCurrentText(_reasoning_summary if _reasoning_summary in ("auto","concise","detailed","none") else "auto")
         self.summary.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.summary.setMinimumContentsLength(8)
         opts.addWidget(self.summary, 0, 3)
@@ -464,12 +481,15 @@ def main() -> None:
 
         p = argparse.ArgumentParser(add_help=False)
         p.add_argument("--run-server", action="store_true")
-        p.add_argument("--host", default="127.0.0.1")
-        p.add_argument("--port", type=int, default=8000)
+        p.add_argument("--config", default=None)
+        p.add_argument("--host", default=None)
+        p.add_argument("--port", type=int, default=None)
         p.add_argument("--effort", default="medium")
         p.add_argument("--summary", default="auto")
         args, _ = p.parse_known_args()
-        run_server(args.host, args.port, args.effort, args.summary)
+        cfg = load_config(args.config)
+        host, port = resolve_server_host_port(cfg, args.host, args.port)
+        run_server(host, port, args.effort, args.summary)
         return
 
     app = QtWidgets.QApplication(sys.argv)
@@ -481,4 +501,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

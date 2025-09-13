@@ -1,5 +1,8 @@
 from __future__ import annotations
 
-from .app import create_app
-from .cli import main
+# Lightweight package init to avoid importing heavy dependencies at import time.
+# Access CLI and app via their modules:
+#   from chatmock.cli import main
+#   from chatmock.app import create_app
 
+__all__ = []

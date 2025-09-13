@@ -14,17 +14,35 @@ def eprint(*args, **kwargs) -> None:
 
 
 def get_home_dir() -> str:
-    home = os.getenv("CHATGPT_LOCAL_HOME") or os.getenv("CODEX_HOME")
+    """Preferred home directory for writing auth.json.
+
+    Order for writes:
+      1) $CHATMOCK_HOME if set
+      2) $CHATGPT_LOCAL_HOME if set
+      3) ~/.chatmock (preferred default)
+    """
+    home = os.getenv("CHATMOCK_HOME") or os.getenv("CHATGPT_LOCAL_HOME")
     if not home:
-        home = os.path.expanduser("~/.chatgpt-local")
+        home = os.path.expanduser("~/.chatmock")
     return home
 
 
 def read_auth_file() -> Dict[str, Any] | None:
+    """Read auth.json from known locations.
+
+    Search order:
+      1) $CHATGPT_LOCAL_HOME/auth.json
+      2) $CODEX_HOME/auth.json
+      3) ~/.chatmock/auth.json
+      4) ~/.chatgpt-local/auth.json
+      5) ~/.codex/auth.json
+    """
     for base in [
+        os.getenv("CHATMOCK_HOME"),
         os.getenv("CHATGPT_LOCAL_HOME"),
-        os.getenv("CODEX_HOME"),
+        os.path.expanduser("~/.chatmock"),
         os.path.expanduser("~/.chatgpt-local"),
+        os.getenv("CODEX_HOME"),
         os.path.expanduser("~/.codex"),
     ]:
         if not base:
@@ -41,22 +59,42 @@ def read_auth_file() -> Dict[str, Any] | None:
 
 
 def write_auth_file(auth: Dict[str, Any]) -> bool:
-    home = get_home_dir()
-    try:
-        os.makedirs(home, exist_ok=True)
-    except Exception as exc:
-        eprint(f"ERROR: unable to create auth home directory {home}: {exc}")
-        return False
-    path = os.path.join(home, "auth.json")
-    try:
-        with open(path, "w", encoding="utf-8") as fp:
-            if hasattr(os, "fchmod"):
-                os.fchmod(fp.fileno(), 0o600)
-            json.dump(auth, fp, indent=2)
-        return True
-    except Exception as exc:
-        eprint(f"ERROR: unable to write auth file: {exc}")
-        return False
+    """Write auth.json to ChatMock-controlled locations only.
+
+    Write order:
+      1) $CHATMOCK_HOME
+      2) $CHATGPT_LOCAL_HOME
+      3) ~/.chatmock
+
+    Never write to ~/.chatgpt-local or ~/.codex; those are read-only for compatibility.
+    """
+    candidates = []
+    cm_home = os.getenv("CHATMOCK_HOME") or None
+    cgpt_home = os.getenv("CHATGPT_LOCAL_HOME") or None
+    if cm_home:
+        candidates.append(os.path.expanduser(cm_home))
+    if cgpt_home:
+        candidates.append(os.path.expanduser(cgpt_home))
+    candidates.append(os.path.expanduser("~/.chatmock"))
+
+    last_err: Exception | None = None
+    for base in candidates:
+        try:
+            os.makedirs(base, exist_ok=True)
+            path = os.path.join(base, "auth.json")
+            with open(path, "w", encoding="utf-8") as fp:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fp.fileno(), 0o600)
+                json.dump(auth, fp, indent=2)
+            return True
+        except Exception as exc:
+            last_err = exc
+            continue
+    if last_err is not None:
+        eprint(f"ERROR: unable to write auth file to any known location: {last_err}")
+    else:
+        eprint("ERROR: unable to write auth file: no candidate locations")
+    return False
 
 
 def parse_jwt_claims(token: str) -> Dict[str, Any] | None:
