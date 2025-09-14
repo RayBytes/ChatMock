@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import time
 from typing import Any, Dict, List
-import os
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
+import os
 
 from .config import BASE_INSTRUCTIONS
 from .http import build_cors_headers
@@ -71,6 +71,7 @@ def chat_completions() -> Response:
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
     tool_choice = payload.get("tool_choice", "auto")
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
+    # Passthrough Responses API tools from Chat Completions (web_search only)
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
@@ -106,7 +107,7 @@ def chat_completions() -> Response:
             had_responses_tools = True
             tools_responses = (tools_responses or []) + extra_tools
 
-    # Only allow string tool_choice values from passthrough (object shapes are rejected upstream)
+    # Only allow string tool_choice values (auto|none) from passthrough
     responses_tool_choice = payload.get("responses_tool_choice")
     if isinstance(responses_tool_choice, str) and responses_tool_choice in ("auto", "none"):
         tool_choice = responses_tool_choice
@@ -145,7 +146,6 @@ def chat_completions() -> Response:
             if verbose:
                 # Do not log tool arguments
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
-            # Rebuild base tools without extras
             base_tools_only = convert_tools_chat_to_responses(payload.get("tools"))
             safe_choice = payload.get("tool_choice", "auto")
             upstream2, err2 = start_upstream_request(
@@ -158,9 +158,8 @@ def chat_completions() -> Response:
                 reasoning_param=reasoning_param,
             )
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
-                upstream = upstream2  # proceed as normal below
+                upstream = upstream2
             else:
-                # Surface clear JSON without breaking
                 if verbose:
                     print("[Passthrough] Fallback request also failed")
                 return (
