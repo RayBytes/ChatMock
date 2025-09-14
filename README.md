@@ -130,7 +130,7 @@ The context size of this route is also larger than what you get access to in the
 
 Add `responses_tools` (and optional `responses_tool_choice`) to a `/v1/chat/completions` request and ChatMock will forward them to the Responses API. No flags required.
 
-- `responses_tools`: e.g. `[{"type":"web_search"}]` or `{ "type":"mcp", "server_label":"manuals", "server_url":"https://example" }`
+- `responses_tools`: only `[{"type":"web_search"}]` is supported
 - `responses_tool_choice`: `"auto"` or `"none"`
 
 ### Example

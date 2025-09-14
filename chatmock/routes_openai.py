@@ -4,7 +4,6 @@ import json
 import time
 from typing import Any, Dict, List
 import os
-from urllib.parse import urlparse
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
@@ -76,20 +75,22 @@ def chat_completions() -> Response:
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
     if isinstance(responses_tools_payload, list):
-        allow_hosts_env = os.getenv("MCP_ALLOW_HOSTS", "").strip()
-        allowed_hosts = [h.strip().lower() for h in allow_hosts_env.split(",") if h.strip()] if allow_hosts_env else None
-
         for _t in responses_tools_payload:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
                 continue
-            if _t.get("type") == "mcp" and allowed_hosts is not None:
-                try:
-                    server_url = _t.get("server_url") or ""
-                    host = urlparse(server_url).hostname or ""
-                    if host.lower() not in allowed_hosts:
-                        continue  # drop disallowed host
-                except Exception:
-                    continue
+            # Restrict passthrough strictly to the built-in web_search tool.
+            if _t.get("type") != "web_search":
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "message": "Only web_search is supported in responses_tools",
+                                "code": "RESPONSES_TOOL_UNSUPPORTED",
+                            }
+                        }
+                    ),
+                    400,
+                )
             extra_tools.append(_t)
 
         if extra_tools:
