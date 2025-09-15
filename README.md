@@ -114,14 +114,7 @@ GPT-5 has a configurable amount of "effort" it can put into thinking, which may 
 - `--reasoning-summary` (choice of auto,concise,detailed,none)<br>
 Models like GPT-5 do not return raw thinking content, but instead return thinking summaries. These can also be customised by you.
 
-## Notes
-If you wish to have the fastest responses, I'd recommend setting `--reasoning-effort` to minimal, and `--reasoning-summary` to none. <br>
-All parameters and choices can be seen by sending `python chatmock.py serve --h`<br>
-The context size of this route is also larger than what you get access to in the regular ChatGPT app.<br>
-
-When the model returns a thinking summary, the model will send back thinking tags to make it compatible with chat apps. **If you don't like this behavior, you can instead set `--reasoning-compat` to legacy, and reasoning will be set in the reasoning tag instead of being returned in the actual response text.**
-
-## OpenAI Tools
+### OpenAI Tools
 
 You can also access OpenAI tools through this proxy. Use the parameters below to enable them.
 
@@ -138,6 +131,13 @@ You can also access OpenAI tools through this proxy. Use the parameters below to
   "responses_tool_choice": "auto"
 }
 ```
+
+## Notes
+If you wish to have the fastest responses, I'd recommend setting `--reasoning-effort` to minimal, and `--reasoning-summary` to none. <br>
+All parameters and choices can be seen by sending `python chatmock.py serve --h`<br>
+The context size of this route is also larger than what you get access to in the regular ChatGPT app.<br>
+
+When the model returns a thinking summary, the model will send back thinking tags to make it compatible with chat apps. **If you don't like this behavior, you can instead set `--reasoning-compat` to legacy, and reasoning will be set in the reasoning tag instead of being returned in the actual response text.**
 
 
 ## Star History
