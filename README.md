@@ -115,26 +115,20 @@ GPT-5 has a configurable amount of "effort" it can put into thinking, which may 
 Models like GPT-5 do not return raw thinking content, but instead return thinking summaries. These can also be customised by you.
 
 ## Notes
-If you wish to have the fastest responses, I'd recommend setting `--reasoning-effort` to low, and `--reasoning-summary` to none.
+If you wish to have the fastest responses, I'd recommend setting `--reasoning-effort` to minimal, and `--reasoning-summary` to none. <br>
 All parameters and choices can be seen by sending `python chatmock.py serve --h`<br>
-The context size of this route is also larger than what you get access to in the regular ChatGPT app.
+The context size of this route is also larger than what you get access to in the regular ChatGPT app.<br>
 
-**When the model returns a thinking summary, the model will send back thinking tags to make it compatible with chat apps. If you don't like this behavior, you can instead set `--reasoning-compat` to legacy, and reasoning will be set in the reasoning tag instead of being returned in the actual response text.**
+When the model returns a thinking summary, the model will send back thinking tags to make it compatible with chat apps. **If you don't like this behavior, you can instead set `--reasoning-compat` to legacy, and reasoning will be set in the reasoning tag instead of being returned in the actual response text.**
 
-# TODO
-- ~~Implement Ollama support~~ ✅
-- Explore to see if we can make more model settings accessible
-- Implement analytics (token counting, etc, to track usage)
+## OpenAI Tools
 
+You can also access OpenAI tools through this proxy. Use the parameters below to enable them.
 
-## Responses Tools Passthrough
-
-Add `responses_tools` (and optional `responses_tool_choice`) to a `/v1/chat/completions` request and ChatMock will forward them to the Responses API. No flags required.
-
-- `responses_tools`: only `[{"type":"web_search"}]` is supported
+- `responses_tools`: only `[{"type":"web_search"}]` is currently supported
 - `responses_tool_choice`: `"auto"` or `"none"`
 
-### Example
+### Example usage
 ```json
 {
   "model": "gpt-5",
