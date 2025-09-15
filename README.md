@@ -116,10 +116,14 @@ Models like GPT-5 do not return raw thinking content, but instead return thinkin
 
 ### OpenAI Tools
 
-You can also access OpenAI tools through this proxy. Use the parameters below to enable them.
+You can also access OpenAI tools through this proxy.
 
-- `responses_tools`: only `[{"type":"web_search"}]` is currently supported
+- `responses_tools`: supports `[{"type":"web_search"}]` and `{ "type": "web_search_preview" }`
 - `responses_tool_choice`: `"auto"` or `"none"`
+
+Behavior and limits:
+- Default OFF. To enable a default web search when a request omits `responses_tools`, start the server with `--enable-web-search`.
+- Serialized `responses_tools` payload is capped to 32,768 bytes.
 
 ### Example usage
 ```json
@@ -132,6 +136,8 @@ You can also access OpenAI tools through this proxy. Use the parameters below to
 }
 ```
 
+Ollama-compatible `/api/chat` also supports `responses_tools` and `responses_tool_choice` when running through ChatMock.
+
 ## Notes
 If you wish to have the fastest responses, I'd recommend setting `--reasoning-effort` to minimal, and `--reasoning-summary` to none. <br>
 All parameters and choices can be seen by sending `python chatmock.py serve --h`<br>
@@ -143,5 +149,7 @@ When the model returns a thinking summary, the model will send back thinking tag
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=RayBytes/ChatMock&type=Timeline)](https://www.star-history.com/#RayBytes/ChatMock&Timeline)
+
+
 
 

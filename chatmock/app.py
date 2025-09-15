@@ -15,6 +15,7 @@ def create_app(
     reasoning_compat: str = "think-tags",
     debug_model: str | None = None,
     expose_reasoning_models: bool = False,
+    default_web_search: bool = False,
 ) -> Flask:
     app = Flask(__name__)
 
@@ -26,6 +27,7 @@ def create_app(
         DEBUG_MODEL=debug_model,
         BASE_INSTRUCTIONS=BASE_INSTRUCTIONS,
         EXPOSE_REASONING_MODELS=bool(expose_reasoning_models),
+        DEFAULT_WEB_SEARCH=bool(default_web_search),
     )
 
     @app.get("/")

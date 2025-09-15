@@ -250,8 +250,10 @@ def sse_translate_chat(
     saw_any_summary = False
     pending_summary_paragraph = False
     upstream_usage = None
-    # Aggregate parameters for web_search calls keyed by call_id
+    # Aggregate parameters and stable indexing for web_search calls keyed by call_id
     ws_state: dict[str, Any] = {}
+    ws_index: dict[str, int] = {}
+    ws_next_index: int = 0
     
     def _extract_usage(evt: Dict[str, Any]) -> Dict[str, int] | None:
         try:
@@ -328,6 +330,11 @@ def sse_translate_chat(
                         args_str = json.dumps({"query": eff_params})
                     else:
                         args_str = "{}"
+                    # stable index per call_id
+                    if call_id not in ws_index:
+                        ws_index[call_id] = ws_next_index
+                        ws_next_index += 1
+                    _idx = ws_index.get(call_id, 0)
                     delta_chunk = {
                         "id": response_id,
                         "object": "chat.completion.chunk",
@@ -339,7 +346,7 @@ def sse_translate_chat(
                                 "delta": {
                                     "tool_calls": [
                                         {
-                                            "index": 0,
+                                            "index": _idx,
                                             "id": call_id,
                                             "type": "function",
                                             "function": {"name": "web_search", "arguments": args_str},
@@ -413,6 +420,11 @@ def sse_translate_chat(
                             vlog(f"CM_TOOLS response.output_item.done web_search_call id={call_id} has_args={bool(args)}")
                         except Exception:
                             pass
+                    # stable index per call_id
+                    if call_id not in ws_index:
+                        ws_index[call_id] = ws_next_index
+                        ws_next_index += 1
+                    _idx = ws_index.get(call_id, 0)
                     if isinstance(call_id, str) and isinstance(name, str) and isinstance(args, str):
                         delta_chunk = {
                             "id": response_id,
@@ -425,7 +437,7 @@ def sse_translate_chat(
                                     "delta": {
                                         "tool_calls": [
                                             {
-                                                "index": 0,
+                                                "index": _idx,
                                                 "id": call_id,
                                                 "type": "function",
                                                 "function": {"name": name, "arguments": args},

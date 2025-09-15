@@ -5,7 +5,6 @@ import time
 from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
-import os
 
 from .config import BASE_INSTRUCTIONS
 from .http import build_cors_headers
@@ -71,10 +70,7 @@ def chat_completions() -> Response:
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
     tool_choice = payload.get("tool_choice", "auto")
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
-<<<<<<< Updated upstream
-=======
     # Passthrough Responses API tools from Chat Completions (web search)
->>>>>>> Stashed changes
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
@@ -82,17 +78,13 @@ def chat_completions() -> Response:
         for _t in responses_tools_payload:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
                 continue
-<<<<<<< Updated upstream
-            if _t.get("type") != "web_search":
-=======
             # Allow only built-in web search tool types
             if _t.get("type") not in ("web_search", "web_search_preview"):
->>>>>>> Stashed changes
                 return (
                     jsonify(
                         {
                             "error": {
-                                "message": "Only web_search is supported in responses_tools",
+                                "message": "Only web_search/web_search_preview are supported in responses_tools",
                                 "code": "RESPONSES_TOOL_UNSUPPORTED",
                             }
                         }
@@ -101,8 +93,8 @@ def chat_completions() -> Response:
                 )
             extra_tools.append(_t)
 
-        # If no responses_tools provided, enable web search by default unless explicitly disabled
-        if not extra_tools:
+        # If no responses_tools provided, optionally enable web search by default (opt-in via server flag)
+        if not extra_tools and bool(current_app.config.get("DEFAULT_WEB_SEARCH")):
             responses_tool_choice = payload.get("responses_tool_choice")
             if not (isinstance(responses_tool_choice, str) and responses_tool_choice == "none"):
                 extra_tools = [{"type": "web_search"}]
@@ -153,11 +145,8 @@ def chat_completions() -> Response:
         except Exception:
             err_body = {"raw": upstream.text}
         if had_responses_tools:
-<<<<<<< Updated upstream
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
-=======
->>>>>>> Stashed changes
             base_tools_only = convert_tools_chat_to_responses(payload.get("tools"))
             safe_choice = payload.get("tool_choice", "auto")
             upstream2, err2 = start_upstream_request(
@@ -181,7 +170,7 @@ def chat_completions() -> Response:
                             }
                         }
                     ),
-                    upstream.status_code,
+                    (upstream2.status_code if upstream2 is not None else upstream.status_code),
                 )
         else:
             if verbose:
@@ -455,3 +444,4 @@ def list_models() -> Response:
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp
+
