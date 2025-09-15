@@ -71,7 +71,6 @@ def chat_completions() -> Response:
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
     tool_choice = payload.get("tool_choice", "auto")
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
-    # Passthrough Responses API tools from Chat Completions (web_search only)
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
@@ -79,7 +78,6 @@ def chat_completions() -> Response:
         for _t in responses_tools_payload:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
                 continue
-            # Restrict passthrough strictly to the built-in web_search tool.
             if _t.get("type") != "web_search":
                 return (
                     jsonify(
@@ -107,7 +105,6 @@ def chat_completions() -> Response:
             had_responses_tools = True
             tools_responses = (tools_responses or []) + extra_tools
 
-    # Only allow string tool_choice values (auto|none) from passthrough
     responses_tool_choice = payload.get("responses_tool_choice")
     if isinstance(responses_tool_choice, str) and responses_tool_choice in ("auto", "none"):
         tool_choice = responses_tool_choice
@@ -141,10 +138,8 @@ def chat_completions() -> Response:
             err_body = json.loads(raw.decode("utf-8", errors="ignore")) if raw else {"raw": upstream.text}
         except Exception:
             err_body = {"raw": upstream.text}
-        # Fallback: if passthrough tools were used, retry without extras and with safe tool_choice
         if had_responses_tools:
             if verbose:
-                # Do not log tool arguments
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
             base_tools_only = convert_tools_chat_to_responses(payload.get("tools"))
             safe_choice = payload.get("tool_choice", "auto")
