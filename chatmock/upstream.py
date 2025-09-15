@@ -101,7 +101,6 @@ def start_upstream_request(
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
         "chatgpt-account-id": account_id,
-        # Hint availability of experimental features. The server may ignore unknown tokens.
         "OpenAI-Beta": "responses=experimental",
         "session_id": session_id,
     }
