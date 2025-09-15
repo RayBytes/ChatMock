@@ -71,6 +71,10 @@ def chat_completions() -> Response:
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
     tool_choice = payload.get("tool_choice", "auto")
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
+<<<<<<< Updated upstream
+=======
+    # Passthrough Responses API tools from Chat Completions (web search)
+>>>>>>> Stashed changes
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
@@ -78,7 +82,12 @@ def chat_completions() -> Response:
         for _t in responses_tools_payload:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
                 continue
+<<<<<<< Updated upstream
             if _t.get("type") != "web_search":
+=======
+            # Allow only built-in web search tool types
+            if _t.get("type") not in ("web_search", "web_search_preview"):
+>>>>>>> Stashed changes
                 return (
                     jsonify(
                         {
@@ -92,15 +101,20 @@ def chat_completions() -> Response:
                 )
             extra_tools.append(_t)
 
+        # If no responses_tools provided, enable web search by default unless explicitly disabled
+        if not extra_tools:
+            responses_tool_choice = payload.get("responses_tool_choice")
+            if not (isinstance(responses_tool_choice, str) and responses_tool_choice == "none"):
+                extra_tools = [{"type": "web_search"}]
+
         if extra_tools:
             import json as _json
-
-            max_bytes = int(os.getenv("RESPONSES_TOOLS_MAX_BYTES", "32768") or "32768")
+            MAX_TOOLS_BYTES = 32768
             try:
                 size = len(_json.dumps(extra_tools))
             except Exception:
                 size = 0
-            if size > max_bytes:
+            if size > MAX_TOOLS_BYTES:
                 return jsonify({"error": {"message": "responses_tools too large", "code": "RESPONSES_TOOLS_TOO_LARGE"}}), 400
             had_responses_tools = True
             tools_responses = (tools_responses or []) + extra_tools
@@ -139,8 +153,11 @@ def chat_completions() -> Response:
         except Exception:
             err_body = {"raw": upstream.text}
         if had_responses_tools:
+<<<<<<< Updated upstream
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
+=======
+>>>>>>> Stashed changes
             base_tools_only = convert_tools_chat_to_responses(payload.get("tools"))
             safe_choice = payload.get("tool_choice", "auto")
             upstream2, err2 = start_upstream_request(
@@ -155,8 +172,6 @@ def chat_completions() -> Response:
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
                 upstream = upstream2
             else:
-                if verbose:
-                    print("[Passthrough] Fallback request also failed")
                 return (
                     jsonify(
                         {
@@ -170,7 +185,7 @@ def chat_completions() -> Response:
                 )
         else:
             if verbose:
-                print("Upstream error status=", upstream.status_code, " body:", json.dumps(err_body)[:2000])
+                print("Upstream error status=", upstream.status_code)
             return (
                 jsonify({"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}),
                 upstream.status_code,
@@ -440,4 +455,3 @@ def list_models() -> Response:
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp
-
