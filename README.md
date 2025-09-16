@@ -116,14 +116,11 @@ Models like GPT-5 do not return raw thinking content, but instead return thinkin
 
 ### OpenAI Tools
 
-You can also access OpenAI tools through this proxy.
+You can also access OpenAI tools through this proxy. Currently, only web search is available.
+You can enable it by starting the server with `--enable-web-search`, which will allow OpenAI to determine when a request requires a web search, or you can use the following parameters during a request to enable web search:
 
-- `responses_tools`: supports `[{"type":"web_search"}]` and `{ "type": "web_search_preview" }`
+- `responses_tools`: supports `[{"type":"web_search"}]` / `{ "type": "web_search_preview" }`
 - `responses_tool_choice`: `"auto"` or `"none"`
-
-Behavior and limits:
-- Default OFF. To enable a default web search when a request omits `responses_tools`, start the server with `--enable-web-search`.
-- Serialized `responses_tools` payload is capped to 32,768 bytes.
 
 ### Example usage
 ```json
@@ -135,8 +132,6 @@ Behavior and limits:
   "responses_tool_choice": "auto"
 }
 ```
-
-Ollama-compatible `/api/chat` also supports `responses_tools` and `responses_tool_choice` when running through ChatMock.
 
 ## Notes
 If you wish to have the fastest responses, I'd recommend setting `--reasoning-effort` to minimal, and `--reasoning-summary` to none. <br>
