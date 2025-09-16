@@ -183,7 +183,6 @@ def ollama_chat() -> Response:
 
     input_items = convert_chat_messages_to_responses_input(messages)
 
-    # Infer effort from model variant (gpt-5-high, etc.) but send base model upstream
     model_reasoning = extract_reasoning_from_model_name(model)
     upstream, error_resp = start_upstream_request(
         normalize_model_name(model),
