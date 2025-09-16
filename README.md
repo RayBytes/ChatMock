@@ -116,7 +116,7 @@ Models like GPT-5 do not return raw thinking content, but instead return thinkin
 
 ### OpenAI Tools
 
-You can also access OpenAI tools through this proxy. Currently, only web search is available.
+You can also access OpenAI tools through this project. Currently, only web search is available.
 You can enable it by starting the server with `--enable-web-search`, which will allow OpenAI to determine when a request requires a web search, or you can use the following parameters during a request to enable web search:
 
 - `responses_tools`: supports `[{"type":"web_search"}]` / `{ "type": "web_search_preview" }`
