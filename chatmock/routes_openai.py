@@ -70,7 +70,6 @@ def chat_completions() -> Response:
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
     tool_choice = payload.get("tool_choice", "auto")
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
-    # Passthrough Responses API tools from Chat Completions (web search)
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
@@ -78,7 +77,6 @@ def chat_completions() -> Response:
         for _t in responses_tools_payload:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
                 continue
-            # Allow only built-in web search tool types
             if _t.get("type") not in ("web_search", "web_search_preview"):
                 return (
                     jsonify(
@@ -93,7 +91,6 @@ def chat_completions() -> Response:
                 )
             extra_tools.append(_t)
 
-        # If no responses_tools provided, optionally enable web search by default (opt-in via server flag)
         if not extra_tools and bool(current_app.config.get("DEFAULT_WEB_SEARCH")):
             responses_tool_choice = payload.get("responses_tool_choice")
             if not (isinstance(responses_tool_choice, str) and responses_tool_choice == "none"):
