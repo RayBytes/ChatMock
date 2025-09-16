@@ -10,26 +10,37 @@ CLIENT_ID_DEFAULT = os.getenv("CHATGPT_LOCAL_CLIENT_ID") or "app_EMoamEEZ73f0CkX
 CHATGPT_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 
 
-def read_base_instructions() -> str:
+def _read_prompt_text(filename: str) -> str | None:
     candidates = [
-        Path(__file__).parent.parent / "prompt.md",
-        Path(__file__).parent / "prompt.md",
-        Path(getattr(sys, "_MEIPASS", "")) / "prompt.md" if getattr(sys, "_MEIPASS", None) else None,
-        Path.cwd() / "prompt.md",
+        Path(__file__).parent.parent / filename,
+        Path(__file__).parent / filename,
+        Path(getattr(sys, "_MEIPASS", "")) / filename if getattr(sys, "_MEIPASS", None) else None,
+        Path.cwd() / filename,
     ]
-    for p in candidates:
-        if not p:
+    for candidate in candidates:
+        if not candidate:
             continue
         try:
-            if p.exists():
-                content = p.read_text(encoding="utf-8")
+            if candidate.exists():
+                content = candidate.read_text(encoding="utf-8")
                 if isinstance(content, str) and content.strip():
                     return content
         except Exception:
             continue
-    raise FileNotFoundError(
-        "Failed to read prompt.md; expected adjacent to package or CWD."
-    )
+    return None
+
+
+def read_base_instructions() -> str:
+    content = _read_prompt_text("prompt.md")
+    if content is None:
+        raise FileNotFoundError("Failed to read prompt.md; expected adjacent to package or CWD.")
+    return content
+
+
+def read_gpt5_codex_instructions(fallback: str) -> str:
+    content = _read_prompt_text("prompt_gpt5_codex.md")
+    return content if isinstance(content, str) and content.strip() else fallback
 
 
 BASE_INSTRUCTIONS = read_base_instructions()
+GPT5_CODEX_INSTRUCTIONS = read_gpt5_codex_instructions(BASE_INSTRUCTIONS)

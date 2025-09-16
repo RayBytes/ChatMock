@@ -7,7 +7,7 @@
 
 ## What It Does
 
-ChatMock runs a local server that creates an OpenAI/Ollama compatible API, and requests are then fulfilled using your authenticated ChatGPT login with the oauth client of Codex, OpenAI's coding CLI tool. This allows you to use GPT-5 and other models right through your OpenAI account, without requiring an api key.
+ChatMock runs a local server that creates an OpenAI/Ollama compatible API, and requests are then fulfilled using your authenticated ChatGPT login with the oauth client of Codex, OpenAI's coding CLI tool. This allows you to use GPT-5, GPT-5-Codex, and other models right through your OpenAI account, without requiring an api key.
 This does require a paid ChatGPT account.
 
 ## Quickstart
@@ -100,6 +100,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 # Supported models
 - `gpt-5`
+- `gpt-5-codex`
 - `codex-mini`
 
 # Customisation / Configuration

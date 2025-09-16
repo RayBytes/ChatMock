@@ -36,5 +36,5 @@ Set `VERBOSE=true` to include extra logging for debugging issues in upstream or 
 ```
 curl -s http://localhost:8000/v1/chat/completions \
    -H 'Content-Type: application/json' \
-   -d '{"model":"gpt-5","messages":[{"role":"user","content":"Hello world!"}]}' | jq .
+   -d '{"model":"gpt-5-codex","messages":[{"role":"user","content":"Hello world!"}]}' | jq .
 ```

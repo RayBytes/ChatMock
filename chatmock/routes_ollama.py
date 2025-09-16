@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
 
-from .config import BASE_INSTRUCTIONS
+from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .http import build_cors_headers
 from .reasoning import build_reasoning_param, extract_reasoning_from_model_name
 from .transform import convert_ollama_messages, normalize_ollama_tools
@@ -16,6 +16,15 @@ from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_
 
 
 ollama_bp = Blueprint("ollama", __name__)
+
+
+def _instructions_for_model(model: str) -> str:
+    base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
+    if model == "gpt-5-codex":
+        codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
+        if isinstance(codex, str) and codex.strip():
+            return codex
+    return base
 
 
 _OLLAMA_FAKE_EVAL = {
@@ -33,19 +42,19 @@ def ollama_tags() -> Response:
     if bool(current_app.config.get("VERBOSE")):
         print("IN GET /api/tags")
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    model_ids = [
-        "gpt-5",
-        *(
+    model_ids = ["gpt-5", "gpt-5-codex"]
+    if expose_variants:
+        model_ids.extend(
             [
                 "gpt-5-high",
                 "gpt-5-medium",
                 "gpt-5-low",
                 "gpt-5-minimal",
+                "gpt-5-codex-high",
+                "gpt-5-codex-medium",
+                "gpt-5-codex-low",
             ]
-            if expose_variants
-            else []
-        ),
-    ]
+        )
     models = []
     for model_id in model_ids:
         models.append(
@@ -184,10 +193,11 @@ def ollama_chat() -> Response:
     input_items = convert_chat_messages_to_responses_input(messages)
 
     model_reasoning = extract_reasoning_from_model_name(model)
+    normalized_model = normalize_model_name(model)
     upstream, error_resp = start_upstream_request(
-        normalize_model_name(model),
+        normalized_model,
         input_items,
-        instructions=BASE_INSTRUCTIONS,
+        instructions=_instructions_for_model(normalized_model),
         tools=tools_responses,
         tool_choice=tool_choice,
         parallel_tool_calls=parallel_tool_calls,
@@ -231,7 +241,7 @@ def ollama_chat() -> Response:
             )
 
     created_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-    model_out = model if isinstance(model, str) and model.strip() else normalize_model_name(model)
+    model_out = model if isinstance(model, str) and model.strip() else normalized_model
 
     if stream_req:
         def _gen():

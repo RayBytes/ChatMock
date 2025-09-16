@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
-from .config import BASE_INSTRUCTIONS
+from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .http import build_cors_headers
 from .reasoning import apply_reasoning_to_message, build_reasoning_param, extract_reasoning_from_model_name
 from .upstream import normalize_model_name, start_upstream_request
@@ -19,6 +19,15 @@ from .utils import (
 
 
 openai_bp = Blueprint("openai", __name__)
+
+
+def _instructions_for_model(model: str) -> str:
+    base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
+    if model == "gpt-5-codex":
+        codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
+        if isinstance(codex, str) and codex.strip():
+            return codex
+    return base
 
 
 @openai_bp.route("/v1/chat/completions", methods=["POST"])
@@ -125,7 +134,7 @@ def chat_completions() -> Response:
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
-        instructions=BASE_INSTRUCTIONS,
+        instructions=_instructions_for_model(model),
         tools=tools_responses,
         tool_choice=tool_choice,
         parallel_tool_calls=parallel_tool_calls,
@@ -327,7 +336,7 @@ def completions() -> Response:
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
-        instructions=BASE_INSTRUCTIONS,
+        instructions=_instructions_for_model(model),
         reasoning_param=reasoning_param,
     )
     if error_resp is not None:
@@ -424,18 +433,16 @@ def completions() -> Response:
 @openai_bp.route("/v1/models", methods=["GET"])
 def list_models() -> Response:
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    data = []
-    if expose_variants:
-        variant_ids = [
-            "gpt-5",
-            "gpt-5-high",
-            "gpt-5-medium",
-            "gpt-5-low",
-            "gpt-5-minimal",
-        ]
-        data = [{"id": mid, "object": "model", "owned_by": "owner"} for mid in variant_ids]
-    else:
-        data = [{"id": "gpt-5", "object": "model", "owned_by": "owner"}]
+    model_groups = [
+        ("gpt-5", ["high", "medium", "low", "minimal"]),
+        ("gpt-5-codex", ["high", "medium", "low"]),
+    ]
+    model_ids: List[str] = []
+    for base, efforts in model_groups:
+        model_ids.append(base)
+        if expose_variants:
+            model_ids.extend([f"{base}-{effort}" for effort in efforts])
+    data = [{"id": mid, "object": "model", "owned_by": "owner"} for mid in model_ids]
     models = {"object": "list", "data": data}
     resp = make_response(jsonify(models), 200)
     for k, v in build_cors_headers().items():

@@ -1,9 +1,21 @@
+# Python bytecode
 __pycache__/
 *.py[cod]
-.pytest_cache/
+*$py.class
+
+# Virtual environments
+.env/
 .venv/
 venv/
-ENV/
+
+# Packaging artifacts
 build/
 dist/
 *.egg-info/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+
+# OS clutter
+.DS_Store

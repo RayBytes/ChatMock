@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import Flask, jsonify
 
-from .config import BASE_INSTRUCTIONS
+from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .http import build_cors_headers
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
@@ -26,6 +26,7 @@ def create_app(
         REASONING_COMPAT=reasoning_compat,
         DEBUG_MODEL=debug_model,
         BASE_INSTRUCTIONS=BASE_INSTRUCTIONS,
+        GPT5_CODEX_INSTRUCTIONS=GPT5_CODEX_INSTRUCTIONS,
         EXPOSE_REASONING_MODELS=bool(expose_reasoning_models),
         DEFAULT_WEB_SEARCH=bool(default_web_search),
     )
