@@ -250,7 +250,6 @@ def sse_translate_chat(
     saw_any_summary = False
     pending_summary_paragraph = False
     upstream_usage = None
-    # Aggregate parameters and stable indexing for web_search calls keyed by call_id
     ws_state: dict[str, Any] = {}
     ws_index: dict[str, int] = {}
     ws_next_index: int = 0
@@ -288,7 +287,6 @@ def sse_translate_chat(
             if isinstance(evt.get("response"), dict) and isinstance(evt["response"].get("id"), str):
                 response_id = evt["response"].get("id") or response_id
 
-            # Map Responses web_search_call events into OpenAI-style tool_calls for the UI
             if isinstance(kind, str) and ("web_search_call" in kind):
                 try:
                     call_id = evt.get("item_id") or "ws_call"
@@ -316,7 +314,6 @@ def sse_translate_chat(
                     _merge_from(item)
                     _merge_from(evt if isinstance(evt, dict) else None)
                     params = params_dict if params_dict else None
-                    # Merge into aggregate state so later events can fill gaps
                     if isinstance(params, dict):
                         try:
                             ws_state.setdefault(call_id, {}).update(params)
@@ -326,11 +323,9 @@ def sse_translate_chat(
                     if isinstance(eff_params, (dict, list)):
                         args_str = json.dumps(eff_params)
                     elif isinstance(eff_params, str):
-                        # wrap bare query strings for nicer UI rendering
                         args_str = json.dumps({"query": eff_params})
                     else:
                         args_str = "{}"
-                    # stable index per call_id
                     if call_id not in ws_index:
                         ws_index[call_id] = ws_next_index
                         ws_next_index += 1
@@ -420,7 +415,6 @@ def sse_translate_chat(
                             vlog(f"CM_TOOLS response.output_item.done web_search_call id={call_id} has_args={bool(args)}")
                         except Exception:
                             pass
-                    # stable index per call_id
                     if call_id not in ws_index:
                         ws_index[call_id] = ws_next_index
                         ws_next_index += 1
