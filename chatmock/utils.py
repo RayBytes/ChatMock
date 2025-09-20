@@ -323,7 +323,16 @@ def sse_translate_chat(
                     if isinstance(eff_params, (dict, list)):
                         args_str = json.dumps(eff_params)
                     elif isinstance(eff_params, str):
-                        args_str = json.dumps({"query": eff_params})
+                        # Try to parse as JSON first
+                        try:
+                            parsed = json.loads(eff_params)
+                            if isinstance(parsed, (dict, list)):
+                                args_str = json.dumps(parsed)  # Use parsed object directly
+                            else:
+                                args_str = json.dumps({"query": eff_params})  # Primitive value, wrap in query
+                        except (json.JSONDecodeError, ValueError):
+                            # Not valid JSON, treat as plain string
+                            args_str = json.dumps({"query": eff_params})
                     else:
                         args_str = "{}"
                     if call_id not in ws_index:
@@ -405,7 +414,16 @@ def sse_translate_chat(
                         if isinstance(eff_args, (dict, list)):
                             args = json.dumps(eff_args)
                         elif isinstance(eff_args, str):
-                            args = json.dumps({"query": eff_args})
+                            # Try to parse as JSON first
+                            try:
+                                parsed = json.loads(eff_args)
+                                if isinstance(parsed, (dict, list)):
+                                    args = json.dumps(parsed)  # Use parsed object directly
+                                else:
+                                    args = json.dumps({"query": eff_args})  # Primitive value, wrap in query
+                            except (json.JSONDecodeError, ValueError):
+                                # Not valid JSON, treat as plain string
+                                args = json.dumps({"query": eff_args})
                         else:
                             args = "{}"
                     except Exception:
