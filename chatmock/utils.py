@@ -267,15 +267,13 @@ def sse_translate_chat(
         if isinstance(eff_args, (dict, list)):
             return json.dumps(eff_args)
         elif isinstance(eff_args, str):
-            # Try to parse as JSON first
             try:
                 parsed = json.loads(eff_args)
                 if isinstance(parsed, (dict, list)):
-                    return json.dumps(parsed)  # Use parsed object directly
+                    return json.dumps(parsed) 
                 else:
-                    return json.dumps({"query": eff_args})  # Primitive value, wrap in query
+                    return json.dumps({"query": eff_args})  
             except (json.JSONDecodeError, ValueError):
-                # Not valid JSON, treat as plain string
                 return json.dumps({"query": eff_args})
         else:
             return "{}"
