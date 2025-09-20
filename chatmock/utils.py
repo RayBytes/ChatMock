@@ -254,6 +254,32 @@ def sse_translate_chat(
     ws_index: dict[str, int] = {}
     ws_next_index: int = 0
     
+    def _serialize_tool_args(eff_args: Any) -> str:
+        """
+        Serialize tool call arguments with proper JSON handling.
+        
+        Args:
+            eff_args: Arguments to serialize (dict, list, str, or other)
+            
+        Returns:
+            JSON string representation of the arguments
+        """
+        if isinstance(eff_args, (dict, list)):
+            return json.dumps(eff_args)
+        elif isinstance(eff_args, str):
+            # Try to parse as JSON first
+            try:
+                parsed = json.loads(eff_args)
+                if isinstance(parsed, (dict, list)):
+                    return json.dumps(parsed)  # Use parsed object directly
+                else:
+                    return json.dumps({"query": eff_args})  # Primitive value, wrap in query
+            except (json.JSONDecodeError, ValueError):
+                # Not valid JSON, treat as plain string
+                return json.dumps({"query": eff_args})
+        else:
+            return "{}"
+    
     def _extract_usage(evt: Dict[str, Any]) -> Dict[str, int] | None:
         try:
             usage = (evt.get("response") or {}).get("usage")
@@ -320,21 +346,7 @@ def sse_translate_chat(
                         except Exception:
                             pass
                     eff_params = ws_state.get(call_id, params if isinstance(params, (dict, list, str)) else {})
-                    if isinstance(eff_params, (dict, list)):
-                        args_str = json.dumps(eff_params)
-                    elif isinstance(eff_params, str):
-                        # Try to parse as JSON first
-                        try:
-                            parsed = json.loads(eff_params)
-                            if isinstance(parsed, (dict, list)):
-                                args_str = json.dumps(parsed)  # Use parsed object directly
-                            else:
-                                args_str = json.dumps({"query": eff_params})  # Primitive value, wrap in query
-                        except (json.JSONDecodeError, ValueError):
-                            # Not valid JSON, treat as plain string
-                            args_str = json.dumps({"query": eff_params})
-                    else:
-                        args_str = "{}"
+                    args_str = _serialize_tool_args(eff_params)
                     if call_id not in ws_index:
                         ws_index[call_id] = ws_next_index
                         ws_next_index += 1
@@ -411,21 +423,7 @@ def sse_translate_chat(
                             pass
                     eff_args = ws_state.get(call_id, raw_args if isinstance(raw_args, (dict, list, str)) else {})
                     try:
-                        if isinstance(eff_args, (dict, list)):
-                            args = json.dumps(eff_args)
-                        elif isinstance(eff_args, str):
-                            # Try to parse as JSON first
-                            try:
-                                parsed = json.loads(eff_args)
-                                if isinstance(parsed, (dict, list)):
-                                    args = json.dumps(parsed)  # Use parsed object directly
-                                else:
-                                    args = json.dumps({"query": eff_args})  # Primitive value, wrap in query
-                            except (json.JSONDecodeError, ValueError):
-                                # Not valid JSON, treat as plain string
-                                args = json.dumps({"query": eff_args})
-                        else:
-                            args = "{}"
+                        args = _serialize_tool_args(eff_args)
                     except Exception:
                         args = "{}"
                     if item.get("type") == "web_search_call" and verbose and vlog:
