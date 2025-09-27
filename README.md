@@ -149,6 +149,65 @@ You can enable it by starting the server with this parameter, which will allow O
 }
 ```
 
+### Responses API
+
+- `--enable-responses-api`<br>
+Exposes a Responses‑compatible surface at `/v1/responses`.
+
+What’s supported
+- Streaming passthrough (typed SSE events)
+- Non‑stream aggregation (returns a final `response` object)
+- `GET /v1/responses/{id}` when a non‑stream request is sent with `"store": true`
+- `previous_response_id` (simple local threading for non‑stream)
+
+Start the server
+```bash
+python chatmock.py serve --enable-responses-api
+```
+
+Streaming example
+```bash
+curl -sN http://127.0.0.1:8000/v1/responses \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "gpt-5",
+    "stream": true,
+    "input": [
+      {"role":"user","content":[{"type":"input_text","text":"hello world"}]}
+    ]
+  }'
+```
+
+Non‑stream + retrieve
+```bash
+# Create (non‑stream) and store
+CREATE=$(curl -s http://127.0.0.1:8000/v1/responses \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "gpt-5",
+    "stream": false,
+    "store": true,
+    "input": [{"role":"user","content":[{"type":"input_text","text":"Say hi"}]}]
+  }')
+ID=$(python - <<'PY'
+import json,sys; print(json.loads(sys.stdin.read())['id'])
+PY
+<<< "$CREATE")
+
+# Retrieve by id
+curl -s http://127.0.0.1:8000/v1/responses/$ID | jq .
+```
+
+Flags & behavior
+- `--responses-no-base-instructions`
+  - For `/v1/responses` only: forwards client `instructions` as‑is. If the client omits or sends invalid instructions, upstream may 400. Default (flag off) injects the base prompt.
+- Tokens params
+  - The ChatGPT codex/responses upstream rejects `max_output_tokens` and `max_completion_tokens`. The server strips these if present.
+
+Logging & debugging
+- Structured JSONL log at `responses_debug.jsonl` (enabled with `--verbose` or `CHATMOCK_RESPONSES_LOG=1`).
+- Events: `request_received`, `stream_start`, `upstream_error` (+ `upstream_error_body`), `nonstream_aggregated`.
+
 ### Expose reasoning models
 
 - `--expose-reasoning-models`<br>

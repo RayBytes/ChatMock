@@ -50,6 +50,7 @@ def start_upstream_request(
     tool_choice: Any | None = None,
     parallel_tool_calls: bool = False,
     reasoning_param: Dict[str, Any] | None = None,
+    extra_fields: Dict[str, Any] | None = None,
 ):
     access_token, account_id = get_effective_chatgpt_auth()
     if not access_token or not account_id:
@@ -68,7 +69,13 @@ def start_upstream_request(
         return None, resp
 
     include: List[str] = []
-    if isinstance(reasoning_param, dict):
+    # If caller provided include via extra_fields, respect it; otherwise add reasoning include
+    if isinstance(extra_fields, dict) and isinstance(extra_fields.get("include"), list):
+        try:
+            include = [x for x in extra_fields.get("include") if isinstance(x, str)]
+        except Exception:
+            include = []
+    if isinstance(reasoning_param, dict) and "reasoning.encrypted_content" not in include:
         include.append("reasoning.encrypted_content")
 
     client_session_id = None
@@ -98,6 +105,15 @@ def start_upstream_request(
 
     if reasoning_param is not None:
         responses_payload["reasoning"] = reasoning_param
+
+    # Merge extra fields (temperature, top_p, text, metadata, etc.)
+    if isinstance(extra_fields, dict):
+        for k, v in extra_fields.items():
+            # Never allow client to disable streaming here
+            if k == "stream":
+                continue
+            # Allow overriding store if caller requests persistence
+            responses_payload[k] = v
 
     headers = {
         "Authorization": f"Bearer {access_token}",

@@ -19,3 +19,11 @@ dist/
 
 # OS clutter
 .DS_Store
+
+# IDE files
+ChatMock.code-workspace
+RESUME_CHAT.bat
+.gitignore
+scripts/debug_responses.py
+scripts/debug_responses.ps1
+responses_debug.jsonl

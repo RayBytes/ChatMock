@@ -269,6 +269,8 @@ def cmd_serve(
     debug_model: str | None,
     expose_reasoning_models: bool,
     default_web_search: bool,
+    enable_responses_api: bool,
+    responses_no_base_instructions: bool,
 ) -> int:
     app = create_app(
         verbose=verbose,
@@ -278,6 +280,8 @@ def cmd_serve(
         debug_model=debug_model,
         expose_reasoning_models=expose_reasoning_models,
         default_web_search=default_web_search,
+        enable_responses_api=enable_responses_api,
+        responses_no_base_instructions=responses_no_base_instructions,
     )
 
     app.run(host=host, debug=False, use_reloader=False, port=port, threaded=True)
@@ -337,6 +341,16 @@ def main() -> None:
         action="store_true",
         help="Enable default web_search tool when a request omits responses_tools (off by default)",
     )
+    p_serve.add_argument(
+        "--enable-responses-api",
+        action="store_true",
+        help="Expose experimental streaming Responses API at /v1/responses (off by default)",
+    )
+    p_serve.add_argument(
+        "--responses-no-base-instructions",
+        action="store_true",
+        help="Do not inject base prompt for /v1/responses; forward client 'instructions' as-is",
+    )
 
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
     p_info.add_argument("--json", action="store_true", help="Output raw auth.json contents")
@@ -357,6 +371,8 @@ def main() -> None:
                 debug_model=args.debug_model,
                 expose_reasoning_models=args.expose_reasoning_models,
                 default_web_search=args.enable_web_search,
+                enable_responses_api=args.enable_responses_api,
+                responses_no_base_instructions=args.responses_no_base_instructions,
             )
         )
     elif args.command == "info":
