@@ -9,6 +9,11 @@ from pathlib import Path
 from datetime import datetime
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
+from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
+try:
+    from urllib3.exceptions import ProtocolError
+except Exception:
+    ProtocolError = Exception
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .http import build_cors_headers
@@ -343,10 +348,22 @@ def responses_stream() -> Response:
     if stream_req:
         def _passthrough():
             try:
-                for chunk in upstream.iter_content(chunk_size=None):
+                for chunk in upstream.iter_content(chunk_size=8192):
                     if not chunk:
                         continue
                     yield chunk
+            except (ChunkedEncodingError, ProtocolError, ConnectionError, ReadTimeout) as e:
+                try:
+                    _log_event("stream_truncated", reason=str(e))
+                except Exception:
+                    pass
+                return
+            except Exception as e:
+                try:
+                    _log_event("stream_error", error=str(e))
+                except Exception:
+                    pass
+                return
             finally:
                 try:
                     upstream.close()
