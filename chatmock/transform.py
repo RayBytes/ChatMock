@@ -1,16 +1,19 @@
+"""Message transforms for Ollama and Responses API interoperability."""
+
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any
 
 
 def to_data_url(image_str: str) -> str:
+    """Return a data URL for base64 image strings; passthrough for URLs."""
     if not isinstance(image_str, str) or not image_str:
         return image_str
     s = image_str.strip()
     if s.startswith("data:image/"):
         return s
-    if s.startswith("http://") or s.startswith("https://"):
+    if s.startswith(("http://", "https://")):
         return s
     b64 = s.replace("\n", "").replace("\r", "")
     kind = "image/png"
@@ -23,26 +26,33 @@ def to_data_url(image_str: str) -> str:
     return f"data:{kind};base64,{b64}"
 
 
-def convert_ollama_messages(
-    messages: List[Dict[str, Any]] | None, top_images: List[str] | None
-) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
+def convert_ollama_messages(  # noqa: C901, PLR0912, PLR0915
+    messages: list[dict[str, Any]] | None, top_images: list[str] | None
+) -> list[dict[str, Any]]:
+    """Convert Ollama-style messages to OpenAI-style for compatibility."""
+    out: list[dict[str, Any]] = []
     msgs = messages if isinstance(messages, list) else []
-    pending_call_ids: List[str] = []
+    pending_call_ids: list[str] = []
     call_counter = 0
     for m in msgs:
         if not isinstance(m, dict):
             continue
         role = m.get("role") or "user"
-        nm: Dict[str, Any] = {"role": role}
+        nm: dict[str, Any] = {"role": role}
 
         content = m.get("content")
         images = m.get("images") if isinstance(m.get("images"), list) else []
-        parts: List[Dict[str, Any]] = []
+        parts: list[dict[str, Any]] = []
         if isinstance(content, list):
-            for p in content:
-                if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str):
-                    parts.append({"type": "text", "text": p.get("text")})
+            parts.extend(
+                {"type": "text", "text": p.get("text")}
+                for p in content
+                if (
+                    isinstance(p, dict)
+                    and p.get("type") == "text"
+                    and isinstance(p.get("text"), str)
+                )
+            )
         elif isinstance(content, str):
             parts.append({"type": "text", "text": content})
         for img in images:
@@ -73,7 +83,9 @@ def convert_ollama_messages(
                         "type": "function",
                         "function": {
                             "name": name,
-                            "arguments": args if isinstance(args, str) else (json.dumps(args) if isinstance(args, dict) else "{}"),
+                            "arguments": args
+                            if isinstance(args, str)
+                            else (json.dumps(args) if isinstance(args, dict) else "{}"),
                         },
                     }
                 )
@@ -82,14 +94,10 @@ def convert_ollama_messages(
 
         if role == "tool":
             tci = m.get("tool_call_id") or m.get("id")
-            if not isinstance(tci, str) or not tci:
-                if pending_call_ids:
-                    tci = pending_call_ids.pop(0)
+            if (not isinstance(tci, str) or not tci) and pending_call_ids:
+                tci = pending_call_ids.pop(0)
             if isinstance(tci, str) and tci:
                 nm["tool_call_id"] = tci
-
-            if not parts and isinstance(content, str):
-                nm["content"] = content
 
         out.append(nm)
 
@@ -110,8 +118,9 @@ def convert_ollama_messages(
     return out
 
 
-def normalize_ollama_tools(tools: List[Dict[str, Any]] | None) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
+def normalize_ollama_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Convert Ollama tool definitions to the OpenAI function-tools format."""
+    out: list[dict[str, Any]] = []
     if not isinstance(tools, list):
         return out
     for t in tools:
@@ -128,7 +137,9 @@ def normalize_ollama_tools(tools: List[Dict[str, Any]] | None) -> List[Dict[str,
                     "function": {
                         "name": name,
                         "description": fn.get("description") or "",
-                        "parameters": fn.get("parameters") if isinstance(fn.get("parameters"), dict) else {"type": "object", "properties": {}},
+                        "parameters": fn.get("parameters")
+                        if isinstance(fn.get("parameters"), dict)
+                        else {"type": "object", "properties": {}},
                     },
                 }
             )
@@ -146,4 +157,3 @@ def normalize_ollama_tools(tools: List[Dict[str, Any]] | None) -> List[Dict[str,
                 }
             )
     return out
-

@@ -36,4 +36,3 @@ elif [[ "$cmd" == "login" ]]; then
 else
   exec "$cmd" "$@"
 fi
-

@@ -26,7 +26,7 @@ This does require a paid ChatGPT account.
 
 #### GUI Application
 
-If you're on **macOS**, you can download the GUI app from the [GitHub releases](https://github.com/RayBytes/ChatMock/releases).  
+If you're on **macOS**, you can download the GUI app from the [GitHub releases](https://github.com/RayBytes/ChatMock/releases).
 > **Note:** Since ChatMock isn't signed with an Apple Developer ID, you may need to run the following command in your terminal to open the app:
 >
 > ```bash
@@ -69,7 +69,7 @@ Read [the docker instrunctions here](https://github.com/RayBytes/ChatMock/blob/m
 
 # Examples
 
-### Python 
+### Python
 
 ```python
 from openai import OpenAI
@@ -98,6 +98,10 @@ curl http://127.0.0.1:8000/v1/chat/completions \
     "messages": [{"role":"user","content":"hello world"}]
   }'
 ```
+
+### Docker
+
+Read [the docker instrunctions here](https://github.com/RayBytes/ChatMock/blob/main/DOCKER.md)
 
 # What's supported
 
@@ -165,7 +169,3 @@ When the model returns a thinking summary, the model will send back thinking tag
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=RayBytes/ChatMock&type=Timeline)](https://www.star-history.com/#RayBytes/ChatMock&Timeline)
-
-
-
-

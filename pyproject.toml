@@ -1,0 +1,76 @@
+[project]
+dependencies = [
+  "typer",
+  "rich",
+  "pytest",
+  "pytest-mock",
+  "pytest-cov",
+  "pytest-timeout",
+  "pytest-clarity", # Better assertion failure messages
+  "pytest-sugar", # Colorful, animated test output
+  "pytest-emoji", # Add emoji to test results
+  "pytest-benchmark", # Performance benchmarking with statistics
+  "pytest-instafail", # Show failures instantly, don't wait for end
+  "pytest-rerunfailures", # Retry flaky tests automatically
+  "pytest-randomly", # Randomize test order to catch dependencies
+  "pytest-asyncio", # Better async/await test support
+  "pytest-ruff", # Ruff linting integration (fast, comprehensive)
+  "pytest-mypy", # Type checking
+  "coverage",
+  "pytest-xdist",
+  "pip-audit",
+  "tomli; python_version < '3.11'",
+  "ruff",
+  "pre-commit",
+  "flask>=3.1.2",
+]
+description = "Add your description here"
+name = "chatmock"
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+version = "0.1.0"
+
+[tool.ruff]
+exclude = [
+  ".venv",
+  "venv",
+]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+ignore = [
+    # Only ignore this rules
+    "COM812", "D203", "D212"
+    # Do not add more rules unless absolutely necessary and justified
+    ]
+select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+  "S101",  # allow bare assert in tests
+  "E402",  # allow import after test-specific setup
+  "ANN001", "ANN201", "ANN202",  # relax strict annotations in tests
+  "FBT001", "FBT002",  # boolean positional in test fakes
+  "TC003",  # collections.abc in type-checking blocks
+  "PLC0415",  # deferred imports in fixtures
+]
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"
+quote-style = "preserve"
+
+[tool.coverage.run]
+branch = true
+concurrency = ['multiprocessing', 'thread']
+parallel = true
+source = ['chatmock']
+
+[tool.coverage.report]
+# IMPORTANT: Coverage must be measured across the entire project/package
+# (the whole 'chatmock' package). Do not narrow reporting to single files via
+# 'include'; keep coverage project-wide.
+fail_under = 100
+show_missing = true
+skip_covered = true

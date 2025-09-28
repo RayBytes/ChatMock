@@ -1,3 +1,5 @@
+"""Command-line interface for ChatMock (login, serve, info)."""
+
 from __future__ import annotations
 
 import errno
@@ -5,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import webbrowser
 from datetime import datetime
 
@@ -195,7 +198,13 @@ def cmd_login(no_browser: bool, verbose: bool) -> int:
 
     try:
         bind_host = os.getenv("CHATGPT_LOCAL_LOGIN_BIND", "127.0.0.1")
-        httpd = OAuthHTTPServer((bind_host, REQUIRED_PORT), OAuthHandler, home_dir=home_dir, client_id=client_id, verbose=verbose)
+        httpd = OAuthHTTPServer(
+            (bind_host, REQUIRED_PORT),
+            OAuthHandler,
+            home_dir=home_dir,
+            client_id=client_id,
+            verbose=verbose,
+        )
     except OSError as e:
         eprint(f"ERROR: {e}")
         if e.errno == errno.EADDRINUSE:
@@ -208,21 +217,20 @@ def cmd_login(no_browser: bool, verbose: bool) -> int:
         if not no_browser:
             try:
                 webbrowser.open(auth_url, new=1, autoraise=True)
-            except Exception as e:
+            except webbrowser.Error as e:  # type: ignore[attr-defined]
                 eprint(f"Failed to open browser: {e}")
         eprint(f"If your browser did not open, navigate to:\n{auth_url}")
 
         def _stdin_paste_worker() -> None:
             try:
                 eprint(
-                    "If the browser can't reach this machine, paste the full redirect URL here and press Enter (or leave blank to keep waiting):"
+                    "If the browser can't reach this machine, paste the full redirect URL here "
+                    "and press Enter (or leave blank to keep waiting):"
                 )
                 line = sys.stdin.readline().strip()
                 if not line:
                     return
                 try:
-                    from urllib.parse import urlparse, parse_qs
-
                     parsed = urlparse(line)
                     params = parse_qs(parsed.query)
                     code = (params.get("code") or [None])[0]
@@ -241,25 +249,25 @@ def cmd_login(no_browser: bool, verbose: bool) -> int:
                     else:
                         eprint("ERROR: Unable to persist auth file.")
                     httpd.shutdown()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     eprint(f"Failed to process pasted redirect URL: {exc}")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                eprint("Ignoring stdin paste worker outer error.")
 
-        try:
-            import threading
-
-            threading.Thread(target=_stdin_paste_worker, daemon=True).start()
-        except Exception:
-            pass
+        worker = threading.Thread(target=_stdin_paste_worker, daemon=True)
+        worker.start()
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
             eprint("\nKeyboard interrupt received, exiting.")
+        # Give the worker a brief moment to finalize exit_code updates
+        with contextlib.suppress(Exception):
+            worker.join(timeout=0.05)
         return httpd.exit_code
 
 
-def cmd_serve(
+def cmd_serve(  # noqa: PLR0913
+    *,
     host: str,
     port: int,
     verbose: bool,
@@ -270,6 +278,7 @@ def cmd_serve(
     expose_reasoning_models: bool,
     default_web_search: bool,
 ) -> int:
+    """Start the Flask app with provided options."""
     app = create_app(
         verbose=verbose,
         reasoning_effort=reasoning_effort,
@@ -285,11 +294,14 @@ def cmd_serve(
 
 
 def main() -> None:
+    """CLI entry for ChatMock with subcommands: login, serve, info."""
     parser = argparse.ArgumentParser(description="ChatGPT Local: login & OpenAI-compatible proxy")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_login = sub.add_parser("login", help="Authorize with ChatGPT and store tokens")
-    p_login.add_argument("--no-browser", action="store_true", help="Do not open the browser automatically")
+    p_login.add_argument(
+        "--no-browser", action="store_true", help="Do not open the browser automatically"
+    )
     p_login.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 
     p_serve = sub.add_parser("serve", help="Run local OpenAI-compatible server")
@@ -326,10 +338,11 @@ def main() -> None:
     p_serve.add_argument(
         "--expose-reasoning-models",
         action="store_true",
-        default=os.getenv("CHATGPT_LOCAL_EXPOSE_REASONING_MODELS", "").strip().lower() in ("1", "true", "yes", "on"),
+        default=os.getenv("CHATGPT_LOCAL_EXPOSE_REASONING_MODELS", "").strip().lower()
+        in ("1", "true", "yes", "on"),
         help=(
-            "Expose gpt-5 reasoning effort variants (minimal|low|medium|high) as separate models from /v1/models. "
-            "This allows choosing effort via model selection in compatible UIs."
+            "Expose gpt-5 reasoning effort variants (minimal|low|medium|high) as separate models "
+            "from /v1/models. This allows choosing effort via model selection in compatible UIs."
         ),
     )
     p_serve.add_argument(
@@ -362,7 +375,7 @@ def main() -> None:
     elif args.command == "info":
         auth = read_auth_file()
         if getattr(args, "json", False):
-            print(json.dumps(auth or {}, indent=2))
+            sys.stdout.write(json.dumps(auth or {}, indent=2) + "\n")
             sys.exit(0)
         access_token, account_id, id_token = load_chatgpt_tokens()
         if not access_token or not id_token:
@@ -377,7 +390,9 @@ def main() -> None:
         access_claims = parse_jwt_claims(access_token) or {}
 
         email = id_claims.get("email") or id_claims.get("preferred_username") or "<unknown>"
-        plan_raw = (access_claims.get("https://api.openai.com/auth") or {}).get("chatgpt_plan_type") or "unknown"
+        plan_raw = (access_claims.get("https://api.openai.com/auth") or {}).get(
+            "chatgpt_plan_type"
+        ) or "unknown"
         plan_map = {
             "plus": "Plus",
             "pro": "Pro",
@@ -385,12 +400,14 @@ def main() -> None:
             "team": "Team",
             "enterprise": "Enterprise",
         }
-        plan = plan_map.get(str(plan_raw).lower(), str(plan_raw).title() if isinstance(plan_raw, str) else "Unknown")
+        plan = plan_map.get(
+            str(plan_raw).lower(), str(plan_raw).title() if isinstance(plan_raw, str) else "Unknown"
+        )
 
-        print("👤 Account")
-        print("  • Signed in with ChatGPT")
-        print(f"  • Login: {email}")
-        print(f"  • Plan: {plan}")
+        sys.stdout.write("👤 Account\n")
+        sys.stdout.write("  • Signed in with ChatGPT\n")
+        sys.stdout.write(f"  • Login: {email}\n")
+        sys.stdout.write(f"  • Plan: {plan}\n")
         if account_id:
             print(f"  • Account ID: {account_id}")
         print("")

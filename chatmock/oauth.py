@@ -1,22 +1,23 @@
+"""OAuth local HTTP server used to exchange ChatGPT tokens."""
+
 from __future__ import annotations
 
 import datetime
-import ssl
 import http.server
 import json
 import secrets
+import ssl
 import threading
 import time
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import certifi
 
 from .config import OAUTH_ISSUER_DEFAULT
 from .models import AuthBundle, PkceCodes, TokenData
 from .utils import eprint, generate_pkce, parse_jwt_claims, write_auth_file
-
 
 REQUIRED_PORT = 1455
 URL_BASE = f"http://localhost:{REQUIRED_PORT}"
@@ -30,9 +31,13 @@ LOGIN_SUCCESS_HTML = """<!DOCTYPE html>
     <title>Login successful</title>
   </head>
   <body>
-    <div style=\"max-width: 640px; margin: 80px auto; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;\"> 
+    <div style=\"max-width: 640px; margin: 80px auto; font-family: system-ui,
+    -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;\">
       <h1>Login successful</h1>
-      <p>You can now close this window and return to the terminal and run <code>python3 chatmock.py serve</code> to start the server.</p>
+      <p>
+        You can now close this window and return to the terminal and run
+        <code>python3 chatmock.py serve</code> to start the server.
+      </p>
     </div>
   </body>
   </html>
@@ -40,7 +45,10 @@ LOGIN_SUCCESS_HTML = """<!DOCTYPE html>
 
 _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
+
 class OAuthHTTPServer(http.server.HTTPServer):
+    """HTTP server to handle OAuth callback and token exchange."""
+
     def __init__(
         self,
         server_address: tuple[str, int],
@@ -50,6 +58,7 @@ class OAuthHTTPServer(http.server.HTTPServer):
         client_id: str,
         verbose: bool = False,
     ) -> None:
+        """Initialize the OAuth server with client and local binding details."""
         super().__init__(server_address, request_handler_class, bind_and_activate=True)
         self.exit_code = 1
         self.home_dir = home_dir
@@ -63,6 +72,7 @@ class OAuthHTTPServer(http.server.HTTPServer):
         self.state = secrets.token_hex(32)
 
     def auth_url(self) -> str:
+        """Return the authorization URL for the OAuth flow."""
         params = {
             "response_type": "code",
             "client_id": self.client_id,
@@ -77,6 +87,7 @@ class OAuthHTTPServer(http.server.HTTPServer):
         return f"{self.issuer}/oauth/authorize?" + urllib.parse.urlencode(params)
 
     def exchange_code(self, code: str) -> tuple[AuthBundle, str]:
+        """Exchange an auth code for tokens and return bundle with optional success URL."""
         data = urllib.parse.urlencode(
             {
                 "grant_type": "authorization_code",
@@ -87,8 +98,8 @@ class OAuthHTTPServer(http.server.HTTPServer):
             }
         ).encode()
 
-        with urllib.request.urlopen(
-            urllib.request.Request(
+        with urllib.request.urlopen(  # noqa: S310
+            urllib.request.Request(  # noqa: S310
                 self.token_endpoint,
                 data=data,
                 method="POST",
@@ -127,10 +138,11 @@ class OAuthHTTPServer(http.server.HTTPServer):
 
     def maybe_obtain_api_key(
         self,
-        token_claims: Dict[str, Any],
-        access_claims: Dict[str, Any],
+        token_claims: dict[str, Any],
+        access_claims: dict[str, Any],
         token_data: TokenData,
     ) -> tuple[str | None, str | None]:
+        """Try to exchange tokens for an API key; return (api_key, success_url)."""
         org_id = token_claims.get("organization_id")
         project_id = token_claims.get("project_id")
         if not org_id or not project_id:
@@ -156,8 +168,8 @@ class OAuthHTTPServer(http.server.HTTPServer):
             }
         ).encode()
 
-        with urllib.request.urlopen(
-            urllib.request.Request(
+        with urllib.request.urlopen(  # noqa: S310
+            urllib.request.Request(  # noqa: S310
                 self.token_endpoint,
                 data=exchange_data,
                 method="POST",
@@ -183,6 +195,7 @@ class OAuthHTTPServer(http.server.HTTPServer):
         return exchanged_access_token, success_url
 
     def persist_auth(self, bundle: AuthBundle) -> bool:
+        """Persist tokens to disk via utils.write_auth_file."""
         auth_json_contents = {
             "OPENAI_API_KEY": bundle.api_key,
             "tokens": {
@@ -197,15 +210,18 @@ class OAuthHTTPServer(http.server.HTTPServer):
 
 
 class OAuthHandler(http.server.BaseHTTPRequestHandler):
-    server: "OAuthHTTPServer"
+    """Handle callbacks and manual flows for the local OAuth server."""
+
+    server: OAuthHTTPServer
 
     def do_GET(self) -> None:
+        """Handle GET callbacks for /auth/callback and /success."""
         path = urllib.parse.urlparse(self.path).path
         if path == "/success":
             self._send_html(LOGIN_SUCCESS_HTML)
             try:
                 self.wfile.flush()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 eprint(f"Failed to flush response: {e}")
             self._shutdown_after_delay(2.0)
             return
@@ -225,8 +241,8 @@ class OAuthHandler(http.server.BaseHTTPRequestHandler):
             return
 
         try:
-            auth_bundle, success_url = self._exchange_code(code)
-        except Exception as exc:
+            auth_bundle, _success_url = self._exchange_code(code)
+        except Exception as exc:  # noqa: BLE001
             self.send_error(500, f"Token exchange failed: {exc}")
             self._shutdown()
             return
@@ -249,10 +265,12 @@ class OAuthHandler(http.server.BaseHTTPRequestHandler):
         self._shutdown_after_delay(2.0)
 
     def do_POST(self) -> None:
+        """Return 404 for POST; only GET is supported."""
         self.send_error(404, "Not Found")
         self._shutdown()
 
-    def log_message(self, fmt: str, *args):
+    def log_message(self, fmt: str, *args: object) -> None:
+        """Conditionally log messages when verbose mode is on."""
         if getattr(self.server, "verbose", False):
             super().log_message(fmt, *args)
 
@@ -273,7 +291,7 @@ class OAuthHandler(http.server.BaseHTTPRequestHandler):
         threading.Thread(target=self.server.shutdown, daemon=True).start()
 
     def _shutdown_after_delay(self, seconds: float = 2.0) -> None:
-        def _later():
+        def _later() -> None:
             try:
                 time.sleep(seconds)
             finally:
@@ -281,15 +299,15 @@ class OAuthHandler(http.server.BaseHTTPRequestHandler):
 
         threading.Thread(target=_later, daemon=True).start()
 
-    def _exchange_code(self, code: str) -> Tuple[AuthBundle, str]:
+    def _exchange_code(self, code: str) -> tuple[AuthBundle, str]:
         return self.server.exchange_code(code)
 
     def _maybe_obtain_api_key(
         self,
-        token_claims: Dict[str, Any],
-        access_claims: Dict[str, Any],
+        token_claims: dict[str, Any],
+        access_claims: dict[str, Any],
         token_data: TokenData,
-    ) -> Tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None]:
         org_id = token_claims.get("organization_id")
         project_id = token_claims.get("project_id")
         if not org_id or not project_id:
@@ -315,8 +333,8 @@ class OAuthHandler(http.server.BaseHTTPRequestHandler):
             }
         ).encode()
 
-        with urllib.request.urlopen(
-            urllib.request.Request(
+        with urllib.request.urlopen(  # noqa: S310
+            urllib.request.Request(  # noqa: S310
                 self.server.token_endpoint,
                 data=exchange_data,
                 method="POST",

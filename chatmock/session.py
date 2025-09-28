@@ -1,22 +1,23 @@
+"""Session and fingerprint helpers for grouping related requests."""
+
 from __future__ import annotations
 
 import hashlib
 import json
 import threading
 import uuid
-from typing import Any, Dict, List, Tuple
-
+from typing import Any
 
 _LOCK = threading.Lock()
-_FINGERPRINT_TO_UUID: Dict[str, str] = {}
-_ORDER: List[str] = []
+_FINGERPRINT_TO_UUID: dict[str, str] = {}
+_ORDER: list[str] = []
 _MAX_ENTRIES = 10000
 
 
-def _canonicalize_first_user_message(input_items: List[Dict[str, Any]]) -> Dict[str, Any] | None:
-    """
-    Extract the first stable user message from Responses input items. Good use for a fingerprint for prompt caching.
-    """
+def _canonicalize_first_user_message(  # noqa: C901
+    input_items: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Return the first normalized user message from Responses input."""
     for item in input_items:
         if not isinstance(item, dict):
             continue
@@ -46,8 +47,9 @@ def _canonicalize_first_user_message(input_items: List[Dict[str, Any]]) -> Dict[
     return None
 
 
-def canonicalize_prefix(instructions: str | None, input_items: List[Dict[str, Any]]) -> str:
-    prefix: Dict[str, Any] = {}
+def canonicalize_prefix(instructions: str | None, input_items: list[dict[str, Any]]) -> str:
+    """Build a stable JSON prefix from instructions and first user message."""
+    prefix: dict[str, Any] = {}
     if isinstance(instructions, str) and instructions.strip():
         prefix["instructions"] = instructions.strip()
     first_user = _canonicalize_first_user_message(input_items)
@@ -57,10 +59,12 @@ def canonicalize_prefix(instructions: str | None, input_items: List[Dict[str, An
 
 
 def _fingerprint(s: str) -> str:
+    """SHA-256 hex digest of the provided string."""
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
 def _remember(fp: str, sid: str) -> None:
+    """Record a mapping and enforce a bounded cache size."""
     if fp in _FINGERPRINT_TO_UUID:
         return
     _FINGERPRINT_TO_UUID[fp] = sid
@@ -72,9 +76,10 @@ def _remember(fp: str, sid: str) -> None:
 
 def ensure_session_id(
     instructions: str | None,
-    input_items: List[Dict[str, Any]],
+    input_items: list[dict[str, Any]],
     client_supplied: str | None = None,
 ) -> str:
+    """Return client session id; derive from content when not provided."""
     if isinstance(client_supplied, str) and client_supplied.strip():
         return client_supplied.strip()
 
@@ -86,4 +91,3 @@ def ensure_session_id(
         sid = str(uuid.uuid4())
         _remember(fp, sid)
         return sid
-
