@@ -5,10 +5,10 @@ repos:
       - id: ruff-check
         types_or: [ python, pyi ]
         args: ["--fix", "--exit-non-zero-on-fix"]
-        stages: [pre-commit, prepare-commit-msg, commit-msg, post-commit, post-checkout, post-merge, post-rewrite, pre-push, manual, merge-commit]
+        stages: [pre-commit, prepare-commit-msg, commit-msg, post-commit, post-checkout, post-merge, post-rewrite, manual, merge-commit]
       - id: ruff-format
         types_or: [ python, pyi ]
-        stages: [pre-commit, prepare-commit-msg, commit-msg, post-commit, post-checkout, post-merge, post-rewrite, pre-push, manual, merge-commit]
+        stages: [pre-commit, prepare-commit-msg, commit-msg, post-commit, post-checkout, post-merge, post-rewrite, manual, merge-commit]
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -45,6 +45,12 @@ repos:
 
   - repo: local
     hooks:
+      - id: ruff-full-repo
+        name: Ruff full-repo lint (pre-push)
+        entry: ruff check . --fix
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
       - id: pytest-coverage
         name: Run tests with coverage (100%)
         entry: uv run --project . pytest -q --cov=chatmock --cov-report=term-missing --cov-fail-under=100
