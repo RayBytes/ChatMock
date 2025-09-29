@@ -27,3 +27,4 @@ RESUME_CHAT.bat
 scripts/debug_responses.py
 scripts/debug_responses.ps1
 responses_debug.jsonl
+.claude/settings.local.json
