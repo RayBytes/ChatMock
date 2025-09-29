@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import json
-import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import requests
-from flask import Response, jsonify, make_response
+from flask import jsonify, make_response
+from flask import request as flask_request
 
 from .config import CHATGPT_RESPONSES_URL
 from .http import build_cors_headers
 from .session import ensure_session_id
-from flask import request as flask_request
 from .utils import get_effective_chatgpt_auth
 
 
@@ -59,8 +57,8 @@ def start_upstream_request(
                 {
                     "error": {
                         "message": "Missing ChatGPT credentials. Run 'python3 chatmock.py login' first.",
-                    }
-                }
+                    },
+                },
             ),
             401,
         )
@@ -112,7 +110,9 @@ def start_upstream_request(
             # Never allow client to disable streaming here
             if k == "stream":
                 continue
-            # Allow overriding store if caller requests persistence
+            # Never forward client-provided 'store' upstream
+            if k == "store":
+                continue
             responses_payload[k] = v
 
     headers = {

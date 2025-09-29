@@ -75,6 +75,67 @@ def _get_thread(rid: str) -> List[Dict[str, Any]] | None:
         return _THREADS.get(rid)
 
 
+def _collect_ids_with_rs_prefix(obj: Any, parent_key: str | None = None, out: List[str] | None = None) -> List[str]:
+    """Collect strings that look like upstream response ids (rs_*) only in structural fields.
+
+    We deliberately ignore plain text under common text fields like 'content'/'text'.
+    """
+    if out is None:
+        out = []
+    try:
+        if isinstance(obj, str):
+            key = (parent_key or "").lower()
+            structural_keys = {
+                "previous_response_id",
+                "response_id",
+                "reference_id",
+                "item_id",
+            }
+            if key in structural_keys and obj.strip().startswith("rs_"):
+                out.append(obj.strip())
+        elif isinstance(obj, dict):
+            for k, v in obj.items():
+                _collect_ids_with_rs_prefix(v, k, out)
+        elif isinstance(obj, list):
+            for v in obj:
+                _collect_ids_with_rs_prefix(v, parent_key, out)
+    except Exception:
+        pass
+    return out
+
+
+def _sanitize_input_remove_upstream_refs(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def drop_ref_fields(d: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            for key in ("previous_response_id", "response_id", "reference_id", "item_id"):
+                if isinstance(d.get(key), str) and d.get(key, "").startswith("rs_"):
+                    d.pop(key, None)
+        except Exception:
+            pass
+        return d
+
+    out: List[Dict[str, Any]] = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        # If this item itself references an rs_* id in structural fields, strip those fields but keep the item
+        it2 = drop_ref_fields(dict(it))
+        content = it2.get("content")
+        if isinstance(content, list):
+            new_parts = []
+            for p in content:
+                if not isinstance(p, dict):
+                    new_parts.append(p)
+                    continue
+                # If a part carries an rs_* id in a structural field, strip those fields but keep the part
+                if _collect_ids_with_rs_prefix(p):
+                    p = {kk: vv for kk, vv in p.items() if kk not in ("previous_response_id", "response_id", "reference_id", "item_id")}
+                new_parts.append(p)
+            it2["content"] = new_parts
+        out.append(it2)
+    return out
+
+
 def _log_event(event: str, **fields: Any) -> None:
     """Append a structured JSONL log entry.
 
@@ -185,6 +246,22 @@ def responses_stream() -> Response:
             input_items = [raw_input]
         elif isinstance(raw_input.get("content"), list):
             input_items = [{"role": "user", "content": raw_input.get("content") or []}]
+    # Sanitize input to remove upstream 'rs_*' references in structural fields
+    try:
+        rs_ids = _collect_ids_with_rs_prefix(raw_input)
+        if rs_ids:
+            try:
+                _log_event("client_input_refs_sanitized", count=len(rs_ids))
+            except Exception:
+                pass
+            if isinstance(raw_input, list):
+                try:
+                    raw_input = _sanitize_input_remove_upstream_refs(raw_input)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     if input_items is None:
         messages = payload.get("messages")
         if messages is None and isinstance(payload.get("prompt"), str):
@@ -193,6 +270,27 @@ def responses_stream() -> Response:
             input_items = convert_chat_messages_to_responses_input(messages)
     if not isinstance(input_items, list) or not input_items:
         return jsonify({"error": {"message": "Request must include non-empty 'input' (or 'messages'/'prompt')"}}), 400
+
+    # Final safety: sanitize constructed input_items to remove any upstream rs_* references
+    try:
+        before_n = len(input_items)
+        input_items = _sanitize_input_remove_upstream_refs(input_items)
+        after_n = len(input_items)
+        if after_n < before_n:
+            try:
+                _log_event("input_items_sanitized", removed=(before_n - after_n))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Log if any residual structural rs_* refs remain (should be zero)
+    try:
+        residual = _collect_ids_with_rs_prefix(input_items)
+        if residual:
+            _log_event("pre_upstream_refs_count", count=len(residual))
+    except Exception:
+        pass
 
     # previous_response_id threading (simulate context locally when available)
     prev_id = payload.get("previous_response_id")
@@ -275,6 +373,9 @@ def responses_stream() -> Response:
     reasoning_param = build_reasoning_param(reasoning_effort, reasoning_summary, reasoning_overrides)
 
     # Pass-through of additional Responses API fields
+    # Note: we intentionally DO NOT forward "store" upstream.
+    # The ChatGPT codex/responses upstream rejects it (400 "Store must be set to false").
+    # We still honor client "store" locally for non-stream aggregation and GET retrieval.
     passthrough_keys = [
         "temperature",
         "top_p",
@@ -283,8 +384,6 @@ def responses_stream() -> Response:
         "stop",
         "text",
         "metadata",
-        "previous_response_id",
-        "store",
         "include",
         "top_logprobs",
         "truncation",
@@ -304,6 +403,21 @@ def responses_stream() -> Response:
     for k in passthrough_keys:
         if k in payload and payload.get(k) is not None:
             extra_fields[k] = payload.get(k)
+
+    # Never forward client "store" to upstream; keep it local-only.
+    # Upstream codex/responses requires store=false and 400s otherwise.
+    if "store" in payload and payload.get("store") is not None:
+        try:
+            _log_event("param_stripped", param="store", reason="local_only_not_forwarded")
+        except Exception:
+            pass
+
+    # Never forward client "previous_response_id" upstream; handle threading locally only.
+    if "previous_response_id" in payload and payload.get("previous_response_id") is not None:
+        try:
+            _log_event("param_stripped", param="previous_response_id", reason="local_thread_only")
+        except Exception:
+            pass
 
     upstream, error_resp = start_upstream_request(
         model,
