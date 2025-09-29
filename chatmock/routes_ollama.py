@@ -126,7 +126,7 @@ def ollama_show() -> Response:
     return resp
 
 
-def _ollama_stream_gen(upstream, model_out: str, created_at: str, compat: str):  # type: ignore[no-untyped-def]
+def _ollama_stream_gen(upstream, model_out: str, created_at: str, compat: str):  # noqa: C901, PLR0912, PLR0915, ANN001, ANN202  # type: ignore[no-untyped-def]
     think_open = False
     think_closed = False
     saw_any_summary = False
@@ -392,7 +392,7 @@ def ollama_chat() -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
 
     record_rate_limits_from_response(upstream)
 
-    if upstream.status_code >= 400:
+    if upstream.status_code >= HTTPStatus.BAD_REQUEST:
         try:
             err_body = (
                 json.loads(upstream.content.decode("utf-8", errors="ignore"))
@@ -420,7 +420,11 @@ def ollama_chat() -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
                 ),
             )
             record_rate_limits_from_response(upstream2)
-            if err2 is None and upstream2 is not None and upstream2.status_code < 400:
+            if (
+                err2 is None
+                and upstream2 is not None
+                and upstream2.status_code < HTTPStatus.BAD_REQUEST
+            ):
                 upstream = upstream2
             else:
                 return (

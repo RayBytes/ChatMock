@@ -21,7 +21,8 @@ def test_persist_auth_invokes_write(monkeypatch: pytest.MonkeyPatch) -> None:
         return data.get("tokens", {}).get("id_token") == "id"
 
     monkeypatch.setattr(oauth, "write_auth_file", _write, raising=True)
-    assert oauth.OAuthHTTPServer.persist_auth(srv, bundle) is True and called["ok"]  # type: S101
+    assert oauth.OAuthHTTPServer.persist_auth(srv, bundle) is True
+    assert called["ok"]  # type: S101
 
 
 def test_handler_log_message_delegates_on_verbose() -> None:  # type: ignore[no-untyped-def]
@@ -59,7 +60,9 @@ def test_send_redirect_calls_headers() -> None:  # type: ignore[no-untyped-def]
             called["ended"] = True
 
     oauth.OAuthHandler._send_redirect(_H(), "http://x/y")
-    assert called["status"] == 302 and called["loc"] == "http://x/y" and called["ended"]
+    assert called["status"] == 302
+    assert called["loc"] == "http://x/y"
+    assert called["ended"]
 
 
 def test_shutdown_after_delay_executes_target(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,7 +95,8 @@ def test_success_page_flush_error_is_handled(monkeypatch: pytest.MonkeyPatch) ->
 
         class _W:
             def flush(self):  # type: ignore[no-untyped-def]
-                raise RuntimeError("boom")
+                err = RuntimeError("boom")
+                raise err
 
         wfile = _W()
 

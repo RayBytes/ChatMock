@@ -8,15 +8,17 @@ from chatmock import cli
 
 
 def test_cmd_login_paste_missing_code(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Missing code in pasted URL should not crash login."""
+
     class _Fake:
-        def __init__(self, *a, **k):  # type: ignore[no-untyped-def]
+        def __init__(self, *_a: object, **_k: object) -> None:  # type: ignore[no-untyped-def]
             self.exit_code = 1
             self.state = "s"
 
-        def __enter__(self):
+        def __enter__(self) -> _Fake:  # noqa: PYI034
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, exc_type, exc, tb) -> bool:
             return False
 
         def auth_url(self) -> str:
@@ -28,10 +30,10 @@ def test_cmd_login_paste_missing_code(monkeypatch) -> None:  # type: ignore[no-u
         def shutdown(self) -> None:
             return None
 
-        def exchange_code(self, code: str):  # type: ignore[no-untyped-def]
+        def exchange_code(self, _code: str):  # type: ignore[no-untyped-def]
             return ({}, None)
 
-        def persist_auth(self, bundle) -> bool:  # type: ignore[no-untyped-def]
+        def persist_auth(self, _bundle: object) -> bool:  # type: ignore[no-untyped-def]
             return True
 
     monkeypatch.setattr(cli, "OAuthHTTPServer", _Fake, raising=True)
@@ -43,15 +45,17 @@ def test_cmd_login_paste_missing_code(monkeypatch) -> None:  # type: ignore[no-u
 
 
 def test_cmd_login_paste_state_mismatch_and_exception(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """State mismatch and downstream exception paths are handled."""
+
     class _Fake:
-        def __init__(self, *a, **k):  # type: ignore[no-untyped-def]
+        def __init__(self, *_a: object, **_k: object) -> None:  # type: ignore[no-untyped-def]
             self.exit_code = 1
             self.state = "expected"
 
-        def __enter__(self):
+        def __enter__(self) -> _Fake:  # noqa: PYI034
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, exc_type, exc, tb) -> bool:
             return False
 
         def auth_url(self) -> str:
@@ -63,10 +67,10 @@ def test_cmd_login_paste_state_mismatch_and_exception(monkeypatch) -> None:  # t
         def shutdown(self) -> None:
             return None
 
-        def exchange_code(self, code: str):  # type: ignore[no-untyped-def]
+        def exchange_code(self, _code: str):  # type: ignore[no-untyped-def]
             return ({}, None)
 
-        def persist_auth(self, bundle) -> bool:  # type: ignore[no-untyped-def]
+        def persist_auth(self, _bundle: object) -> bool:  # type: ignore[no-untyped-def]
             return True
 
     monkeypatch.setattr(cli, "OAuthHTTPServer", _Fake, raising=True)
@@ -92,4 +96,5 @@ def test_cmd_login_paste_state_mismatch_and_exception(monkeypatch) -> None:  # t
         raising=True,
     )
     rc2 = cli.cmd_login(no_browser=True, verbose=False)
-    assert rc1 in (0, 1) and rc2 in (0, 1)
+    assert rc1 in (0, 1)
+    assert rc2 in (0, 1)

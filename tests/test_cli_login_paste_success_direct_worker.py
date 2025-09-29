@@ -8,25 +8,25 @@ from chatmock import cli
 
 
 class _FakeHTTPD:
-    def __init__(self, *a, **k):
+    def __init__(self, *_a: object, **_k: object) -> None:
         self.state = "s"
         self.exit_code = 1
         self._shutdown = False
 
     # context manager
-    def __enter__(self):
+    def __enter__(self) -> _FakeHTTPD:  # noqa: PYI034
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self, exc_type, exc, tb) -> bool:
         return False
 
     def auth_url(self) -> str:
         return "http://example/auth"
 
-    def exchange_code(self, code):
+    def exchange_code(self, _code: object):
         return ({"ok": True}, None)
 
-    def persist_auth(self, bundle):
+    def persist_auth(self, _bundle: object):
         return True
 
     def shutdown(self) -> None:
@@ -40,6 +40,7 @@ class _FakeHTTPD:
 
 
 def test_cmd_login_paste_success(monkeypatch):
+    """Direct worker paste path should set exit_code=0 and return 0."""
     monkeypatch.setattr(cli, "OAuthHTTPServer", _FakeHTTPD, raising=True)
     # Provide a valid redirect URL with matching state
     fake_stdin = types.SimpleNamespace(readline=lambda: "http://x/cb?code=abc&state=s\n")

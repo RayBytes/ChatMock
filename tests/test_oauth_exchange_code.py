@@ -14,10 +14,12 @@ def _b64url(data: bytes) -> str:
 
 
 def test_exchange_code_returns_bundle_and_success_url(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Exchange code returns tokens and a success URL."""
     srv = object.__new__(oauth.OAuthHTTPServer)
     srv.client_id = "cid"  # type: ignore[attr-defined]
     srv.redirect_uri = f"{oauth.URL_BASE}/auth/callback"  # type: ignore[attr-defined]
-    srv.token_endpoint = "http://localhost/token"  # type: ignore[attr-defined]
+    base = "http://localhost"
+    srv.token_endpoint = f"{base}/token"  # type: ignore[attr-defined]
     # Minimal PKCE object
     srv.pkce = type("_", (), {"code_verifier": "v"})()  # type: ignore[attr-defined]
 
@@ -32,14 +34,15 @@ def test_exchange_code_returns_bundle_and_success_url(monkeypatch) -> None:  # t
         def read(self):  # type: ignore[no-untyped-def]
             return json.dumps(self._data).encode()
 
-        def __enter__(self):
+        def __enter__(self) -> _Resp:
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, exc_type, exc, tb) -> bool:
             return False
 
     monkeypatch.setattr(
         oauth.urllib.request, "urlopen", lambda *a, **k: _Resp(payload), raising=True
     )
     bundle, success = oauth.OAuthHTTPServer.exchange_code(srv, "code")  # type: ignore[misc]
-    assert bundle.token_data.id_token and success.startswith(oauth.URL_BASE + "/success")
+    assert bundle.token_data.id_token
+    assert success.startswith(oauth.URL_BASE + "/success")

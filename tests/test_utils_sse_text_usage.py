@@ -7,12 +7,18 @@ from chatmock.utils import sse_translate_text
 
 class _Up:
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        yield b'data: {"type": "response.completed", "response": {"usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}}}'
+        del decode_unicode
+        yield (
+            b'data: {"type": "response.completed", "response": {"usage": {"input_tokens": 1, '
+            b'"output_tokens": 2, "total_tokens": 3}}}'
+        )
 
     def close(self) -> None:
         return None
 
 
 def test_sse_text_include_usage_emits_chunk() -> None:
+    """Include usage chunk in text path then final [DONE]."""
     out = b"".join(sse_translate_text(_Up(), "gpt-5", 1, include_usage=True))
-    assert b'"usage": {' in out and b"data: [DONE]" in out
+    assert b'"usage": {' in out
+    assert b"data: [DONE]" in out

@@ -10,6 +10,7 @@ from chatmock import cli
 
 
 def test_main_unknown_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unknown command should raise SystemExit."""
     parser_cls = cli.argparse.ArgumentParser
 
     def fake_parse(self):  # type: ignore[no-untyped-def]

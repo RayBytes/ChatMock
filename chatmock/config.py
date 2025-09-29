@@ -13,6 +13,17 @@ OAUTH_TOKEN_URL = f"{OAUTH_ISSUER_DEFAULT}/oauth/token"
 CHATGPT_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 
 
+def _read_candidate(candidate: Path) -> tuple[str | None, str | None]:
+    try:
+        if candidate.exists():
+            content = candidate.read_text(encoding="utf-8")
+            if isinstance(content, str) and content.strip():
+                return content, None
+    except (OSError, UnicodeDecodeError, ValueError) as exc:  # log and continue
+        return None, str(exc)
+    return None, None
+
+
 def _read_prompt_text(filename: str) -> str | None:
     """Search common locations for the given prompt file and return its text."""
     candidates = [
@@ -28,14 +39,11 @@ def _read_prompt_text(filename: str) -> str | None:
         if c
     ]
     for candidate in candidates:
-        try:
-            if candidate.exists():
-                content = candidate.read_text(encoding="utf-8")
-                if isinstance(content, str) and content.strip():
-                    return content
-        except (OSError, UnicodeDecodeError, ValueError) as exc:  # log and continue
-            sys.stderr.write(f"[config] failed reading {candidate}: {exc}\n")
-            continue
+        content, err = _read_candidate(candidate)
+        if content is not None:
+            return content
+        if err:
+            sys.stderr.write(f"[config] failed reading {candidate}: {err}\n")
     return None
 
 

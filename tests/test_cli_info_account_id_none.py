@@ -17,6 +17,7 @@ def _b64url(data: bytes) -> str:
 
 
 def test_cli_info_signed_in_no_account_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Signed-in output omits Account ID when missing."""
     id_payload = {"email": "u@example.com"}
     access_payload = {"https://api.openai.com/auth": {"chatgpt_plan_type": "free"}}
     id_token = f"{_b64url(b'{}')}.{_b64url(__import__('json').dumps(id_payload).encode())}."
@@ -32,10 +33,11 @@ def test_cli_info_signed_in_no_account_id(monkeypatch: pytest.MonkeyPatch) -> No
     old = sys.stdout
     sys.stdout = buf
     try:
+        sys.argv = ["chatmock", "info"]
         with pytest.raises(SystemExit):
-            sys.argv = ["chatmock", "info"]
             cli.main()
     finally:
         sys.stdout = old
     out = buf.getvalue()
-    assert "Signed in with ChatGPT" in out and "Account ID:" not in out
+    assert "Signed in with ChatGPT" in out
+    assert "Account ID:" not in out

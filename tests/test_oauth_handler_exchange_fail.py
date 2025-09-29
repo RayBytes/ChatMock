@@ -8,12 +8,14 @@ from chatmock import oauth
 
 
 def test_oauth_handler_exchange_failure(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Exchange failure should produce HTTP 500 response."""
     httpd = oauth.OAuthHTTPServer(
         ("127.0.0.1", 0), oauth.OAuthHandler, home_dir=".", client_id="cid", verbose=False
     )
 
-    def _ex(code: str):  # type: ignore[no-untyped-def]
-        raise RuntimeError("boom")
+    def _ex(_code: str):  # type: ignore[no-untyped-def]
+        err = RuntimeError("boom")
+        raise err
 
     httpd.exchange_code = _ex  # type: ignore[assignment]
 

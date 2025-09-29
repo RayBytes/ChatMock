@@ -3,17 +3,26 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import contextlib
 import datetime
 import hashlib
 import json
 import os
 import secrets
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from http import HTTPStatus
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 import requests
 
 from .config import CLIENT_ID_DEFAULT, OAUTH_TOKEN_URL
+from .models import PkceCodes
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
 
 
 def eprint(*args: object) -> None:
@@ -122,10 +131,11 @@ def convert_chat_messages_to_responses_input(  # noqa: C901, PLR0912, PLR0915
                 data = data + ("=" * pad)
             # Validate base64 payload; errors are acceptable — we still return the sanitized url
             base64.b64decode(data, validate=True)
-            return f"{header},{data}"
         except (ValueError, TypeError, binascii.Error, UnicodeDecodeError):
             # Even if validation fails, return the sanitized/padded data URL
             return f"{header},{data}" if ("header" in locals() and "data" in locals()) else url
+        else:
+            return f"{header},{data}"
 
     input_items: list[dict[str, Any]] = []
     for message in messages:
@@ -235,16 +245,17 @@ def convert_tools_chat_to_responses(tools: list[dict[str, Any]] | None) -> list[
     return out
 
 
-def load_chatgpt_tokens(ensure_fresh: bool = True) -> tuple[str | None, str | None, str | None]:
+def load_chatgpt_tokens(ensure_fresh: bool = True) -> tuple[str | None, str | None, str | None]:  # noqa: C901, FBT001, FBT002
+    """Load tokens from disk, optionally refreshing access token."""
     auth = read_auth_file()
     if not isinstance(auth, dict):
         return None, None, None
 
     tokens = auth.get("tokens") if isinstance(auth.get("tokens"), dict) else {}
-    access_token: Optional[str] = tokens.get("access_token")
-    account_id: Optional[str] = tokens.get("account_id")
-    id_token: Optional[str] = tokens.get("id_token")
-    refresh_token: Optional[str] = tokens.get("refresh_token")
+    access_token: str | None = tokens.get("access_token")
+    account_id: str | None = tokens.get("account_id")
+    id_token: str | None = tokens.get("id_token")
+    refresh_token: str | None = tokens.get("refresh_token")
     last_refresh = auth.get("last_refresh")
 
     if ensure_fresh and isinstance(refresh_token, str) and refresh_token and CLIENT_ID_DEFAULT:
@@ -282,7 +293,7 @@ def load_chatgpt_tokens(ensure_fresh: bool = True) -> tuple[str | None, str | No
     return access_token, account_id, id_token
 
 
-def _should_refresh_access_token(access_token: Optional[str], last_refresh: Any) -> bool:
+def _should_refresh_access_token(access_token: str | None, last_refresh: object) -> bool:
     if not isinstance(access_token, str) or not access_token:
         return True
 
@@ -304,7 +315,7 @@ def _should_refresh_access_token(access_token: Optional[str], last_refresh: Any)
     return False
 
 
-def _refresh_chatgpt_tokens(refresh_token: str, client_id: str) -> Optional[Dict[str, Optional[str]]]:
+def _refresh_chatgpt_tokens(refresh_token: str, client_id: str) -> dict[str, str | None] | None:
     payload = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
@@ -318,7 +329,7 @@ def _refresh_chatgpt_tokens(refresh_token: str, client_id: str) -> Optional[Dict
         eprint(f"ERROR: failed to refresh ChatGPT token: {exc}")
         return None
 
-    if resp.status_code >= 400:
+    if resp.status_code >= HTTPStatus.BAD_REQUEST:
         eprint(f"ERROR: refresh token request returned status {resp.status_code}")
         return None
 
@@ -336,7 +347,11 @@ def _refresh_chatgpt_tokens(refresh_token: str, client_id: str) -> Optional[Dict
         return None
 
     account_id = _derive_account_id(id_token)
-    new_refresh_token = new_refresh_token if isinstance(new_refresh_token, str) and new_refresh_token else refresh_token
+    new_refresh_token = (
+        new_refresh_token
+        if isinstance(new_refresh_token, str) and new_refresh_token
+        else refresh_token
+    )
     return {
         "id_token": id_token,
         "access_token": access_token,
@@ -345,7 +360,9 @@ def _refresh_chatgpt_tokens(refresh_token: str, client_id: str) -> Optional[Dict
     }
 
 
-def _persist_refreshed_auth(auth: Dict[str, Any], updated_tokens: Dict[str, Any]) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+def _persist_refreshed_auth(
+    auth: dict[str, Any], updated_tokens: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
     updated_auth = dict(auth)
     updated_auth["tokens"] = updated_tokens
     updated_auth["last_refresh"] = _now_iso8601()
@@ -355,7 +372,7 @@ def _persist_refreshed_auth(auth: Dict[str, Any], updated_tokens: Dict[str, Any]
     return None
 
 
-def _derive_account_id(id_token: Optional[str]) -> Optional[str]:
+def _derive_account_id(id_token: str | None) -> str | None:
     if not isinstance(id_token, str) or not id_token:
         return None
     claims = parse_jwt_claims(id_token) or {}
@@ -367,7 +384,7 @@ def _derive_account_id(id_token: Optional[str]) -> Optional[str]:
     return None
 
 
-def _parse_iso8601(value: str) -> Optional[datetime.datetime]:
+def _parse_iso8601(value: str) -> datetime.datetime | None:
     try:
         if value.endswith("Z"):
             value = value[:-1] + "+00:00"
@@ -375,7 +392,7 @@ def _parse_iso8601(value: str) -> Optional[datetime.datetime]:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=datetime.timezone.utc)
         return dt.astimezone(datetime.timezone.utc)
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         return None
 
 
@@ -412,32 +429,23 @@ def sse_translate_chat(  # noqa: C901, PLR0913, PLR0912, PLR0915
     ws_state: dict[str, Any] = {}
     ws_index: dict[str, int] = {}
     ws_next_index: int = 0
-    
-    def _serialize_tool_args(eff_args: Any) -> str:
-        """
-        Serialize tool call arguments with proper JSON handling.
-        
-        Args:
-            eff_args: Arguments to serialize (dict, list, str, or other)
-            
-        Returns:
-            JSON string representation of the arguments
-        """
+
+    def _serialize_tool_args(eff_args: object) -> str:
+        """Serialize tool call arguments with proper JSON handling."""
         if isinstance(eff_args, (dict, list)):
             return json.dumps(eff_args)
-        elif isinstance(eff_args, str):
+        if isinstance(eff_args, str):
             try:
                 parsed = json.loads(eff_args)
                 if isinstance(parsed, (dict, list)):
-                    return json.dumps(parsed) 
-                else:
-                    return json.dumps({"query": eff_args})  
+                    return json.dumps(parsed)
+                return json.dumps({"query": eff_args})
             except (json.JSONDecodeError, ValueError):
                 return json.dumps({"query": eff_args})
         else:
             return "{}"
-    
-    def _extract_usage(evt: Dict[str, Any]) -> Dict[str, int] | None:
+
+    def _extract_usage(evt: dict[str, Any]) -> dict[str, int] | None:
         try:
             usage = (evt.get("response") or {}).get("usage")
             if not isinstance(usage, dict):
@@ -514,9 +522,10 @@ def sse_translate_chat(  # noqa: C901, PLR0913, PLR0912, PLR0915
                     if isinstance(params, dict):
                         with contextlib.suppress(Exception):
                             ws_state.setdefault(call_id, {}).update(params)
-                        except Exception:
-                            pass
-                    eff_params = ws_state.get(call_id, params if isinstance(params, (dict, list, str)) else {})
+                    eff_params = ws_state.get(
+                        call_id,
+                        params if isinstance(params, (dict, list, str)) else {},
+                    )
                     args_str = _serialize_tool_args(eff_params)
                     if call_id not in ws_index:
                         ws_index[call_id] = ws_next_index
@@ -599,10 +608,7 @@ def sse_translate_chat(  # noqa: C901, PLR0913, PLR0912, PLR0915
                     eff_args = ws_state.get(
                         call_id, raw_args if isinstance(raw_args, (dict, list, str)) else {}
                     )
-                    try:
-                        args = _serialize_tool_args(eff_args)
-                    except Exception:
-                        args = "{}"
+                    args = _serialize_tool_args(eff_args)
                     if item.get("type") == "web_search_call" and verbose and vlog:
                         with contextlib.suppress(Exception):
                             vlog(

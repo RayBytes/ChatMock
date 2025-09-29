@@ -201,7 +201,11 @@ def chat_completions() -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
                 reasoning_param=reasoning_param,
             )
             record_rate_limits_from_response(upstream2)
-            if err2 is None and upstream2 is not None and upstream2.status_code < 400:
+            if (
+                err2 is None
+                and upstream2 is not None
+                and upstream2.status_code < HTTPStatus.BAD_REQUEST
+            ):
                 upstream = upstream2
             else:
                 return (

@@ -8,6 +8,7 @@ from chatmock import config
 
 
 def test_read_base_instructions_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(config, "_read_prompt_text", lambda filename: None, raising=True)
+    """Missing base prompt should raise FileNotFoundError."""
+    monkeypatch.setattr(config, "_read_prompt_text", lambda _filename: None, raising=True)
     with pytest.raises(FileNotFoundError):
         config.read_base_instructions()

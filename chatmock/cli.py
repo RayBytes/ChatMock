@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import errno
 import json
 import os
 import sys
 import threading
 import webbrowser
-from datetime import datetime
+from typing import TYPE_CHECKING
+from urllib.parse import parse_qs, urlparse
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 from .app import create_app
 from .config import CLIENT_ID_DEFAULT
@@ -22,28 +27,37 @@ _STATUS_LIMIT_BAR_FILLED = "█"
 _STATUS_LIMIT_BAR_EMPTY = "░"
 _STATUS_LIMIT_BAR_PARTIAL = "▓"
 
+# Thresholds and constants to avoid magic numbers (PLR2004)
+_PERCENT_MIN = 0.0
+_PERCENT_MAX = 100.0
+_PARTIAL_THRESHOLD = 0.5
+_USAGE_RED = 90.0
+_USAGE_YELLOW = 75.0
+_USAGE_BLUE = 50.0
+
 
 def _clamp_percent(value: float) -> float:
     try:
         percent = float(value)
-    except Exception:
-        return 0.0
-    if percent != percent:
-        return 0.0
-    if percent < 0.0:
-        return 0.0
-    if percent > 100.0:
-        return 100.0
+    except (TypeError, ValueError):
+        return _PERCENT_MIN
+    # NaN check (PLR0124)
+    if percent != percent:  # noqa: PLR0124
+        return _PERCENT_MIN
+    if percent < _PERCENT_MIN:
+        return _PERCENT_MIN
+    if percent > _PERCENT_MAX:
+        return _PERCENT_MAX
     return percent
 
 
 def _render_progress_bar(percent_used: float) -> str:
-    ratio = max(0.0, min(1.0, percent_used / 100.0))
+    ratio = max(0.0, min(1.0, percent_used / _PERCENT_MAX))
     filled_exact = ratio * _STATUS_LIMIT_BAR_SEGMENTS
     filled = int(filled_exact)
     partial = filled_exact - filled
 
-    has_partial = partial > 0.5
+    has_partial = partial > _PARTIAL_THRESHOLD
     if has_partial:
         filled += 1
 
@@ -51,7 +65,11 @@ def _render_progress_bar(percent_used: float) -> str:
     empty = _STATUS_LIMIT_BAR_SEGMENTS - filled
 
     if has_partial and filled > 0:
-        bar = _STATUS_LIMIT_BAR_FILLED * (filled - 1) + _STATUS_LIMIT_BAR_PARTIAL + _STATUS_LIMIT_BAR_EMPTY * empty
+        bar = (
+            _STATUS_LIMIT_BAR_FILLED * (filled - 1)
+            + _STATUS_LIMIT_BAR_PARTIAL
+            + _STATUS_LIMIT_BAR_EMPTY * empty
+        )
     else:
         bar = _STATUS_LIMIT_BAR_FILLED * filled + _STATUS_LIMIT_BAR_EMPTY * empty
 
@@ -59,17 +77,17 @@ def _render_progress_bar(percent_used: float) -> str:
 
 
 def _get_usage_color(percent_used: float) -> str:
-    if percent_used >= 90:
+    if percent_used >= _USAGE_RED:
         return "\033[91m"
-    if percent_used >= 75:
+    if percent_used >= _USAGE_YELLOW:
         return "\033[93m"
-    if percent_used >= 50:
+    if percent_used >= _USAGE_BLUE:
         return "\033[94m"
     return "\033[92m"
 
 
 def _reset_color() -> str:
-    """ANSI reset color code"""
+    """ANSI reset color code."""
     return "\033[0m"
 
 
@@ -78,7 +96,7 @@ def _format_window_duration(minutes: int | None) -> str | None:
         return None
     try:
         total = int(minutes)
-    except Exception:
+    except (TypeError, ValueError):
         return None
     if total <= 0:
         return None
@@ -105,7 +123,7 @@ def _format_reset_duration(seconds: int | None) -> str | None:
         return None
     try:
         value = int(seconds)
-    except Exception:
+    except (TypeError, ValueError):
         return None
     value = max(value, 0)
     days, remainder = divmod(value, 86400)
@@ -134,16 +152,16 @@ def _format_local_datetime(dt: datetime) -> str:
 def _print_usage_limits_block() -> None:
     stored = load_rate_limit_snapshot()
 
-    print("📊 Usage Limits")
+    sys.stdout.write("📊 Usage Limits\n")
 
     if stored is None:
-        print("  No usage data available yet. Send a request through ChatMock first.")
-        print()
+        sys.stdout.write("  No usage data available yet. Send a request through ChatMock first.\n")
+        sys.stdout.write("\n")
         return
 
     update_time = _format_local_datetime(stored.captured_at)
-    print(f"Last updated: {update_time}")
-    print()
+    sys.stdout.write(f"Last updated: {update_time}\n")
+    sys.stdout.write("\n")
 
     windows: list[tuple[str, str, RateLimitWindow]] = []
     if stored.snapshot.primary is not None:
@@ -152,16 +170,16 @@ def _print_usage_limits_block() -> None:
         windows.append(("📅", "Weekly limit", stored.snapshot.secondary))
 
     if not windows:
-        print("  Usage data was captured but no limit windows were provided.")
-        print()
+        sys.stdout.write("  Usage data was captured but no limit windows were provided.\n")
+        sys.stdout.write("\n")
         return
 
     for i, (icon_label, desc, window) in enumerate(windows):
         if i > 0:
-            print()
+            sys.stdout.write("\n")
 
         percent_used = _clamp_percent(window.used_percent)
-        remaining = max(0.0, 100.0 - percent_used)
+        remaining = max(0.0, _PERCENT_MAX - percent_used)
         color = _get_usage_color(percent_used)
         reset = _reset_color()
 
@@ -169,24 +187,28 @@ def _print_usage_limits_block() -> None:
         usage_text = f"{percent_used:5.1f}% used"
         remaining_text = f"{remaining:5.1f}% left"
 
-        print(f"{icon_label} {desc}")
-        print(f"{color}{progress}{reset} {color}{usage_text}{reset} | {remaining_text}")
+        sys.stdout.write(f"{icon_label} {desc}\n")
+        sys.stdout.write(
+            f"{color}{progress}{reset} {color}{usage_text}{reset} | {remaining_text}\n"
+        )
 
         reset_in = _format_reset_duration(window.resets_in_seconds)
         reset_at = compute_reset_at(stored.captured_at, window)
 
         if reset_in and reset_at:
             reset_at_str = _format_local_datetime(reset_at)
-            print(f"    ⏳ Resets in: {reset_in} at {reset_at_str}")
+            sys.stdout.write(f"    ⏳ Resets in: {reset_in} at {reset_at_str}\n")
         elif reset_in:
-            print(f"    ⏳ Resets in: {reset_in}")
+            sys.stdout.write(f"    ⏳ Resets in: {reset_in}\n")
         elif reset_at:
             reset_at_str = _format_local_datetime(reset_at)
-            print(f"    ⏳ Resets at: {reset_at_str}")
+            sys.stdout.write(f"    ⏳ Resets at: {reset_at_str}\n")
 
-    print()
+    sys.stdout.write("\n")
 
-def cmd_login(no_browser: bool, verbose: bool) -> int:
+
+def cmd_login(*, no_browser: bool, verbose: bool) -> int:  # noqa: C901, PLR0915
+    """Perform OAuth login flow and persist tokens."""
     home_dir = get_home_dir()
     client_id = CLIENT_ID_DEFAULT
     if not client_id:
@@ -227,28 +249,34 @@ def cmd_login(no_browser: bool, verbose: bool) -> int:
                 line = sys.stdin.readline().strip()
                 if not line:
                     return
+                # Parse URL and extract params (safe operations)
+                parsed = urlparse(line)
+                params = parse_qs(parsed.query)
+                code = (params.get("code") or [None])[0]
+                state = (params.get("state") or [None])[0]
+                if not code:
+                    eprint("Input did not contain an auth code. Ignoring.")
+                    return
+                if state and state != httpd.state:
+                    eprint("State mismatch. Ignoring pasted URL for safety.")
+                    return
+                eprint("Received redirect URL. Completing login without callback…")
                 try:
-                    parsed = urlparse(line)
-                    params = parse_qs(parsed.query)
-                    code = (params.get("code") or [None])[0]
-                    state = (params.get("state") or [None])[0]
-                    if not code:
-                        eprint("Input did not contain an auth code. Ignoring.")
-                        return
-                    if state and state != httpd.state:
-                        eprint("State mismatch. Ignoring pasted URL for safety.")
-                        return
-                    eprint("Received redirect URL. Completing login without callback…")
                     bundle, _ = httpd.exchange_code(code)
+                except (OSError, RuntimeError, ValueError) as exc:
+                    eprint(f"Failed to exchange auth code: {exc}")
+                    return
+                try:
                     if httpd.persist_auth(bundle):
                         httpd.exit_code = 0
                         eprint("Login successful. Tokens saved.")
                     else:
                         eprint("ERROR: Unable to persist auth file.")
+                except (OSError, RuntimeError) as exc:
+                    eprint(f"Failed to persist auth: {exc}")
+                with contextlib.suppress(Exception):
                     httpd.shutdown()
-                except Exception as exc:  # noqa: BLE001
-                    eprint(f"Failed to process pasted redirect URL: {exc}")
-            except Exception:  # noqa: BLE001
+            except (OSError, RuntimeError, ValueError):
                 eprint("Ignoring stdin paste worker outer error.")
 
         worker = threading.Thread(target=_stdin_paste_worker, daemon=True)
@@ -290,7 +318,7 @@ def cmd_serve(  # noqa: PLR0913
     return 0
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     """CLI entry for ChatMock with subcommands: login, serve, info."""
     parser = argparse.ArgumentParser(description="ChatGPT Local: login & OpenAI-compatible proxy")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -376,10 +404,10 @@ def main() -> None:
             sys.exit(0)
         access_token, account_id, id_token = load_chatgpt_tokens()
         if not access_token or not id_token:
-            print("👤 Account")
-            print("  • Not signed in")
-            print("  • Run: python3 chatmock.py login")
-            print()
+            sys.stdout.write("👤 Account\n")
+            sys.stdout.write("  • Not signed in\n")
+            sys.stdout.write("  • Run: python3 chatmock.py login\n")
+            sys.stdout.write("\n")
             _print_usage_limits_block()
             sys.exit(0)
 
@@ -406,8 +434,8 @@ def main() -> None:
         sys.stdout.write(f"  • Login: {email}\n")
         sys.stdout.write(f"  • Plan: {plan}\n")
         if account_id:
-            print(f"  • Account ID: {account_id}")
-        print()
+            sys.stdout.write(f"  • Account ID: {account_id}\n")
+        sys.stdout.write("\n")
         _print_usage_limits_block()
         sys.exit(0)
     else:

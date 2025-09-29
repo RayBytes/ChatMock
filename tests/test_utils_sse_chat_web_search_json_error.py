@@ -12,20 +12,22 @@ class _Up:
         self._lines = [f"data: {_json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        del decode_unicode
+        yield from self._lines
 
     def close(self) -> None:
         return None
 
 
 def test_web_search_args_json_error_falls_back_to_empty(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """If json.dumps fails for args, fallback to empty object."""
     orig_dumps = utils.json.dumps  # type: ignore[attr-defined]
 
-    def fake_dumps(obj, *a, **k):  # type: ignore[no-untyped-def]
+    def fake_dumps(obj: object, *a: object, **k: object):  # type: ignore[no-untyped-def]
         if isinstance(obj, dict) and obj.get("a") == 1:
-            raise TypeError("boom")
-        return orig_dumps(obj, *a, **k)
+            err = TypeError("boom")
+            raise err
+        return orig_dumps(obj, *a, **k)  # type: ignore[arg-type]
 
     monkeypatch.setattr(utils.json, "dumps", fake_dumps)
 
@@ -41,4 +43,5 @@ def test_web_search_args_json_error_falls_back_to_empty(monkeypatch) -> None:  #
     ]
     out = b"".join(utils.sse_translate_chat(_Up(ev), "gpt-5", 1))
     s = out.decode().replace(" ", "")
-    assert '"arguments":"{}"' in s and "data: [DONE]" in out.decode()
+    assert '"arguments":"{}"' in s
+    assert "data: [DONE]" in out.decode()

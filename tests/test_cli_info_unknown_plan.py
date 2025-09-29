@@ -11,8 +11,10 @@ from chatmock import cli
 
 
 def test_cli_info_unknown_plan_title_case(monkeypatch: pytest.MonkeyPatch) -> None:
-    def parse(token: str):  # type: ignore[no-untyped-def]
-        if token == "id":
+    """Unknown plan types should be title-cased in output."""
+
+    def parse(tok: str):  # type: ignore[no-untyped-def]
+        if tok == "id":
             return {"email": "u@example.com"}
         return {"https://api.openai.com/auth": {"chatgpt_plan_type": "weird"}}
 
@@ -24,8 +26,8 @@ def test_cli_info_unknown_plan_title_case(monkeypatch: pytest.MonkeyPatch) -> No
     old = sys.stdout
     sys.stdout = buf
     try:
+        sys.argv = ["chatmock", "info"]
         with pytest.raises(SystemExit):
-            sys.argv = ["chatmock", "info"]
             cli.main()
     finally:
         sys.stdout = old

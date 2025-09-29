@@ -6,14 +6,16 @@ from chatmock import cli
 
 
 def test_cmd_login_keyboard_interrupt(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Handle KeyboardInterrupt during serve_forever and return 1."""
+
     class _Fake:
-        def __init__(self, *a, **k):  # type: ignore[no-untyped-def]
+        def __init__(self, *_a: object, **_k: object) -> None:  # type: ignore[no-untyped-def]
             self.exit_code = 1
 
-        def __enter__(self):
+        def __enter__(self) -> _Fake:  # noqa: PYI034
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, exc_type, exc, tb) -> bool:
             return False
 
         def auth_url(self) -> str:

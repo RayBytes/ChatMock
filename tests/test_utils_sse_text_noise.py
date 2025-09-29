@@ -7,6 +7,7 @@ from chatmock.utils import sse_translate_text
 
 class _Up:
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
+        del decode_unicode
         yield b"noise"
         yield b"data: "
         yield b"data: not-json"
@@ -18,6 +19,8 @@ class _Up:
 
 
 def test_sse_text_ignores_noise_and_emits_done() -> None:
+    """Noise should be ignored and final [DONE] present."""
     out = b"".join(sse_translate_text(_Up(), "m", 1))
     s = out.decode()
-    assert "text_completion.chunk" in s and "data: [DONE]" in s
+    assert "text_completion.chunk" in s
+    assert "data: [DONE]" in s

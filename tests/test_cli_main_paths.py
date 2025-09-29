@@ -15,8 +15,8 @@ def _run(argv: list[str]) -> tuple[str, int]:
     old = sys.stdout
     sys.stdout = buf
     try:
+        sys.argv = ["chatmock", *argv]
         with pytest.raises(SystemExit) as ex:
-            sys.argv = ["chatmock"] + argv
             cli.main()
     finally:
         sys.stdout = old
@@ -24,8 +24,10 @@ def _run(argv: list[str]) -> tuple[str, int]:
 
 
 def test_main_info_various_plans(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_parse(token):  # type: ignore[no-untyped-def]
-        if token == "id":
+    """Maps plan types to title-case, including 'team'."""
+
+    def fake_parse(tok):  # type: ignore[no-untyped-def]
+        if tok == "id":
             return {"email": "u@example.com"}
         return {"https://api.openai.com/auth": {"chatgpt_plan_type": "team"}}
 
@@ -33,18 +35,20 @@ def test_main_info_various_plans(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "load_chatgpt_tokens", lambda: ("access", "acc_1", "id"), raising=True)
     monkeypatch.setattr(cli, "parse_jwt_claims", fake_parse, raising=True)
     out, code = _run(["info"])
-    assert "Plan: Team" in out and code == 0
+    assert "Plan: Team" in out
+    assert code == 0
 
 
 def test_main_login_bind_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    """EADDRINUSE should map to exit code 13."""
     import errno as _errno
 
     class _Raiser:
-        def __init__(self, *a, **k):  # type: ignore[no-untyped-def]
+        def __init__(self, *_a: object, **_k: object) -> None:  # type: ignore[no-untyped-def]
             raise OSError(_errno.EADDRINUSE, "in use")
 
     monkeypatch.setattr(cli, "OAuthHTTPServer", _Raiser, raising=True)
+    sys.argv = ["chatmock", "login", "--no-browser"]
     with pytest.raises(SystemExit) as ex:
-        sys.argv = ["chatmock", "login", "--no-browser"]
         cli.main()
     assert int(ex.value.code) == 13

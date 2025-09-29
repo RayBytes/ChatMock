@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
+if TYPE_CHECKING:
+    import pytest
 
 from chatmock import config
 
 
 def test__read_prompt_text_meipass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Read prompt text from sys._MEIPASS candidate paths when present."""
     # Create a fake _MEIPASS directory path string
     meipass = tmp_path / "bundle"
     meipass.mkdir()
@@ -36,19 +39,21 @@ def test__read_prompt_text_meipass(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
         def exists(self) -> bool:
             p = self._p.replace("\\", "/")
-            return p.endswith(str(meipass / "prompt.md").replace("\\", "/")) or p.endswith(
-                str(meipass / "prompt_gpt5_codex.md").replace("\\", "/")
-            )
+            a = str(meipass / "prompt.md").replace("\\", "/")
+            b = str(meipass / "prompt_gpt5_codex.md").replace("\\", "/")
+            return p.endswith((a, b))
 
         def read_text(self, encoding: str = "utf-8") -> str:
             if self._p.endswith("prompt.md"):
                 return "BASE"
             if self._p.endswith("prompt_gpt5_codex.md"):
                 return "CODEX"
-            raise AssertionError("unexpected read_text path")
+            err = AssertionError("unexpected read_text path")
+            raise err
 
     monkeypatch.setattr(config, "Path", _P, raising=True)
 
-    base = config._read_prompt_text("prompt.md")
-    codex = config._read_prompt_text("prompt_gpt5_codex.md")
-    assert base == "BASE" and codex == "CODEX"
+    base = config._read_prompt_text("prompt.md")  # noqa: SLF001
+    codex = config._read_prompt_text("prompt_gpt5_codex.md")  # noqa: SLF001
+    assert base == "BASE"
+    assert codex == "CODEX"

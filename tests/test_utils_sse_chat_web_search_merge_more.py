@@ -12,14 +12,15 @@ class _Up:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        del decode_unicode
+        yield from self._lines
 
     def close(self) -> None:
         return None
 
 
 def test_web_search_merge_q_and_include_domains() -> None:
+    """Merges q/include_domains and emits arguments in output."""
     ev = [
         {
             "type": "web_search_call.delta",
@@ -33,4 +34,6 @@ def test_web_search_merge_q_and_include_domains() -> None:
     ]
     out = b"".join(sse_translate_chat(_Up(ev), "gpt-5", 1))
     s = out.decode()
-    assert '"arguments"' in s and "hello" in s and "c.example" in s
+    assert '"arguments"' in s
+    assert "hello" in s
+    assert "c.example" in s

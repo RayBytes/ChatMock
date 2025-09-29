@@ -6,6 +6,7 @@ import importlib
 
 
 def test_client_id_default_env(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Environment variable overrides CLIENT_ID_DEFAULT."""
     monkeypatch.setenv("CHATGPT_LOCAL_CLIENT_ID", "id_123")
     # Reload module to re-evaluate constants
     mod = importlib.import_module("chatmock.config")

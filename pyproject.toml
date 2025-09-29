@@ -47,6 +47,8 @@ ignore = [
 select = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
+# IGNORE AS LITTLE AS POSSIBLE, PREFER FIXING THE ISSUES INSTEAD
+# ONLY ADD IGNORES WHEN ABSOLUTELY NECESSARY AND JUSTIFIED
 "tests/**" = [
   "S101",  # allow bare assert in tests
   "E402",  # allow import after test-specific setup

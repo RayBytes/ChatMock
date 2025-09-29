@@ -8,15 +8,17 @@ from chatmock import cli
 
 
 def test_cmd_login_paste_url(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Pasted callback URL path should succeed with matching state."""
+
     class _Fake:
-        def __init__(self, *a, **k):  # type: ignore[no-untyped-def]
+        def __init__(self, *_a: object, **_k: object) -> None:  # type: ignore[no-untyped-def]
             self.exit_code = 1
             self.state = "s"
 
-        def __enter__(self):
+        def __enter__(self) -> _Fake:  # noqa: PYI034
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, exc_type, exc, tb) -> bool:
             return False
 
         def auth_url(self) -> str:
@@ -29,10 +31,10 @@ def test_cmd_login_paste_url(monkeypatch) -> None:  # type: ignore[no-untyped-de
         def shutdown(self) -> None:
             self.exit_code = 0
 
-        def exchange_code(self, code: str):  # type: ignore[no-untyped-def]
+        def exchange_code(self, _code: str):  # type: ignore[no-untyped-def]
             return ({"tokens": {}}, None)
 
-        def persist_auth(self, bundle) -> bool:  # type: ignore[no-untyped-def]
+        def persist_auth(self, _bundle: object) -> bool:  # type: ignore[no-untyped-def]
             return True
 
     monkeypatch.setattr(cli, "OAuthHTTPServer", _Fake, raising=True)

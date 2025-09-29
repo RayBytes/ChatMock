@@ -3,22 +3,26 @@
 from __future__ import annotations
 
 import io
-
-import pytest
+from typing import TYPE_CHECKING
 
 from chatmock import cli
 
+if TYPE_CHECKING:
+    import pytest
+
 
 def test_cmd_login_paste_persist_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Persist failure after paste URL should be handled."""
+
     class _Fake:
-        def __init__(self, *a: object, **k: object):
+        def __init__(self, *_a: object, **_k: object) -> None:
             self.exit_code = 1
             self.state = "s"
 
-        def __enter__(self):
+        def __enter__(self) -> _Fake:  # noqa: PYI034
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, exc_type, exc, tb) -> bool:
             return False
 
         def auth_url(self) -> str:
@@ -30,10 +34,10 @@ def test_cmd_login_paste_persist_fail(monkeypatch: pytest.MonkeyPatch) -> None:
         def shutdown(self) -> None:
             return None
 
-        def exchange_code(self, code: str):
+        def exchange_code(self, _code: str):
             return ({"tokens": {}}, None)
 
-        def persist_auth(self, bundle: dict) -> bool:
+        def persist_auth(self, _bundle: dict) -> bool:
             return False
 
     monkeypatch.setattr(cli, "OAuthHTTPServer", _Fake, raising=True)
