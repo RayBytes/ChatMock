@@ -50,7 +50,7 @@ repos:
         entry: ruff check . --fix
         language: system
         pass_filenames: false
-        stages: [pre-push]
+        stages: [pre-commit, prepare-commit-msg, commit-msg, post-commit, post-checkout, post-merge, post-rewrite, manual, merge-commit]
       - id: pytest-coverage
         name: Run tests with coverage (100%)
         entry: uv run --project . pytest -q --cov=chatmock --cov-report=term-missing --cov-fail-under=100
