@@ -31,15 +31,15 @@ def test_contract_openai_chat_nonstream_basic(client: object, monkeypatch: objec
         "/v1/chat/completions",
         json={"model": "gpt-5", "messages": [{"role": "user", "content": "Hi"}]},
     )
-    assert resp.status_code == HTTPStatus.OK  # noqa: S101
+    assert resp.status_code == HTTPStatus.OK
     data = resp.get_json()
-    assert data["object"] == "chat.completion"  # noqa: S101
-    assert data["model"] == "gpt-5"  # noqa: S101
-    assert isinstance(data["created"], int)  # noqa: S101
+    assert data["object"] == "chat.completion"
+    assert data["model"] == "gpt-5"
+    assert isinstance(data["created"], int)
     choice = data["choices"][0]
-    assert choice["finish_reason"] == "stop"  # noqa: S101
-    assert choice["message"]["role"] == "assistant"  # noqa: S101
-    assert choice["message"]["content"] == "Hello"  # noqa: S101
+    assert choice["finish_reason"] == "stop"
+    assert choice["message"]["role"] == "assistant"
+    assert choice["message"]["content"] == "Hello"
 
 
 def test_contract_openai_text_completions_nonstream_basic(
@@ -54,24 +54,24 @@ def test_contract_openai_text_completions_nonstream_basic(
         routes_openai, "start_upstream_request", _start_upstream_request2, raising=True
     )
     resp = client.post("/v1/completions", json={"model": "gpt-5", "prompt": "Hi"})
-    assert resp.status_code == HTTPStatus.OK  # noqa: S101
+    assert resp.status_code == HTTPStatus.OK
     data = resp.get_json()
-    assert data["object"] == "text_completion"  # noqa: S101
-    assert data["model"] == "gpt-5"  # noqa: S101
-    assert isinstance(data["created"], int)  # noqa: S101
+    assert data["object"] == "text_completion"
+    assert data["model"] == "gpt-5"
+    assert isinstance(data["created"], int)
     choice = data["choices"][0]
-    assert choice["finish_reason"] == "stop"  # noqa: S101
-    assert choice["text"] == "Hello"  # noqa: S101
+    assert choice["finish_reason"] == "stop"
+    assert choice["text"] == "Hello"
 
 
 def test_contract_openai_models_list(client: object) -> None:
     """Pins the models listing structure and presence of core ids."""
     resp = client.get("/v1/models")
-    assert resp.status_code == HTTPStatus.OK  # noqa: S101
+    assert resp.status_code == HTTPStatus.OK
     data = resp.get_json()
-    assert data["object"] == "list"  # noqa: S101
+    assert data["object"] == "list"
     ids = {m.get("id") for m in data.get("data", [])}
-    assert {"gpt-5", "gpt-5-codex"}.issubset(ids)  # noqa: S101
+    assert {"gpt-5", "gpt-5-codex"}.issubset(ids)
 
 
 def test_contract_ollama_chat_nonstream_basic(client: object, monkeypatch: object) -> None:
@@ -87,20 +87,20 @@ def test_contract_ollama_chat_nonstream_basic(client: object, monkeypatch: objec
         "/api/chat",
         json={"model": "gpt-5", "messages": [{"role": "user", "content": "Hi"}], "stream": False},
     )
-    assert resp.status_code == HTTPStatus.OK  # noqa: S101
+    assert resp.status_code == HTTPStatus.OK
     data = resp.get_json()
-    assert data["model"] == "gpt-5"  # noqa: S101
-    assert data["done"] is True  # noqa: S101
-    assert data["done_reason"] == "stop"  # noqa: S101
+    assert data["model"] == "gpt-5"
+    assert data["done"] is True
+    assert data["done_reason"] == "stop"
     msg = data["message"]
-    assert msg["role"] == "assistant"  # noqa: S101
-    assert msg["content"] == "Hello"  # noqa: S101
+    assert msg["role"] == "assistant"
+    assert msg["content"] == "Hello"
 
 
 def test_contract_ollama_tags(client: object) -> None:
     """Pins tags listing structure and presence of core models."""
     resp = client.get("/api/tags")
-    assert resp.status_code == HTTPStatus.OK  # noqa: S101
+    assert resp.status_code == HTTPStatus.OK
     data = resp.get_json()
     names = {m.get("name") for m in data.get("models", [])}
-    assert {"gpt-5", "gpt-5-codex"}.issubset(names)  # noqa: S101
+    assert {"gpt-5", "gpt-5-codex"}.issubset(names)

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping, Optional
+from typing import Any
 
 from .utils import get_home_dir
 
@@ -21,14 +22,14 @@ _LIMITS_FILENAME = "usage_limits.json"
 @dataclass
 class RateLimitWindow:
     used_percent: float
-    window_minutes: Optional[int]
-    resets_in_seconds: Optional[int]
+    window_minutes: int | None
+    resets_in_seconds: int | None
 
 
 @dataclass
 class RateLimitSnapshot:
-    primary: Optional[RateLimitWindow]
-    secondary: Optional[RateLimitWindow]
+    primary: RateLimitWindow | None
+    secondary: RateLimitWindow | None
 
 
 @dataclass
@@ -37,7 +38,7 @@ class StoredRateLimitSnapshot:
     snapshot: RateLimitSnapshot
 
 
-def _parse_float(value: Any) -> Optional[float]:
+def _parse_float(value: Any) -> float | None:
     try:
         if value is None:
             return None
@@ -54,7 +55,7 @@ def _parse_float(value: Any) -> Optional[float]:
         return None
 
 
-def _parse_int(value: Any) -> Optional[int]:
+def _parse_int(value: Any) -> int | None:
     try:
         if value is None:
             return None
@@ -70,7 +71,7 @@ def _parse_int(value: Any) -> Optional[int]:
         return None
 
 
-def _parse_window(headers: Mapping[str, Any], used_key: str, window_key: str, reset_key: str) -> Optional[RateLimitWindow]:
+def _parse_window(headers: Mapping[str, Any], used_key: str, window_key: str, reset_key: str) -> RateLimitWindow | None:
     used_percent = _parse_float(headers.get(used_key))
     if used_percent is None:
         return None
@@ -79,7 +80,7 @@ def _parse_window(headers: Mapping[str, Any], used_key: str, window_key: str, re
     return RateLimitWindow(used_percent=used_percent, window_minutes=window_minutes, resets_in_seconds=resets_in_seconds)
 
 
-def parse_rate_limit_headers(headers: Mapping[str, Any]) -> Optional[RateLimitSnapshot]:
+def parse_rate_limit_headers(headers: Mapping[str, Any]) -> RateLimitSnapshot | None:
     try:
         primary = _parse_window(headers, _PRIMARY_USED, _PRIMARY_WINDOW, _PRIMARY_RESET)
         secondary = _parse_window(headers, _SECONDARY_USED, _SECONDARY_WINDOW, _SECONDARY_RESET)
@@ -95,7 +96,7 @@ def _limits_path() -> str:
     return os.path.join(home, _LIMITS_FILENAME)
 
 
-def store_rate_limit_snapshot(snapshot: RateLimitSnapshot, captured_at: Optional[datetime] = None) -> None:
+def store_rate_limit_snapshot(snapshot: RateLimitSnapshot, captured_at: datetime | None = None) -> None:
     captured = captured_at or datetime.now(timezone.utc)
     try:
         home = get_home_dir()
@@ -127,9 +128,9 @@ def store_rate_limit_snapshot(snapshot: RateLimitSnapshot, captured_at: Optional
         pass
 
 
-def load_rate_limit_snapshot() -> Optional[StoredRateLimitSnapshot]:
+def load_rate_limit_snapshot() -> StoredRateLimitSnapshot | None:
     try:
-        with open(_limits_path(), "r", encoding="utf-8") as fp:
+        with open(_limits_path(), encoding="utf-8") as fp:
             raw = json.load(fp)
     except FileNotFoundError:
         return None
@@ -150,7 +151,7 @@ def load_rate_limit_snapshot() -> Optional[StoredRateLimitSnapshot]:
     return StoredRateLimitSnapshot(captured_at=captured_at, snapshot=snapshot)
 
 
-def _parse_datetime(value: Any) -> Optional[datetime]:
+def _parse_datetime(value: Any) -> datetime | None:
     if not isinstance(value, str):
         return None
     text = value.strip()
@@ -167,7 +168,7 @@ def _parse_datetime(value: Any) -> Optional[datetime]:
         return None
 
 
-def _dict_to_window(value: Any) -> Optional[RateLimitWindow]:
+def _dict_to_window(value: Any) -> RateLimitWindow | None:
     if not isinstance(value, dict):
         return None
     used = _parse_float(value.get("used_percent"))
@@ -190,7 +191,7 @@ def record_rate_limits_from_response(response: Any) -> None:
     store_rate_limit_snapshot(snapshot)
 
 
-def compute_reset_at(captured_at: datetime, window: RateLimitWindow) -> Optional[datetime]:
+def compute_reset_at(captured_at: datetime, window: RateLimitWindow) -> datetime | None:
     if window.resets_in_seconds is None:
         return None
     try:

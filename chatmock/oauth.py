@@ -16,7 +16,7 @@ from typing import Any
 import certifi
 
 from .config import OAUTH_ISSUER_DEFAULT
-from .models import AuthBundle, PkceCodes, TokenData
+from .models import AuthBundle, TokenData
 from .utils import eprint, generate_pkce, parse_jwt_claims, write_auth_file
 
 REQUIRED_PORT = 1455

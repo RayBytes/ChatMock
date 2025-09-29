@@ -47,7 +47,7 @@ repos:
     hooks:
       - id: ruff-full-repo
         name: Ruff full-repo lint (pre-push)
-        entry: ruff check . --fix
+        entry: uv run ruff check . --fix
         language: system
         pass_filenames: false
         stages: [pre-commit, prepare-commit-msg, commit-msg, post-commit, post-checkout, post-merge, post-rewrite, manual, merge-commit]

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import errno
 import argparse
+import errno
 import json
 import os
 import sys
@@ -14,9 +14,8 @@ from datetime import datetime
 from .app import create_app
 from .config import CLIENT_ID_DEFAULT
 from .limits import RateLimitWindow, compute_reset_at, load_rate_limit_snapshot
-from .oauth import OAuthHTTPServer, OAuthHandler, REQUIRED_PORT, URL_BASE
+from .oauth import REQUIRED_PORT, URL_BASE, OAuthHandler, OAuthHTTPServer
 from .utils import eprint, get_home_dir, load_chatgpt_tokens, parse_jwt_claims, read_auth_file
-
 
 _STATUS_LIMIT_BAR_SEGMENTS = 30
 _STATUS_LIMIT_BAR_FILLED = "█"
@@ -43,31 +42,30 @@ def _render_progress_bar(percent_used: float) -> str:
     filled_exact = ratio * _STATUS_LIMIT_BAR_SEGMENTS
     filled = int(filled_exact)
     partial = filled_exact - filled
-    
+
     has_partial = partial > 0.5
     if has_partial:
         filled += 1
-    
+
     filled = max(0, min(_STATUS_LIMIT_BAR_SEGMENTS, filled))
     empty = _STATUS_LIMIT_BAR_SEGMENTS - filled
-    
+
     if has_partial and filled > 0:
         bar = _STATUS_LIMIT_BAR_FILLED * (filled - 1) + _STATUS_LIMIT_BAR_PARTIAL + _STATUS_LIMIT_BAR_EMPTY * empty
     else:
         bar = _STATUS_LIMIT_BAR_FILLED * filled + _STATUS_LIMIT_BAR_EMPTY * empty
-    
+
     return f"[{bar}]"
 
 
 def _get_usage_color(percent_used: float) -> str:
     if percent_used >= 90:
-        return "\033[91m" 
-    elif percent_used >= 75:
-        return "\033[93m"  
-    elif percent_used >= 50:
-        return "\033[94m"  
-    else:
-        return "\033[92m" 
+        return "\033[91m"
+    if percent_used >= 75:
+        return "\033[93m"
+    if percent_used >= 50:
+        return "\033[94m"
+    return "\033[92m"
 
 
 def _reset_color() -> str:
@@ -109,8 +107,7 @@ def _format_reset_duration(seconds: int | None) -> str | None:
         value = int(seconds)
     except Exception:
         return None
-    if value < 0:
-        value = 0
+    value = max(value, 0)
     days, remainder = divmod(value, 86400)
     hours, remainder = divmod(remainder, 3600)
     minutes, remainder = divmod(remainder, 60)
@@ -136,9 +133,9 @@ def _format_local_datetime(dt: datetime) -> str:
 
 def _print_usage_limits_block() -> None:
     stored = load_rate_limit_snapshot()
-    
+
     print("📊 Usage Limits")
-    
+
     if stored is None:
         print("  No usage data available yet. Send a request through ChatMock first.")
         print()
@@ -162,22 +159,22 @@ def _print_usage_limits_block() -> None:
     for i, (icon_label, desc, window) in enumerate(windows):
         if i > 0:
             print()
-        
+
         percent_used = _clamp_percent(window.used_percent)
         remaining = max(0.0, 100.0 - percent_used)
         color = _get_usage_color(percent_used)
         reset = _reset_color()
-        
+
         progress = _render_progress_bar(percent_used)
         usage_text = f"{percent_used:5.1f}% used"
         remaining_text = f"{remaining:5.1f}% left"
-        
+
         print(f"{icon_label} {desc}")
         print(f"{color}{progress}{reset} {color}{usage_text}{reset} | {remaining_text}")
-        
+
         reset_in = _format_reset_duration(window.resets_in_seconds)
         reset_at = compute_reset_at(stored.captured_at, window)
-        
+
         if reset_in and reset_at:
             reset_at_str = _format_local_datetime(reset_at)
             print(f"    ⏳ Resets in: {reset_in} at {reset_at_str}")
@@ -382,7 +379,7 @@ def main() -> None:
             print("👤 Account")
             print("  • Not signed in")
             print("  • Run: python3 chatmock.py login")
-            print("")
+            print()
             _print_usage_limits_block()
             sys.exit(0)
 
@@ -410,7 +407,7 @@ def main() -> None:
         sys.stdout.write(f"  • Plan: {plan}\n")
         if account_id:
             print(f"  • Account ID: {account_id}")
-        print("")
+        print()
         _print_usage_limits_block()
         sys.exit(0)
     else:
