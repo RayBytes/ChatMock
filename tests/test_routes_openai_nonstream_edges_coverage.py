@@ -24,7 +24,8 @@ class _U:
 
 
 def test_chat_nonstream_loop_edges(client):
-    # Prepare upstream with various edges: empty, non-data, blank data, invalid JSON, non-function item, delta, completed
+    # Prepare upstream with various edges: empty, non-data, blank data,
+    # invalid JSON, non-function item, delta, completed
     lines = [
         b"",  # not raw
         b"event: ping",  # not data line

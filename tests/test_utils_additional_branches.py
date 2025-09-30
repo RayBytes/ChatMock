@@ -62,8 +62,9 @@ class _Up:
 
 
 def test_sse_chat_web_search_try_block_exception_path_not_crashing() -> None:
-    # Force a ValueError inside the try-block by making ws_state contain a non-JSON-serializable value
-    # We do this by first emitting a delta that creates an index, then a crafted event that uses a list as eff_params
+    # Force a ValueError inside the try-block by making ws_state contain
+    # a non-JSON-serializable value. We do this by first emitting a delta
+    # that creates an index, then a crafted event that uses a list as eff_params
     events = [
         {"type": "web_search_call.delta", "item_id": "ws", "item": {"parameters": {"q": "x"}}},
         {"type": "web_search_call.completed", "item_id": "ws"},

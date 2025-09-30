@@ -15,7 +15,10 @@ class _Up:
 
     def iter_lines(self, decode_unicode: bool = False) -> Iterator[bytes]:
         # usage has non-numeric values to trigger the except branch in _extract_usage
-        yield b'data: {"type": "response.completed", "response": {"usage": {"input_tokens": "NaN"}}}'
+        yield (
+            b'data: {"type": "response.completed", '
+            b'"response": {"usage": {"input_tokens": "NaN"}}}'
+        )
 
     def close(self) -> None:
         return None

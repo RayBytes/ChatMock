@@ -14,7 +14,10 @@ class _Up:
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
         # First event has invalid usage fields causing int() to fail inside _extract_usage
-        yield b'data: {"type": "response.reasoning_summary_text.delta", "delta": "S", "response": {"usage": {"input_tokens": "x"}}}'
+        yield (
+            b'data: {"type": "response.reasoning_summary_text.delta", "delta": "S", '
+            b'"response": {"usage": {"input_tokens": "x"}}}'
+        )
         yield b'data: {"type": "response.completed", "response": {}}'
 
     def close(self) -> None:

@@ -7,7 +7,10 @@ from chatmock.utils import sse_translate_chat
 
 class _Up:
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        yield b'data: {"type": "response.output_text.delta", "delta": "Hi", "response": {"id": "r"}}'
+        yield (
+            b'data: {"type": "response.output_text.delta", '
+            b'"delta": "Hi", "response": {"id": "r"}}'
+        )
         # output_text.done is currently treated as a generic .done and ignored
         yield b'data: {"type": "response.output_text.done", "response": {"id": "r"}}'
         yield b'data: {"type": "response.completed", "response": {}}'

@@ -33,7 +33,8 @@ def test_chat_nonstream_ignores_noise_and_includes_usage(
         b"data: ",  # empty data
         b"data: {not-json}",  # bad json
         b'data: {"type": "response.output_text.delta", "delta": "Hello", "response": {"id": "r"}}',
-        b'data: {"type": "response.completed", "response": {"usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}}}',
+        b'data: {"type": "response.completed", "response": {"usage": '
+        b'{"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}}}',
     ]
     monkeypatch.setattr(
         routes, "start_upstream_request", lambda *a, **k: (_Up(lines), None), raising=True

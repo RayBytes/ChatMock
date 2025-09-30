@@ -7,8 +7,14 @@ from chatmock.utils import sse_translate_chat
 
 class _Up:
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        yield b'data: {"type": "web_search_call.delta", "item_id": "ws1", "item": {"parameters": {"q": "x"}}, "response": {"id": "r"}}'
-        yield b'data: {"type": "web_search_call.completed", "item_id": "ws1", "response": {"id": "r"}}'
+        yield (
+            b'data: {"type": "web_search_call.delta", "item_id": "ws1", '
+            b'"item": {"parameters": {"q": "x"}}, "response": {"id": "r"}}'
+        )
+        yield (
+            b'data: {"type": "web_search_call.completed", '
+            b'"item_id": "ws1", "response": {"id": "r"}}'
+        )
         yield b'data: {"type": "response.completed", "response": {}}'
 
     def close(self) -> None:

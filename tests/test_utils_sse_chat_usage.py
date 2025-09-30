@@ -8,7 +8,8 @@ from chatmock.utils import sse_translate_chat
 class _Up:
     def __init__(self):
         self._lines = [
-            b'data: {"type": "response.completed", "response": {"id": "r", "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}}}',
+            b'data: {"type": "response.completed", "response": {"id": "r", '
+            b'"usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}}}',
         ]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]

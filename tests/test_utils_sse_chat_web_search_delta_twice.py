@@ -38,5 +38,6 @@ def test_web_search_delta_twice_same_call_id() -> None:
     ]
     out = b"".join(sse_translate_chat(_Up(ev), "gpt-5", 1))
     s = out.decode().replace(" ", "")
-    # Ensure multiple delta chunks exist and tool_calls finish emitted; index should be stable (index":0)
+    # Ensure multiple delta chunks exist and tool_calls finish emitted;
+    # index should be stable (index":0)
     assert s.count('"tool_calls"') >= 2 and '"finish_reason":"tool_calls"' in s

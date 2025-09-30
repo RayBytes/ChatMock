@@ -13,7 +13,10 @@ class _Up:
     status_code = 200
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        yield b'data: {"type": "response.output_text.delta", "delta": "Hi", "response": {"id": "r"}}'
+        yield (
+            b'data: {"type": "response.output_text.delta", '
+            b'"delta": "Hi", "response": {"id": "r"}}'
+        )
         yield b'data: {"type": "response.completed", "response": {}}'
 
     def close(self) -> None:

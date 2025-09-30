@@ -39,7 +39,8 @@ def test_sse_text_verbose_done_then_completed_with_usage() -> None:
         )
     )
     s = out.decode()
-    # Should include an initial stop chunk (from early [DONE]), then a usage chunk, then final [DONE]
+    # Should include an initial stop chunk (from early [DONE]),
+    # then a usage chunk, then final [DONE]
     assert '"finish_reason": "stop"' in s
     assert '"usage": {"prompt_tokens":' in s
     assert "data: [DONE]" in s
