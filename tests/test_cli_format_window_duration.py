@@ -29,6 +29,7 @@ def test_format_window_duration_single_minute() -> None:
 def test_format_window_duration_multiple_minutes() -> None:
     """Multiple minutes formatted correctly."""
     assert cli._format_window_duration(45) == "45 minutes"
+    assert cli._format_window_duration(2) == "2 minutes"
 
 
 def test_format_window_duration_one_hour() -> None:
@@ -66,3 +67,44 @@ def test_format_window_duration_all_units() -> None:
     """All time units formatted correctly."""
     total = 1 * 7 * 24 * 60 + 2 * 24 * 60 + 3 * 60 + 15
     assert cli._format_window_duration(total) == "1 week 2 days 3 hours 15 minutes"
+
+
+def test_format_reset_duration_none() -> None:
+    """None input returns None."""
+    assert cli._format_reset_duration(None) is None
+
+
+def test_format_reset_duration_invalid_type() -> None:
+    """Invalid type returns None."""
+    assert cli._format_reset_duration("invalid") is None  # type: ignore[arg-type]
+
+
+def test_format_reset_duration_seconds_under_minute() -> None:
+    """Seconds under 1 minute show 'under 1m'."""
+    assert cli._format_reset_duration(30) == "under 1m"
+    assert cli._format_reset_duration(59) == "under 1m"
+
+
+def test_format_reset_duration_zero() -> None:
+    """Zero seconds shows '0m'."""
+    assert cli._format_reset_duration(0) == "0m"
+
+
+def test_format_reset_duration_minutes() -> None:
+    """Minutes formatted correctly."""
+    assert cli._format_reset_duration(120) == "2m"
+
+
+def test_format_reset_duration_hours() -> None:
+    """Hours formatted correctly."""
+    assert cli._format_reset_duration(3600) == "1h"
+
+
+def test_format_reset_duration_days() -> None:
+    """Days formatted correctly."""
+    assert cli._format_reset_duration(86400) == "1d"
+
+
+def test_format_reset_duration_mixed() -> None:
+    """Mixed units formatted correctly (no seconds)."""
+    assert cli._format_reset_duration(90060) == "1d 1h 1m"

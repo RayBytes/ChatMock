@@ -25,6 +25,9 @@ from .utils import (
     sse_translate_text,
 )
 
+_UPSTREAM_ERROR_MIN = HTTPStatus.INTERNAL_SERVER_ERROR
+_UPSTREAM_ERROR_MAX = 599
+
 openai_bp = Blueprint("openai", __name__)
 
 
@@ -183,6 +186,16 @@ def chat_completions() -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
             )
         except (json.JSONDecodeError, UnicodeDecodeError):
             err_body = {"raw": upstream.text}
+        # Coerce upstream 5xx to 502 to normalize transient upstream errors in tests/clients
+        try:
+            upstream_status = int(upstream.status_code)
+        except (TypeError, ValueError):
+            upstream_status = HTTPStatus.BAD_GATEWAY
+        normalized_status = (
+            HTTPStatus.BAD_GATEWAY
+            if _UPSTREAM_ERROR_MIN <= upstream_status <= _UPSTREAM_ERROR_MAX
+            else upstream_status
+        )
         if had_responses_tools:
             if verbose:
                 current_app.logger.info(
@@ -208,6 +221,19 @@ def chat_completions() -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
             ):
                 upstream = upstream2
             else:
+                # If second attempt also fails, normalize any 5xx to 502
+                final_status = (
+                    upstream2.status_code if upstream2 is not None else upstream.status_code
+                )
+                try:
+                    final_status_int = int(final_status)
+                except (TypeError, ValueError):
+                    final_status_int = HTTPStatus.BAD_GATEWAY
+                final_status_norm = (
+                    HTTPStatus.BAD_GATEWAY
+                    if _UPSTREAM_ERROR_MIN <= final_status_int <= _UPSTREAM_ERROR_MAX
+                    else final_status_int
+                )
                 return (
                     jsonify(
                         {
@@ -219,7 +245,7 @@ def chat_completions() -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
                             }
                         }
                     ),
-                    (upstream2.status_code if upstream2 is not None else upstream.status_code),
+                    final_status_norm,
                 )
         else:
             if verbose:
@@ -234,7 +260,7 @@ def chat_completions() -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
                         }
                     }
                 ),
-                upstream.status_code,
+                normalized_status,
             )
 
     if is_stream:
@@ -331,7 +357,7 @@ def chat_completions() -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
         upstream.close()
 
     if error_message:
-        resp = make_response(jsonify({"error": {"message": error_message}}), 502)
+        resp = make_response(jsonify({"error": {"message": error_message}}), HTTPStatus.BAD_GATEWAY)
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)
         return resp
@@ -531,7 +557,7 @@ def list_models() -> Response:
             model_ids.extend([f"{base}-{effort}" for effort in efforts])
     data = [{"id": mid, "object": "model", "owned_by": "owner"} for mid in model_ids]
     models = {"object": "list", "data": data}
-    resp = make_response(jsonify(models), 200)
+    resp = make_response(jsonify(models), HTTPStatus.OK)
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp

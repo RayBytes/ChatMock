@@ -78,6 +78,28 @@ def test_store_rate_limit_snapshot_with_secondary(
     assert data["secondary"]["used_percent"] == 25.0
 
 
+def test_store_rate_limit_snapshot_only_secondary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test storing snapshot with only secondary window (no primary)."""
+    monkeypatch.setattr("chatmock.limits.get_home_dir", lambda: str(tmp_path))
+
+    secondary = RateLimitWindow(used_percent=30.0, window_minutes=1440, resets_in_seconds=86400)
+    snapshot = RateLimitSnapshot(primary=None, secondary=secondary)
+
+    store_rate_limit_snapshot(snapshot)
+
+    limits_file = tmp_path / "usage_limits.json"
+    assert limits_file.exists()
+
+    with limits_file.open() as fp:
+        data = json.load(fp)
+
+    assert "primary" not in data
+    assert "secondary" in data
+    assert data["secondary"]["used_percent"] == 30.0
+
+
 def test_store_rate_limit_snapshot_oserror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test store_rate_limit_snapshot silently ignores OSError."""
     monkeypatch.setattr("chatmock.limits.get_home_dir", lambda: str(tmp_path))
