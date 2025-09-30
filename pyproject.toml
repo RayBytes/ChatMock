@@ -11,13 +11,13 @@ dependencies = [
   "pytest-emoji", # Add emoji to test results
   "pytest-benchmark", # Performance benchmarking with statistics
   "pytest-instafail", # Show failures instantly, don't wait for end
-  "pytest-rerunfailures", # Retry flaky tests automatically
+  # "pytest-rerunfailures", # Retry flaky tests automatically - DISABLED: incompatible with execnet 2.x
   "pytest-randomly", # Randomize test order to catch dependencies
   "pytest-asyncio", # Better async/await test support
   "pytest-ruff", # Ruff linting integration (fast, comprehensive)
   "pytest-mypy", # Type checking
   "coverage",
-  "pytest-xdist",
+  # "pytest-xdist", # DISABLED: incompatible with execnet 2.x
   "pip-audit",
   "tomli; python_version < '3.11'",
   "ruff",

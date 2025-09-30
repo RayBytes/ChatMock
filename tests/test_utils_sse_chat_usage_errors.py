@@ -9,8 +9,7 @@ class _Up:
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
         # usage values cause int() to raise -> except path returns None
         yield (
-            b'data: {"type": "response.completed", '
-            b'"response": {"usage": {"input_tokens": "NaN"}}}'
+            b'data: {"type": "response.completed", "response": {"usage": {"input_tokens": "NaN"}}}'
         )
 
     def close(self) -> None:

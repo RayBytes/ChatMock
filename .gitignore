@@ -23,3 +23,4 @@ dist/
 # IDE files
 ChatMock.code-workspace
 .gitignore
+.claude/settings.local.json
