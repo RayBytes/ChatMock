@@ -47,6 +47,6 @@ def test_generate_pkce_shapes() -> None:
     """PKCE fields exist and have reasonable shapes."""
     pkce = generate_pkce()
     assert isinstance(pkce.code_verifier, str)
-    assert len(pkce.code_verifier) >= 64  # noqa: PLR2004
+    assert len(pkce.code_verifier) >= 64
     assert isinstance(pkce.code_challenge, str)
     assert pkce.code_challenge

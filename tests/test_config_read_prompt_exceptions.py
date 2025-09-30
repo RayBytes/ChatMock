@@ -32,5 +32,5 @@ def test__read_prompt_text_handles_read_errors(monkeypatch) -> None:  # type: ig
             raise err
 
     monkeypatch.setattr(config, "Path", _P, raising=True)
-    out = config._read_prompt_text("prompt.md")  # noqa: SLF001
+    out = config._read_prompt_text("prompt.md")
     assert out is None

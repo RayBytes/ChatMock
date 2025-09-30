@@ -53,7 +53,7 @@ def test__read_prompt_text_meipass(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(config, "Path", _P, raising=True)
 
-    base = config._read_prompt_text("prompt.md")  # noqa: SLF001
-    codex = config._read_prompt_text("prompt_gpt5_codex.md")  # noqa: SLF001
+    base = config._read_prompt_text("prompt.md")
+    codex = config._read_prompt_text("prompt_gpt5_codex.md")
     assert base == "BASE"
     assert codex == "CODEX"

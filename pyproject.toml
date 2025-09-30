@@ -52,10 +52,17 @@ select = ["ALL"]
 "tests/**" = [
   "S101",  # allow bare assert in tests
   "E402",  # allow import after test-specific setup
-  "ANN001", "ANN201", "ANN202",  # relax strict annotations in tests
-  "FBT001", "FBT002",  # boolean positional in test fakes
+  "E501",  # long lines acceptable in test data/fixtures
+  "ANN001", "ANN002", "ANN003", "ANN201", "ANN202", "ANN204", "ANN205", "ANN401",  # relax strict annotations in tests
+  "ARG001", "ARG002",  # unused arguments in test mocks/fakes are acceptable
+  "FBT001", "FBT002", "FBT003",  # boolean positional in test fakes
+  "D103",  # test functions don't need docstrings (name is documentation)
   "TC003",  # collections.abc in type-checking blocks
   "PLC0415",  # deferred imports in fixtures
+  "PLR0913",  # many arguments in test helpers acceptable
+  "PLR2004",  # magic values are acceptable in test assertions
+  "SLF001",  # tests need to access private members for testing
+  "TRY003", "EM101",  # exception messages in tests don't need extraction
 ]
 
 [tool.ruff.format]
