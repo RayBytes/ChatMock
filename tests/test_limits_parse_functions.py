@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 from chatmock import limits
 
 
