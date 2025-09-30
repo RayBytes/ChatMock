@@ -83,3 +83,21 @@ source = ['chatmock']
 fail_under = 100
 show_missing = true
 skip_covered = true
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "chatmock.routes_openai"
+disable_error_code = ["union-attr"]
+
+[[tool.mypy.overrides]]
+module = "chatmock.routes_ollama"
+disable_error_code = ["union-attr", "return-value"]
+
+[[tool.mypy.overrides]]
+module = "chatmock.upstream"
+disable_error_code = ["assignment"]

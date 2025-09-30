@@ -60,12 +60,12 @@ def apply_reasoning_to_message(  # noqa: C901
             message["reasoning"] = reasoning_full_text
         return message
 
-    rtxt_parts: list[str] = []
+    ttxt_parts: list[str] = []
     if isinstance(reasoning_summary_text, str) and reasoning_summary_text.strip():
-        rtxt_parts.append(reasoning_summary_text)
+        ttxt_parts.append(reasoning_summary_text)
     if isinstance(reasoning_full_text, str) and reasoning_full_text.strip():
-        rtxt_parts.append(reasoning_full_text)
-    rtxt = "\n\n".join([p for p in rtxt_parts if p])
+        ttxt_parts.append(reasoning_full_text)
+    rtxt = "\n\n".join([p for p in ttxt_parts if p])
     if rtxt:
         think_block = f"<think>{rtxt}</think>"
         content_text = message.get("content") or ""

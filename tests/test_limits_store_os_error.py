@@ -31,13 +31,10 @@ def test_store_rate_limit_snapshot_fchmod_oserror(
     snapshot = RateLimitSnapshot(primary=window, secondary=None)
 
     # Mock fchmod to raise OSError
-    original_fchmod = getattr(os, "fchmod", None)
-
     def mock_fchmod(fd: int, mode: int) -> None:
         raise OSError("fchmod failed")
 
-    if original_fchmod is not None:
-        monkeypatch.setattr(os, "fchmod", mock_fchmod)
+    monkeypatch.setattr(os, "fchmod", mock_fchmod, raising=False)
 
     # Should not raise despite fchmod error
     limits.store_rate_limit_snapshot(snapshot)

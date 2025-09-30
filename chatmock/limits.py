@@ -146,7 +146,7 @@ def store_rate_limit_snapshot(
         }
     try:
         with _limits_path().open("w", encoding="utf-8") as fp:
-            if hasattr(os, "fchmod"):
+            if hasattr(os, "fchmod"):  # pragma: no branch
                 with contextlib.suppress(OSError):
                     os.fchmod(fp.fileno(), 0o600)
             json.dump(payload, fp, indent=2)

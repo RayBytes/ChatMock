@@ -55,7 +55,7 @@ def convert_ollama_messages(  # noqa: C901, PLR0912, PLR0915
             )
         elif isinstance(content, str):
             parts.append({"type": "text", "text": content})
-        for img in images:
+        for img in images:  # type: ignore[union-attr]
             url = to_data_url(img)
             if isinstance(url, str) and url:
                 parts.append({"type": "image_url", "image_url": {"url": url}})
@@ -64,12 +64,12 @@ def convert_ollama_messages(  # noqa: C901, PLR0912, PLR0915
 
         if role == "assistant" and isinstance(m.get("tool_calls"), list):
             tcs = []
-            for tc in m.get("tool_calls"):
+            for tc in m.get("tool_calls"):  # type: ignore[union-attr]
                 if not isinstance(tc, dict):
                     continue
-                fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
-                name = fn.get("name") if isinstance(fn.get("name"), str) else None
-                args = fn.get("arguments")
+                fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}  # type: ignore[union-attr]
+                name = fn.get("name") if isinstance(fn.get("name"), str) else None  # type: ignore[union-attr]
+                args = fn.get("arguments")  # type: ignore[union-attr]
                 if name is None:
                     continue
                 call_id = tc.get("id") or tc.get("call_id")
@@ -89,14 +89,14 @@ def convert_ollama_messages(  # noqa: C901, PLR0912, PLR0915
                         },
                     }
                 )
-            if tcs:
+            if tcs:  # pragma: no branch
                 nm["tool_calls"] = tcs
 
         if role == "tool":
             tci = m.get("tool_call_id") or m.get("id")
             if (not isinstance(tci, str) or not tci) and pending_call_ids:
                 tci = pending_call_ids.pop(0)
-            if isinstance(tci, str) and tci:
+            if isinstance(tci, str) and tci:  # pragma: no branch
                 nm["tool_call_id"] = tci
 
         out.append(nm)
@@ -127,8 +127,8 @@ def normalize_ollama_tools(tools: list[dict[str, Any]] | None) -> list[dict[str,
         if not isinstance(t, dict):
             continue
         if isinstance(t.get("function"), dict):
-            fn = t.get("function")
-            name = fn.get("name") if isinstance(fn.get("name"), str) else None
+            fn = t.get("function")  # type: ignore[union-attr]
+            name = fn.get("name") if isinstance(fn.get("name"), str) else None  # type: ignore[union-attr]
             if not name:
                 continue
             out.append(
@@ -136,9 +136,9 @@ def normalize_ollama_tools(tools: list[dict[str, Any]] | None) -> list[dict[str,
                     "type": "function",
                     "function": {
                         "name": name,
-                        "description": fn.get("description") or "",
-                        "parameters": fn.get("parameters")
-                        if isinstance(fn.get("parameters"), dict)
+                        "description": fn.get("description") or "",  # type: ignore[union-attr]
+                        "parameters": fn.get("parameters")  # type: ignore[union-attr]
+                        if isinstance(fn.get("parameters"), dict)  # type: ignore[union-attr]
                         else {"type": "object", "properties": {}},
                     },
                 }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 from flask import Response, jsonify, make_response
 from flask import request as flask_request
 

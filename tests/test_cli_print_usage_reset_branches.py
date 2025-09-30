@@ -73,3 +73,26 @@ def test_print_usage_limits_reset_at_only(monkeypatch: object, capsys: object) -
     # Should show "Resets at:" without "in"
     assert "Resets at:" in captured.out
     assert captured.out.count("Resets in:") == 0
+
+
+def test_print_usage_limits_reset_in_and_at(monkeypatch: object, capsys: object) -> None:
+    """Test reset display when both reset_in and reset_at are shown."""
+    from chatmock import cli
+
+    window = MockWindow(resets_in_seconds=7200)
+    stored = MockStored(
+        snapshot=MockSnapshot(primary=window),
+        captured_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    future_time = stored.captured_at + datetime.timedelta(seconds=window.resets_in_seconds or 0)
+
+    monkeypatch.setattr(cli, "load_rate_limit_snapshot", lambda: stored)
+    monkeypatch.setattr(cli, "compute_reset_at", lambda *_: future_time)
+
+    cli._print_usage_limits_block()
+    captured = capsys.readouterr()
+
+    assert "Resets in:" in captured.out
+    expected_time = cli._format_local_datetime(future_time)
+    duration = cli._format_reset_duration(window.resets_in_seconds)
+    assert f"Resets in: {duration} at {expected_time}" in captured.out

@@ -69,6 +69,16 @@ def test_format_window_duration_all_units() -> None:
     assert cli._format_window_duration(total) == "1 week 2 days 3 hours 15 minutes"
 
 
+def test_format_window_duration_fallback_branch(monkeypatch: object) -> None:
+    """Fallback branch handles unexpected divmod results."""
+
+    def fake_divmod(_value: int, _divisor: int) -> tuple[int, int]:
+        return 0, 0
+
+    monkeypatch.setattr(cli, "divmod", fake_divmod, raising=False)
+    assert cli._format_window_duration(10) == "10 minutes"
+
+
 def test_format_reset_duration_none() -> None:
     """None input returns None."""
     assert cli._format_reset_duration(None) is None

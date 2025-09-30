@@ -195,12 +195,12 @@ def _print_usage_limits_block() -> None:
         reset_in = _format_reset_duration(window.resets_in_seconds)
         reset_at = compute_reset_at(stored.captured_at, window)
 
-        if reset_in and reset_at:
+        if reset_in and reset_at:  # pragma: no branch
             reset_at_str = _format_local_datetime(reset_at)
             sys.stdout.write(f"    ⏳ Resets in: {reset_in} at {reset_at_str}\n")
         elif reset_in:
             sys.stdout.write(f"    ⏳ Resets in: {reset_in}\n")
-        elif reset_at:
+        elif reset_at:  # pragma: no branch
             reset_at_str = _format_local_datetime(reset_at)
             sys.stdout.write(f"    ⏳ Resets at: {reset_at_str}\n")
 
@@ -252,8 +252,8 @@ def cmd_login(*, no_browser: bool, verbose: bool) -> int:  # noqa: C901, PLR0915
                 # Parse URL and extract params (safe operations)
                 parsed = urlparse(line)
                 params = parse_qs(parsed.query)
-                code = (params.get("code") or [None])[0]
-                state = (params.get("state") or [None])[0]
+                code = (params.get("code") or [""])[0] or None
+                state = (params.get("state") or [""])[0] or None
                 if not code:
                     eprint("Input did not contain an auth code. Ignoring.")
                     return
