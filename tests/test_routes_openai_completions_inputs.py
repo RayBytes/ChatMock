@@ -25,7 +25,7 @@ def test_completions_prompt_list_and_suffix(
     client: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(), None), raising=True
     )
     # prompt as list concatenation
     body1 = {"model": "gpt-5", "prompt": ["a", "b"]}

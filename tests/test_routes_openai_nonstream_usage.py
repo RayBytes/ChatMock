@@ -29,7 +29,7 @@ class _Up:
 
 def test_openai_nonstream_includes_usage(client: object, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post(

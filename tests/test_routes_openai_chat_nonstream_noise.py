@@ -38,7 +38,7 @@ def test_chat_nonstream_ignores_noise_and_includes_usage(
         b'{"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}}}',
     ]
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(lines), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(lines), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     r = client.post("/v1/chat/completions", data=json.dumps(body), content_type="application/json")

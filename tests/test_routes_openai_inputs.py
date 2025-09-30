@@ -32,7 +32,7 @@ def test_chat_completions_uses_prompt_when_no_messages(
 
     monkeypatch.setattr(routes, "start_upstream_request", fake_start, raising=True)
     monkeypatch.setattr(
-        routes, "sse_translate_chat", lambda *a, **k: [b"data: [DONE]\n\n"], raising=True
+        routes, "sse_translate_chat", lambda *_a, **_k: [b"data: [DONE]\n\n"], raising=True
     )
 
     body = {"model": "gpt-5", "prompt": "hello", "stream": True}
@@ -64,7 +64,7 @@ def test_chat_completions_moves_system_to_front(
 
     monkeypatch.setattr(routes, "start_upstream_request", fake_start, raising=True)
     monkeypatch.setattr(
-        routes, "sse_translate_chat", lambda *a, **k: [b"data: [DONE]\n\n"], raising=True
+        routes, "sse_translate_chat", lambda *_a, **_k: [b"data: [DONE]\n\n"], raising=True
     )
 
     body = {
@@ -100,7 +100,7 @@ def test_chat_completions_prompt_fallback_when_no_valid_items(
 
     monkeypatch.setattr(routes, "start_upstream_request", fake_start, raising=True)
     monkeypatch.setattr(
-        routes, "sse_translate_chat", lambda *a, **k: [b"data: [DONE]\n\n"], raising=True
+        routes, "sse_translate_chat", lambda *_a, **_k: [b"data: [DONE]\n\n"], raising=True
     )
 
     body = {

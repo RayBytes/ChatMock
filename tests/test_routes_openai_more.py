@@ -56,7 +56,7 @@ def test_chat_completions_default_web_search_injected(
 
     monkeypatch.setattr(routes, "start_upstream_request", fake_start, raising=True)
     monkeypatch.setattr(
-        routes, "sse_translate_chat", lambda *a, **k: [b"data: [DONE]\n\n"], raising=True
+        routes, "sse_translate_chat", lambda *_a, **_k: [b"data: [DONE]\n\n"], raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "stream": True}
     resp = client.post(
@@ -75,7 +75,7 @@ def test_chat_completions_upstream_error_no_tools(
         content = b'{"error": {"message": "bad"}}'
 
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_U(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_U(), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post(
@@ -110,7 +110,7 @@ def test_chat_completions_tools_fallback_on_error(
 
     monkeypatch.setattr(routes, "start_upstream_request", fake_start, raising=True)
     monkeypatch.setattr(
-        routes, "sse_translate_chat", lambda *a, **k: [b"data: [DONE]\n\n"], raising=True
+        routes, "sse_translate_chat", lambda *_a, **_k: [b"data: [DONE]\n\n"], raising=True
     )
     body = {
         "model": "gpt-5",

@@ -37,7 +37,7 @@ def test_ollama_responses_tools_size_json_error_monkeypatch(
             return None
 
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_U(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_U(), None), raising=True
     )
     monkeypatch.setattr(
         routes, "json", type("J", (), {"dumps": fake_dumps, "loads": routes.json.loads})

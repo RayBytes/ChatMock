@@ -22,7 +22,7 @@ def test_openai_chat_verbose_error_no_tools(
 ) -> None:
     client.application.config["VERBOSE"] = True
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_U(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_U(), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post(

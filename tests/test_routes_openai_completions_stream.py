@@ -26,7 +26,7 @@ class _Up:
 
 def test_text_completions_stream_path(client: object, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(), None), raising=True
     )
     body = {
         "model": "gpt-5",

@@ -86,7 +86,7 @@ def test_sse_chat_verbose_vlog_called() -> None:
             "gpt-5",
             1,
             verbose=True,
-            vlog=lambda s: logs.append(s),  # type: ignore[no-redef]
+            vlog=lambda _s: logs.append(_s),  # type: ignore[no-redef]
         )
     )
     assert any("noise" in s for s in logs)

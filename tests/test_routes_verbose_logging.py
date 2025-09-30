@@ -39,7 +39,7 @@ def test_verbose_logs_openai_error_and_fallback(
 
     monkeypatch.setattr(r_openai, "start_upstream_request", fake_start, raising=True)
     monkeypatch.setattr(
-        r_openai, "sse_translate_chat", lambda *a, **k: [b"data: [DONE]\n\n"], raising=True
+        r_openai, "sse_translate_chat", lambda *_a, **_k: [b"data: [DONE]\n\n"], raising=True
     )
     body = {
         "model": "gpt-5",
@@ -57,7 +57,7 @@ def test_verbose_logs_openai_error_and_fallback(
 def test_verbose_logs_ollama_error_path(client: object, monkeypatch: pytest.MonkeyPatch) -> None:
     client.application.config["VERBOSE"] = True
     monkeypatch.setattr(
-        r_ollama, "start_upstream_request", lambda *a, **k: (_Up(), None), raising=True
+        r_ollama, "start_upstream_request", lambda *_a, **_k: (_Up(), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "stream": False}
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")

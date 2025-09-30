@@ -30,7 +30,7 @@ def test_text_completions_stream_forwards_include_usage(
         return [b"data: [DONE]\n\n"]
 
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_U(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_U(), None), raising=True
     )
     monkeypatch.setattr(routes, "sse_translate_text", fake_sse, raising=True)
     body = {

@@ -27,7 +27,7 @@ def test_web_search_output_item_done_emits_tool_calls() -> None:
         },
         {"type": "response.completed", "response": {}},
     ]
-    out = b"".join(sse_translate_chat(_Up(ev), "gpt-5", 1, verbose=True, vlog=lambda s: None))
+    out = b"".join(sse_translate_chat(_Up(ev), "gpt-5", 1, verbose=True, vlog=lambda _s: None))
     s = out.decode()
     # Validate tool_calls appear and the finish reason is set to tool_calls on the same event stream
     assert "tool_calls" in s

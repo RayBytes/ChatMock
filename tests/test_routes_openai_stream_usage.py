@@ -31,7 +31,7 @@ def test_chat_completions_stream_include_usage(
     client: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(), None), raising=True
     )
     body = {
         "model": "gpt-5",

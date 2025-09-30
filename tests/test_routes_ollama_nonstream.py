@@ -30,7 +30,7 @@ def test_ollama_chat_nonstream_basic(client: object, monkeypatch: pytest.MonkeyP
         {"type": "response.completed", "response": {}},
     ]
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(events), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(events), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "stream": False}
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
@@ -48,7 +48,7 @@ def test_ollama_chat_upstream_error_no_tools(
         content = b'{"error": {"message": "bad"}}'
 
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_U(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_U(), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "stream": False}
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")

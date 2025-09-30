@@ -33,7 +33,7 @@ def test_ollama_upstream_error_no_tools_verbose(
         content = b'{"error": {"message": "bad"}}'
 
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_U(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_U(), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "stream": True}
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")

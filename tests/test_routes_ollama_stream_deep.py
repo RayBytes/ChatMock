@@ -41,7 +41,7 @@ def test_ollama_chat_stream_deep_branches(client: object, monkeypatch: pytest.Mo
         },
     ]
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(ev), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(ev), None), raising=True
     )
     body = {
         "model": "gpt-5",

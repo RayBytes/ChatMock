@@ -43,7 +43,7 @@ def test_exchange_code_returns_bundle_and_success_url(monkeypatch) -> None:  # t
             return False
 
     monkeypatch.setattr(
-        oauth.urllib.request, "urlopen", lambda *a, **k: _Resp(payload), raising=True
+        oauth.urllib.request, "urlopen", lambda *_a, **_k: _Resp(payload), raising=True
     )
     bundle, success = oauth.OAuthHTTPServer.exchange_code(srv, "code")  # type: ignore[misc]
     assert bundle.token_data.id_token

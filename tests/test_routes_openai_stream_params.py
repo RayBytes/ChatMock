@@ -27,7 +27,7 @@ def test_chat_stream_forwards_include_usage_and_reasoning_compat(
             return None
 
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_U(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_U(), None), raising=True
     )
 
     def fake_sse(

@@ -56,7 +56,7 @@ def test_text_completions_nonstream_happy_path(
     client: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_FakeUpstream(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_FakeUpstream(), None), raising=True
     )
     resp = client.post(
         "/v1/completions",

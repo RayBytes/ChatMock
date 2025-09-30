@@ -28,7 +28,7 @@ def _fake_sse(*args, **kwargs):  # type: ignore[no-untyped-def]
 
 def test_chat_completions_stream_minimal(client: object, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(), None), raising=True
     )
     monkeypatch.setattr(routes, "sse_translate_chat", _fake_sse, raising=True)
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "stream": True}

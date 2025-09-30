@@ -34,7 +34,7 @@ def test_chat_completions_nonstream_think_tags_reasoning(
         {"type": "response.completed", "response": {}},
     ]
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(events), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(events), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": ""}]}
     resp = client.post(

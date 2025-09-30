@@ -11,7 +11,7 @@ def test_write_auth_file_sets_mode_when_supported(monkeypatch, tmp_path: Path) -
     # Ensure we write into a temp home dir
     monkeypatch.setattr(utils, "get_home_dir", lambda: str(tmp_path), raising=True)
     # Provide a stub for os.fchmod so the line executes without AttributeError
-    monkeypatch.setattr(utils.os, "fchmod", lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(utils.os, "fchmod", lambda *_a, **_k: None, raising=False)
     ok = utils.write_auth_file({"tokens": {"x": 1}})
     assert ok
     assert (tmp_path / "auth.json").exists()

@@ -25,7 +25,7 @@ def test_chat_empty_payload_defaults_messages_empty(
     client: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_UpOK(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_UpOK(), None), raising=True
     )
     resp = client.post("/v1/chat/completions", data=json.dumps({}), content_type="application/json")
     assert resp.status_code == 200
@@ -35,7 +35,7 @@ def test_chat_responses_tools_non_dict_are_ignored(
     client: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_UpOK(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_UpOK(), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [], "responses_tools": [[], 1, {"type": "web_search"}]}
     resp = client.post(
@@ -56,7 +56,7 @@ def test_chat_upstream_error_invalid_json_decode_fallback(
             return None
 
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_U(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_U(), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post(
@@ -78,7 +78,7 @@ def test_completions_upstream_error_invalid_json(
             return None
 
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_U(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_U(), None), raising=True
     )
     body = {"model": "gpt-5", "prompt": "hi"}
     resp = client.post("/v1/completions", data=json.dumps(body), content_type="application/json")

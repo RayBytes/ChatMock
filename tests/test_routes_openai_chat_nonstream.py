@@ -39,7 +39,7 @@ def test_chat_completions_nonstream_aggregates_text_and_tool_calls(
         },
     ]
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(events), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(events), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post(
@@ -58,7 +58,7 @@ def test_chat_completions_nonstream_failed_returns_502(
 ) -> None:
     events = [{"type": "response.failed", "response": {"error": {"message": "oops"}}}]
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(events), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(events), None), raising=True
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post(

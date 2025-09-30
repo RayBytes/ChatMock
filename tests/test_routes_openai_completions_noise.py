@@ -24,7 +24,7 @@ class _Up:
 
 def test_openai_completions_nonstream_ignores_noise(client: object, monkeypatch: object) -> None:
     monkeypatch.setattr(
-        routes, "start_upstream_request", lambda *a, **k: (_Up(), None), raising=True
+        routes, "start_upstream_request", lambda *_a, **_k: (_Up(), None), raising=True
     )
     resp = client.post("/v1/completions", json={"model": "gpt-5", "prompt": "hi"})
     assert resp.status_code == 200
