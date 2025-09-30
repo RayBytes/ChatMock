@@ -1,0 +1,63 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.2
+    hooks:
+      - id: ruff-check
+        types_or: [ python, pyi ]
+        args: ["--fix", "--exit-non-zero-on-fix"]
+        stages: [pre-commit, prepare-commit-msg, commit-msg, post-commit, post-checkout, post-merge, post-rewrite, manual, pre-merge-commit]
+      - id: ruff-format
+        types_or: [ python, pyi ]
+        stages: [pre-commit, prepare-commit-msg, commit-msg, post-commit, post-checkout, post-merge, post-rewrite, manual, pre-merge-commit]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-ast
+      - id: check-builtin-literals
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-executables-have-shebangs
+      - id: check-illegal-windows-names
+      - id: check-json
+      - id: check-shebang-scripts-are-executable
+      - id: pretty-format-json
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-vcs-permalinks
+      - id: check-xml
+      - id: check-yaml
+      - id: debug-statements
+      - id: destroyed-symlinks
+      - id: detect-aws-credentials
+        args: ['--allow-missing-credentials']
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: file-contents-sorter
+      - id: fix-byte-order-marker
+      - id: forbid-new-submodules
+      - id: forbid-submodules
+      - id: mixed-line-ending
+      - id: requirements-txt-fixer
+      - id: sort-simple-yaml
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: ruff-full-repo
+        name: Ruff full-repo lint (pre-push)
+        entry: uv run ruff check . --fix
+        language: system
+        pass_filenames: false
+        stages: [pre-commit, prepare-commit-msg, commit-msg, post-commit, post-checkout, post-merge, post-rewrite, manual, pre-merge-commit]
+      - id: pytest-coverage
+        name: Run tests with coverage (100%)
+        entry: uv run --project . pytest -q --cov=chatmock --cov-report=term-missing --cov-fail-under=100
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+ci:
+  autofix_prs: false
+  skip: []

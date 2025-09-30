@@ -1,9 +1,13 @@
+"""Minimal Qt GUI wrapper to run ChatMock server and manage login."""
+
 from __future__ import annotations
 
-import sys
-import os
-import webbrowser
+import argparse
+import contextlib
 import multiprocessing as mp
+import sys
+import webbrowser
+from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -11,16 +15,25 @@ from chatmock.app import create_app
 from chatmock.cli import cmd_login
 from chatmock.utils import load_chatgpt_tokens, parse_jwt_claims
 
+DARK_MODE_THRESHOLD = 128
+LOGIN_HELPER_PORT_IN_USE = 13
 
-def run_server(host: str, port: int, reasoning_effort: str = "medium", reasoning_summary: str = "auto") -> None:
+
+def run_server(
+    host: str, port: int, reasoning_effort: str = "medium", reasoning_summary: str = "auto"
+) -> None:
+    """Run the Flask app in-process for the background server."""
     app = create_app(reasoning_effort=reasoning_effort, reasoning_summary=reasoning_summary)
     app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
 
 
 class ServerProcess(QtCore.QObject):
+    """Manages a background subprocess hosting the API server."""
+
     state_changed = QtCore.Signal(bool)
 
     def __init__(self) -> None:
+        """Initialize default host/port and create idle state."""
         super().__init__()
         self._proc: QtCore.QProcess | None = None
         self._host = "127.0.0.1"
@@ -29,9 +42,11 @@ class ServerProcess(QtCore.QObject):
         self._summary = "auto"
 
     def is_running(self) -> bool:
+        """Return True if a child process is active."""
         return self._proc is not None and self._proc.state() != QtCore.QProcess.NotRunning
 
     def start(self, host: str, port: int, effort: str, summary: str) -> None:
+        """Launch a background Python process running the server."""
         if self.is_running():
             return
         self._host, self._port = host, port
@@ -40,41 +55,48 @@ class ServerProcess(QtCore.QObject):
         self._proc.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         args = [
             "--run-server",
-            "--host", host,
-            "--port", str(port),
-            "--effort", effort,
-            "--summary", summary,
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--effort",
+            effort,
+            "--summary",
+            summary,
         ]
         self._proc.start(sys.executable, args)
-        self._proc.started.connect(lambda: self.state_changed.emit(True))
+        self._proc.started.connect(lambda: self.state_changed.emit(True))  # noqa: FBT003
 
-        def _on_finished(code: int, status: QtCore.QProcess.ExitStatus) -> None:
-            self.state_changed.emit(False)
+        def _on_finished(_code: int, _status: QtCore.QProcess.ExitStatus) -> None:
+            self.state_changed.emit(False)  # noqa: FBT003
             self._proc = None
 
         self._proc.finished.connect(_on_finished)
 
     def stop(self) -> None:
+        """Stop the background server process if running."""
         if not self.is_running():
             return
-        try:
+        with contextlib.suppress(Exception):
             self._proc.kill()
             self._proc.waitForFinished(3000)
-        except Exception:
-            pass
         self._proc = None
-        self.state_changed.emit(False)
+        self.state_changed.emit(False)  # noqa: FBT003
 
     def base_url(self) -> str:
+        """Return base URL for OpenAI-compatible endpoints."""
         return f"http://{self._host}:{self._port}/v1"
 
 
 def resource_path(rel: str) -> str:
-    base = getattr(sys, "_MEIPASS", os.path.abspath(os.path.dirname(__file__)))
-    return os.path.join(base, rel)
+    """Resolve a resource path in both dev and frozen (PyInstaller) modes."""
+    base_raw = getattr(sys, "_MEIPASS", None)
+    base = Path(base_raw) if isinstance(base_raw, str) else Path(__file__).resolve().parent
+    return str(base / rel)
 
 
 def find_app_icon() -> QtGui.QIcon:
+    """Return the best-matching app icon bundled with the app."""
     candidates = [
         "appicon.icns",
         "appicon.ico",
@@ -86,22 +108,24 @@ def find_app_icon() -> QtGui.QIcon:
         "ChatMock.png",
     ]
     for name in candidates:
-        p = resource_path(name)
-        if os.path.exists(p):
-            icon = QtGui.QIcon(p)
+        p = Path(resource_path(name))
+        if p.exists():
+            icon = QtGui.QIcon(str(p))
             if not icon.isNull():
                 return icon
     return QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.SP_DesktopIcon)
 
 
 def is_dark_mode() -> bool:
+    """Detect whether the current palette resembles a dark theme."""
     app = QtWidgets.QApplication.instance()
     pal = app.palette() if app else QtGui.QPalette()
     bg = pal.window().color()
-    return bg.lightness() < 128
+    return bg.lightness() < DARK_MODE_THRESHOLD
 
 
 def apply_theme() -> None:
+    """Apply a minimal light/dark stylesheet based on palette."""
     dark = is_dark_mode()
     if dark:
         bg = "#111827"  # slate-900
@@ -197,18 +221,24 @@ def apply_theme() -> None:
 
 
 class LoginWorker(QtCore.QThread):
+    """Runs the login flow without blocking the main thread."""
+
     finished_with_code = QtCore.Signal(int)
 
     def run(self) -> None:
+        """Execute login flow and emit resulting code."""
         try:
             code = cmd_login(no_browser=False, verbose=False)
-        except Exception:
+        except Exception:  # noqa: BLE001
             code = 1
         self.finished_with_code.emit(code)
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self) -> None:
+    """Main application window with controls for login and server."""
+
+    def __init__(self) -> None:  # noqa: PLR0915
+        """Build the UI and initialize state."""
         super().__init__()
         self.setWindowTitle("ChatMock")
         self.setMinimumSize(620, 420)
@@ -282,9 +312,9 @@ class MainWindow(QtWidgets.QMainWindow):
         actions = QtWidgets.QHBoxLayout()
         self.btn_start = QtWidgets.QPushButton("Start in Background")
         self.btn_start.setDefault(True)
-        self.btn_start.setProperty("primary", True)
+        self.btn_start.setProperty("primary", True)  # noqa: FBT003
         self.btn_stop = QtWidgets.QPushButton("Stop")
-        self.btn_stop.setProperty("danger", True)
+        self.btn_stop.setProperty("danger", True)  # noqa: FBT003
         self.btn_open = QtWidgets.QPushButton("Open Base URL")
         actions.addWidget(self.btn_start)
         actions.addWidget(self.btn_stop)
@@ -347,30 +377,38 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tray.show()
 
         self._refresh_login_state()
-        self._on_server_state_changed(False)
+        self._on_server_state_changed(running=False)
 
         QtWidgets.QApplication.instance().aboutToQuit.connect(self._server.stop)
 
     def _refresh_login_state(self) -> None:
+        """Update UI based on whether tokens are available."""
         access_token, account_id, id_token = load_chatgpt_tokens()
         if access_token and id_token:
             self.status.setText("Signed in • Ready to serve")
             self._logged_in = True
             self.btn_login.setEnabled(True)
-            self.btn_login.setProperty("muted", True)
-            try:
+            self.btn_login.setProperty("muted", True)  # noqa: FBT003
+            with contextlib.suppress(Exception):
                 self.btn_login.style().unpolish(self.btn_login)
                 self.btn_login.style().polish(self.btn_login)
-            except Exception:
-                pass
             self.btn_login.setToolTip("You are logged in. Click to re-authenticate.")
             id_claims = parse_jwt_claims(id_token) or {}
             access_claims = parse_jwt_claims(access_token) or {}
             email = id_claims.get("email") or id_claims.get("preferred_username") or "<unknown>"
-            plan_raw = (access_claims.get("https://api.openai.com/auth") or {}).get("chatgpt_plan_type") or "unknown"
-            plan_map = {"plus": "Plus", "pro": "Pro", "free": "Free", "team": "Team", "enterprise": "Enterprise"}
+            plan_raw = (access_claims.get("https://api.openai.com/auth") or {}).get(
+                "chatgpt_plan_type"
+            ) or "unknown"
+            plan_map = {
+                "plus": "Plus",
+                "pro": "Pro",
+                "free": "Free",
+                "team": "Team",
+                "enterprise": "Enterprise",
+            }
             plan = plan_map.get(
-                str(plan_raw).lower(), str(plan_raw).title() if isinstance(plan_raw, str) else "Unknown"
+                str(plan_raw).lower(),
+                str(plan_raw).title() if isinstance(plan_raw, str) else "Unknown",
             )
             self.email_value.setText(email)
             self.plan_value.setText(plan)
@@ -379,12 +417,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.status.setText("Not signed in • Click Log in")
             self._logged_in = False
             self.btn_login.setEnabled(True)
-            self.btn_login.setProperty("muted", False)
-            try:
+            self.btn_login.setProperty("muted", False)  # noqa: FBT003
+            with contextlib.suppress(Exception):
                 self.btn_login.style().unpolish(self.btn_login)
                 self.btn_login.style().polish(self.btn_login)
-            except Exception:
-                pass
             self.btn_login.setToolTip("Log in to ChatGPT")
             self.email_value.setText("Not signed in")
             self.plan_value.setText("-")
@@ -392,6 +428,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_start.setEnabled(not self._server.is_running() and self._logged_in)
 
     def _on_login(self) -> None:
+        """Kick off the login worker and disable the button temporarily."""
         self.status.setText("Launching login flow…")
         self.btn_login.setEnabled(False)
         self._login_worker = LoginWorker()
@@ -399,9 +436,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._login_worker.start()
 
     def _after_login(self, code: int) -> None:
+        """Handle login result and refresh state."""
         if code == 0:
-            QtWidgets.QMessageBox.information(self, "Login", "Login successful. You can now start the server.")
-        elif code == 13:
+            QtWidgets.QMessageBox.information(
+                self, "Login", "Login successful. You can now start the server."
+            )
+        elif code == LOGIN_HELPER_PORT_IN_USE:
             QtWidgets.QMessageBox.warning(
                 self, "Login", "Login helper port is in use. Close other instances and try again."
             )
@@ -410,6 +450,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_login_state()
 
     def _start_server(self) -> None:
+        """Parse host/port and start the background server."""
         try:
             host = self.host_edit.text().strip() or "127.0.0.1"
             port = int(self.port_edit.text().strip() or "8000")
@@ -423,9 +464,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._server.start(host, port, effort, summary)
 
     def _stop_server(self) -> None:
+        """Request the background server to stop."""
         self._server.stop()
 
-    def _on_server_state_changed(self, running: bool) -> None:
+    def _on_server_state_changed(self, running: bool) -> None:  # noqa: FBT001
+        """React to server state changes and update controls."""
         self.btn_start.setEnabled((not running) and self._logged_in)
         self.btn_stop.setEnabled(running)
         self.btn_open.setEnabled(running)
@@ -435,33 +478,38 @@ class MainWindow(QtWidgets.QMainWindow):
             self.baseurl.setText(self._server.base_url())
             self.hide()
             self.tray.showMessage(
-                "ChatMock", "Server is running in the background", QtWidgets.QSystemTrayIcon.Information, 1500
+                "ChatMock",
+                "Server is running in the background",
+                QtWidgets.QSystemTrayIcon.Information,
+                1500,
             )
         else:
             self.status.setText("Server stopped")
             self.baseurl.setText("(server not running)")
 
     def _copy_url(self) -> None:
+        """Copy the current base URL to the clipboard."""
         url = self.baseurl.text().strip()
         if url and not url.startswith("("):
             QtWidgets.QApplication.clipboard().setText(url)
 
     def _open_base_url(self) -> None:
+        """Open the current base URL in the default browser."""
         url = self.baseurl.text().strip()
         if url and not url.startswith("("):
             webbrowser.open(url)
 
     def _show_window(self) -> None:
+        """Bring the main window to the front."""
         self.show()
         self.raise_()
         self.activateWindow()
 
 
 def main() -> None:
+    """Entry point for launching the GUI or background server."""
     mp.freeze_support()
     if "--run-server" in sys.argv:
-        import argparse
-
         p = argparse.ArgumentParser(add_help=False)
         p.add_argument("--run-server", action="store_true")
         p.add_argument("--host", default="127.0.0.1")
