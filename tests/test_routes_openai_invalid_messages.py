@@ -10,4 +10,5 @@ def test_openai_chat_invalid_messages_type(client: object) -> None:
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 400 and "messages: []" in resp.get_json()["error"]["message"]
+    assert resp.status_code == 400
+    assert "messages: []" in resp.get_json()["error"]["message"]

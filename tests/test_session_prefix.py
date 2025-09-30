@@ -17,4 +17,5 @@ def test_canonicalize_prefix_includes_image_url() -> None:
         }
     ]
     js = canonicalize_prefix("instr", items)
-    assert "first_user_message" in js and "http://example/x.png" in js
+    assert "first_user_message" in js
+    assert "http://example/x.png" in js

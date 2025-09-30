@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from typing_extensions import Self
+
 from chatmock import oauth
 from chatmock.models import TokenData
 
@@ -14,9 +16,9 @@ def test_maybe_obtain_api_key_no_org_project() -> None:
     srv.client_id = "cid"  # type: ignore[attr-defined]
     base = "http://localhost"  # avoid S105 hardcoded password false positive
     srv.token_endpoint = f"{base}/token"  # type: ignore[attr-defined]
-    id_tok = "".join(["id"])  # avoid S106 literal-in-arg
-    acc_tok = "".join(["acc"])  # avoid S106 literal-in-arg
-    ref_tok = "".join(["ref"])  # avoid S106 literal-in-arg
+    id_tok = "id"  # avoid S106 literal-in-arg
+    acc_tok = "acc"  # avoid S106 literal-in-arg
+    ref_tok = "ref"  # avoid S106 literal-in-arg
     td = TokenData(id_token=id_tok, access_token=acc_tok, refresh_token=ref_tok, account_id="a")
     api_key, success = oauth.OAuthHTTPServer.maybe_obtain_api_key(  # type: ignore[misc]
         srv,
@@ -43,7 +45,7 @@ def test_maybe_obtain_api_key_with_org_project(monkeypatch) -> None:  # type: ig
         def read(self):  # type: ignore[no-untyped-def]
             return json.dumps(self._data).encode()
 
-        def __enter__(self) -> _Resp:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, exc_type, exc, tb) -> bool:
@@ -53,9 +55,9 @@ def test_maybe_obtain_api_key_with_org_project(monkeypatch) -> None:  # type: ig
         return _Resp({"access_token": "exchanged"})
 
     monkeypatch.setattr(oauth.urllib.request, "urlopen", fake_urlopen, raising=True)
-    id_tok = "".join(["id"])  # avoid S106 literal-in-arg
-    acc_tok = "".join(["acc"])  # avoid S106 literal-in-arg
-    ref_tok = "".join(["ref"])  # avoid S106 literal-in-arg
+    id_tok = "id"  # avoid S106 literal-in-arg
+    acc_tok = "acc"  # avoid S106 literal-in-arg
+    ref_tok = "ref"  # avoid S106 literal-in-arg
     td = TokenData(id_token=id_tok, access_token=acc_tok, refresh_token=ref_tok, account_id="a")
     api_key, success = oauth.OAuthHTTPServer.maybe_obtain_api_key(  # type: ignore[misc]
         srv,

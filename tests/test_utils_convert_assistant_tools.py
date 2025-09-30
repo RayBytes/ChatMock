@@ -20,4 +20,5 @@ def test_convert_assistant_tool_calls_to_function_call_items() -> None:
     ]
     out = convert_chat_messages_to_responses_input(msgs)
     found = [o for o in out if o.get("type") == "function_call"]
-    assert found and found[0]["name"] == "do"
+    assert found
+    assert found[0]["name"] == "do"

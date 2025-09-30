@@ -8,7 +8,7 @@ from chatmock import utils
 
 
 class _Up:
-    def __init__(self, events):  # type: ignore[no-untyped-def]
+    def __init__(self, events) -> None:  # type: ignore[no-untyped-def]
         self._lines = [f"data: {_json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]

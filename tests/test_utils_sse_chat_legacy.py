@@ -19,4 +19,6 @@ class _Up:
 
 def test_sse_chat_legacy_reasoning_summary_fields() -> None:
     out = b"".join(sse_translate_chat(_Up(), "m", 1, reasoning_compat="legacy"))
-    assert b"reasoning_summary" in out and b"reasoning" in out and b"data: [DONE]" in out
+    assert b"reasoning_summary" in out
+    assert b"reasoning" in out
+    assert b"data: [DONE]" in out

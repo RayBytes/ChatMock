@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from typing_extensions import Self
+
 from chatmock import oauth
 from chatmock.models import TokenData
 
@@ -41,7 +43,7 @@ def test_handler_maybe_obtain_with_org_project(monkeypatch) -> None:  # type: ig
         def read(self):  # type: ignore[no-untyped-def]
             return json.dumps(self._data).encode()
 
-        def __enter__(self) -> _Resp:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, exc_type, exc, tb) -> bool:

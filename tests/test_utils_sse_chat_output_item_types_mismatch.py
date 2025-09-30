@@ -8,12 +8,11 @@ from chatmock.utils import sse_translate_chat
 
 
 class _Up:
-    def __init__(self, events):
+    def __init__(self, events) -> None:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self):
         return None
@@ -30,4 +29,5 @@ def test_output_item_done_skips_when_call_id_not_str() -> None:
     ]
     out = b"".join(sse_translate_chat(_Up(ev), "gpt-5", 1))
     # Should only show DONE without tool_calls delta
-    assert out.decode().count("tool_calls") == 0 and b"data: [DONE]" in out
+    assert out.decode().count("tool_calls") == 0
+    assert b"data: [DONE]" in out

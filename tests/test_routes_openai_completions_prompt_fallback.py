@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any
-
-import pytest
+from typing import TYPE_CHECKING, Any
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_completions_uses_prompt_when_no_messages(
@@ -31,4 +32,5 @@ def test_completions_uses_prompt_when_no_messages(
     monkeypatch.setattr(routes, "start_upstream_request", fake_start, raising=True)
     body = {"model": "gpt-5", "prompt": "hello"}
     resp = client.post("/v1/completions", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 200 and seen["input_items"][0]["content"][0]["text"] == "hello"
+    assert resp.status_code == 200
+    assert seen["input_items"][0]["content"][0]["text"] == "hello"

@@ -12,8 +12,6 @@ def test_image_data_url_normalization_with_dash_underscore_and_padding() -> None
     msgs = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": raw}}]}]
     out = convert_chat_messages_to_responses_input(msgs)
     url = out[0]["content"][0]["image_url"]  # type: ignore[index]
-    assert (
-        isinstance(url, str)
-        and url.startswith("data:image/png;base64,")
-        and len(url.split(",", 1)[1]) % 4 == 0
-    )
+    assert isinstance(url, str)
+    assert url.startswith("data:image/png;base64,")
+    assert len(url.split(",", 1)[1]) % 4 == 0

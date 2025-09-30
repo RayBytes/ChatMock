@@ -14,4 +14,6 @@ def test_tool_role_aggregates_text_and_content() -> None:
         }
     ]
     out = convert_chat_messages_to_responses_input(msgs)
-    assert out and out[0]["type"] == "function_call_output" and out[0]["output"] == "A\nB"
+    assert out
+    assert out[0]["type"] == "function_call_output"
+    assert out[0]["output"] == "A\nB"

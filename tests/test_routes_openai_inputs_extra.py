@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_chat_completions_uses_input_when_no_messages(

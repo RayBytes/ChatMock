@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any
-
-import pytest
+from typing import TYPE_CHECKING, Any
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_openai_default_web_search_not_injected_when_none(
@@ -41,4 +42,5 @@ def test_openai_default_web_search_not_injected_when_none(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
     tools = captured.get("tools") or []
-    assert resp.status_code == 200 and not any(t.get("type") == "web_search" for t in tools)
+    assert resp.status_code == 200
+    assert not any(t.get("type") == "web_search" for t in tools)

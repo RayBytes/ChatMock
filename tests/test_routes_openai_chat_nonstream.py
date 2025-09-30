@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -16,8 +18,7 @@ class _Up:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -47,7 +48,8 @@ def test_chat_completions_nonstream_aggregates_text_and_tool_calls(
     assert resp.status_code == 200
     data = resp.get_json()
     msg = data["choices"][0]["message"]
-    assert msg["content"] == "Hello" and msg.get("tool_calls")
+    assert msg["content"] == "Hello"
+    assert msg.get("tool_calls")
     assert data.get("usage", {}).get("total_tokens") == 3
 
 
@@ -62,4 +64,5 @@ def test_chat_completions_nonstream_failed_returns_502(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 502 and resp.get_json()["error"]["message"] == "oops"
+    assert resp.status_code == 502
+    assert resp.get_json()["error"]["message"] == "oops"

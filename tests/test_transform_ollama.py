@@ -23,7 +23,8 @@ def test_convert_ollama_messages_basic_and_tool_outputs() -> None:
     assert out[1]["tool_calls"][0]["function"]["name"] == "f"
     # top_images should be attached to the most recent user message
     user_msgs = [m for m in out if m.get("role") == "user"]
-    assert user_msgs and any(
+    assert user_msgs
+    assert any(
         any(
             p.get("type") == "image_url"
             and isinstance(p.get("image_url", {}).get("url"), str)
@@ -54,4 +55,5 @@ def test_convert_ollama_messages_tool_output_links_call_id() -> None:
     out = convert_ollama_messages(msgs, top_images=None)
     # tool message should have tool_call_id derived from generated call
     tool_msg = next(m for m in out if m.get("role") == "tool")
-    assert isinstance(tool_msg.get("tool_call_id"), str) and tool_msg["tool_call_id"]
+    assert isinstance(tool_msg.get("tool_call_id"), str)
+    assert tool_msg["tool_call_id"]

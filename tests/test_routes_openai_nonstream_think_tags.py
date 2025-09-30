@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
     status_code = 200
 
-    def __init__(self, events: list[dict]):
+    def __init__(self, events: list[dict]) -> None:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False) -> Iterator[bytes]:
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -41,4 +42,5 @@ def test_chat_completions_nonstream_think_tags_reasoning(
     )
     msg = resp.get_json()["choices"][0]["message"]
     # Default compat is think-tags; ensure reasoning was attached as a <think> block in content
-    assert isinstance(msg.get("content"), str) and msg["content"].startswith("<think>")
+    assert isinstance(msg.get("content"), str)
+    assert msg["content"].startswith("<think>")

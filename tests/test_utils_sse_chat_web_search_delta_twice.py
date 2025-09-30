@@ -8,12 +8,11 @@ from chatmock.utils import sse_translate_chat
 
 
 class _Up:
-    def __init__(self, events):
+    def __init__(self, events) -> None:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self):
         return None
@@ -40,4 +39,5 @@ def test_web_search_delta_twice_same_call_id() -> None:
     s = out.decode().replace(" ", "")
     # Ensure multiple delta chunks exist and tool_calls finish emitted;
     # index should be stable (index":0)
-    assert s.count('"tool_calls"') >= 2 and '"finish_reason":"tool_calls"' in s
+    assert s.count('"tool_calls"') >= 2
+    assert '"finish_reason":"tool_calls"' in s

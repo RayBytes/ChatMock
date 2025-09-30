@@ -25,4 +25,5 @@ def test_start_upstream_request_missing_creds(client: object, monkeypatch) -> No
         )
 
     assert upstream is None
-    assert error_resp is not None and error_resp.status_code == 401
+    assert error_resp is not None
+    assert error_resp.status_code == 401

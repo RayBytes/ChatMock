@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as r_ollama
 import chatmock.routes_openai as r_openai
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -48,7 +50,8 @@ def test_verbose_logs_openai_error_and_fallback(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 200 and calls["n"] == 2
+    assert resp.status_code == 200
+    assert calls["n"] == 2
 
 
 def test_verbose_logs_ollama_error_path(client: object, monkeypatch: pytest.MonkeyPatch) -> None:

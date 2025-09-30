@@ -8,12 +8,11 @@ from chatmock import utils
 
 
 class _Up:
-    def __init__(self, events):  # type: ignore[no-untyped-def]
+    def __init__(self, events) -> None:  # type: ignore[no-untyped-def]
         self._lines = [f"data: {_json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -24,7 +23,8 @@ def test_output_item_args_json_error_falls_back(monkeypatch) -> None:  # type: i
 
     def fake_dumps(obj, *a, **k):  # type: ignore[no-untyped-def]
         if isinstance(obj, dict) and obj.get("z") == 9:
-            raise TypeError("boom")
+            msg = "boom"
+            raise TypeError(msg)
         return orig_dumps(obj, *a, **k)
 
     monkeypatch.setattr(utils.json, "dumps", fake_dumps)

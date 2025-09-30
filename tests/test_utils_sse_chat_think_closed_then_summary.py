@@ -8,12 +8,11 @@ from chatmock.utils import sse_translate_chat
 
 
 class _Up:
-    def __init__(self, events):
+    def __init__(self, events) -> None:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self):
         return None
@@ -33,4 +32,5 @@ def test_think_closed_then_summary_no_output_but_done() -> None:
     ]
     out = b"".join(sse_translate_chat(_Up(ev), "gpt-5", 1, reasoning_compat="think-tags"))
     s = out.decode()
-    assert "</think>" in s and "data: [DONE]" in s
+    assert "</think>" in s
+    assert "data: [DONE]" in s

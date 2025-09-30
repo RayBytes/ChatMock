@@ -22,4 +22,5 @@ def test_effective_auth_uses_none_when_claims_nondict(monkeypatch):
         utils, "read_auth_file", lambda: {"tokens": {"id_token": token}}, raising=True
     )
     access, account = utils.get_effective_chatgpt_auth()
-    assert access is None and account is None
+    assert access is None
+    assert account is None

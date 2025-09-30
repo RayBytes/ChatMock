@@ -12,8 +12,7 @@ class _Up:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -32,4 +31,6 @@ def test_web_search_string_query_arguments() -> None:
     ]
     out = b"".join(sse_translate_chat(_Up(events), "m", 1))
     s = out.decode()
-    assert '"arguments"' in s and "hello" in s and "data: [DONE]" in s
+    assert '"arguments"' in s
+    assert "hello" in s
+    assert "data: [DONE]" in s

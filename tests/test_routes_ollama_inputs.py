@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_ollama_moves_system_to_front(client: object, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,4 +34,5 @@ def test_ollama_moves_system_to_front(client: object, monkeypatch: pytest.Monkey
         "messages": [{"role": "system", "content": "x"}, {"role": "user", "content": "hi"}],
     }
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 200 and seen["first_role"] == "user"
+    assert resp.status_code == 200
+    assert seen["first_role"] == "user"

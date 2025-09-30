@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_ollama_invalid_request_format(client: object) -> None:
@@ -16,7 +18,8 @@ def test_ollama_invalid_request_format(client: object) -> None:
         data=json.dumps({"model": "gpt-5", "messages": []}),
         content_type="application/json",
     )
-    assert resp.status_code == 400 and resp.get_json().get("error") == "Invalid request format"
+    assert resp.status_code == 400
+    assert resp.get_json().get("error") == "Invalid request format"
 
 
 def test_ollama_upstream_error_no_tools_verbose(
@@ -35,4 +38,5 @@ def test_ollama_upstream_error_no_tools_verbose(
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "stream": True}
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
     data = resp.get_json()
-    assert resp.status_code == 400 and "error" in data
+    assert resp.status_code == 400
+    assert "error" in data

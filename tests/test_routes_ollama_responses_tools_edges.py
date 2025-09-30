@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:

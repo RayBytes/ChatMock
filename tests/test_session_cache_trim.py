@@ -15,4 +15,5 @@ def test_session_cache_trimming(monkeypatch) -> None:  # type: ignore[no-untyped
     s2 = sess.ensure_session_id("i2", items, None)
     # First fingerprint should be evicted; requesting for i1 again should produce a new id
     s1b = sess.ensure_session_id("i1", items, None)
-    assert s1 != s1b and s2
+    assert s1 != s1b
+    assert s2

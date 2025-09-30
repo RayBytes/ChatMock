@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_chat_completions_uses_prompt_when_no_messages(
@@ -73,7 +75,8 @@ def test_chat_completions_moves_system_to_front(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 200 and seen["first_role"] == "user"
+    assert resp.status_code == 200
+    assert seen["first_role"] == "user"
 
 
 def test_chat_completions_prompt_fallback_when_no_valid_items(

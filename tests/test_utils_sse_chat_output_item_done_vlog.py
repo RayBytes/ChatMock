@@ -8,12 +8,11 @@ from chatmock.utils import sse_translate_chat
 
 
 class _Up:
-    def __init__(self, events):
+    def __init__(self, events) -> None:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self):
         return None
@@ -51,7 +50,7 @@ def test_output_item_done_vlog_and_finish_chunk() -> None:
         sse_translate_chat(_Up(ev), "gpt-5", 1, verbose=True, vlog=vlog, include_usage=True)
     )
     s = out.decode().replace(" ", "")
-    assert any("response.output_item.done web_search_call" in l for l in logs)
-    assert (
-        '"finish_reason":"tool_calls"' in s and '"usage":' in s and "data: [DONE]" in out.decode()
-    )
+    assert any("response.output_item.done web_search_call" in log_line for log_line in logs)
+    assert '"finish_reason":"tool_calls"' in s
+    assert '"usage":' in s
+    assert "data: [DONE]" in out.decode()

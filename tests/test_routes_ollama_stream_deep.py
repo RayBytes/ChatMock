@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -16,8 +18,7 @@ class _Up:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -49,4 +50,5 @@ def test_ollama_chat_stream_deep_branches(client: object, monkeypatch: pytest.Mo
         "stream": True,
     }
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 200 and b"<think>" in resp.data
+    assert resp.status_code == 200
+    assert b"<think>" in resp.data

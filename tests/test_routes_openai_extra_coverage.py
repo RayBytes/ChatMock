@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _UpOK:
@@ -60,7 +62,8 @@ def test_chat_upstream_error_invalid_json_decode_fallback(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 502 and "error" in resp.get_json()
+    assert resp.status_code == 502
+    assert "error" in resp.get_json()
 
 
 def test_completions_upstream_error_invalid_json(
@@ -79,4 +82,5 @@ def test_completions_upstream_error_invalid_json(
     )
     body = {"model": "gpt-5", "prompt": "hi"}
     resp = client.post("/v1/completions", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 500 and "error" in resp.get_json()
+    assert resp.status_code == 500
+    assert "error" in resp.get_json()

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_ollama_default_web_search_injected(
@@ -32,9 +34,8 @@ def test_ollama_default_web_search_injected(
     monkeypatch.setattr(routes, "start_upstream_request", fake_start, raising=True)
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 200 and any(
-        t.get("type") == "web_search" for t in seen.get("tools", [])
-    )
+    assert resp.status_code == 200
+    assert any(t.get("type") == "web_search" for t in seen.get("tools", []))
 
 
 def test_ollama_responses_tool_choice_none(client: object, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -61,4 +62,5 @@ def test_ollama_responses_tool_choice_none(client: object, monkeypatch: pytest.M
         "responses_tool_choice": "none",
     }
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 200 and captured["tool_choice"] == "none"
+    assert resp.status_code == 200
+    assert captured["tool_choice"] == "none"

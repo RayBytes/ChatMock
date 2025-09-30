@@ -19,7 +19,8 @@ def test_canonicalize_first_user_message_skips_invalid_parts() -> None:
     ]
     # No valid content parts -> first_user_message omitted
     js = ses.canonicalize_prefix("X", items)  # exercises all continue branches
-    assert js.startswith('{"instructions":"X"}') and "first_user_message" not in js
+    assert js.startswith('{"instructions":"X"}')
+    assert "first_user_message" not in js
 
 
 def test__remember_no_duplicate_and_bounded_cache() -> None:
@@ -27,7 +28,9 @@ def test__remember_no_duplicate_and_bounded_cache() -> None:
     ses._FINGERPRINT_TO_UUID.clear()
     ses._ORDER.clear()
     ses._remember("fp1", "sid1")
-    assert ses._ORDER == ["fp1"] and ses._FINGERPRINT_TO_UUID["fp1"] == "sid1"
+    assert ses._ORDER == ["fp1"]
+    assert ses._FINGERPRINT_TO_UUID["fp1"] == "sid1"
     # Calling again should early-return and not append
     ses._remember("fp1", "sid-new")
-    assert ses._ORDER == ["fp1"] and ses._FINGERPRINT_TO_UUID["fp1"] == "sid1"
+    assert ses._ORDER == ["fp1"]
+    assert ses._FINGERPRINT_TO_UUID["fp1"] == "sid1"

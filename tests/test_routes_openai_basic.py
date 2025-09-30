@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_chat_completions_invalid_json(client: object) -> None:
@@ -29,7 +31,8 @@ def test_models_list_default_and_variants(client: object) -> None:
     # default: only base ids
     resp = client.get("/v1/models")
     ids = [m["id"] for m in resp.get_json()["data"]]
-    assert "gpt-5" in ids and "gpt-5-codex" in ids
+    assert "gpt-5" in ids
+    assert "gpt-5-codex" in ids
     # enable variants
     client.application.config["EXPOSE_REASONING_MODELS"] = True
     resp2 = client.get("/v1/models")

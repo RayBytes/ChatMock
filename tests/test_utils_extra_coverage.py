@@ -11,7 +11,9 @@ from chatmock import utils
 def test_convert_tool_role_string_content() -> None:
     msgs = [{"role": "tool", "tool_call_id": "c1", "content": "out"}]
     out = utils.convert_chat_messages_to_responses_input(msgs)
-    assert out and out[0]["type"] == "function_call_output" and out[0]["output"] == "out"
+    assert out
+    assert out[0]["type"] == "function_call_output"
+    assert out[0]["output"] == "out"
 
 
 def test_convert_image_url_string_direct() -> None:
@@ -23,13 +25,15 @@ def test_convert_image_url_string_direct() -> None:
     ]
     out = utils.convert_chat_messages_to_responses_input(msgs)
     url = out[0]["content"][0]["image_url"]  # type: ignore[index]
-    assert isinstance(url, str) and url.startswith("http://a/")
+    assert isinstance(url, str)
+    assert url.startswith("http://a/")
 
 
 def test_convert_assistant_content_output_text() -> None:
     msgs = [{"role": "assistant", "content": "hi"}]
     out = utils.convert_chat_messages_to_responses_input(msgs)
-    assert out and out[0]["content"][0]["type"] == "output_text"  # type: ignore[index]
+    assert out
+    assert out[0]["content"][0]["type"] == "output_text"
 
 
 def test_image_data_url_invalid_is_safely_normalized() -> None:
@@ -38,17 +42,16 @@ def test_image_data_url_invalid_is_safely_normalized() -> None:
     msgs = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": bad}}]}]
     out = utils.convert_chat_messages_to_responses_input(msgs)
     url = out[0]["content"][0]["image_url"]  # type: ignore[index]
-    assert (
-        isinstance(url, str)
-        and url.startswith("data:image/png;base64,")
-        and len(url.split(",", 1)[1]) % 4 == 0
-    )
+    assert isinstance(url, str)
+    assert url.startswith("data:image/png;base64,")
+    assert len(url.split(",", 1)[1]) % 4 == 0
 
 
 def test_write_auth_file_success(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setenv("CHATGPT_LOCAL_HOME", str(tmp_path / "home"))
     ok = utils.write_auth_file({"tokens": {"a": 1}})
-    assert ok is True and (tmp_path / "home" / "auth.json").exists()
+    assert ok is True
+    assert (tmp_path / "home" / "auth.json").exists()
 
 
 class _Up:
@@ -57,8 +60,7 @@ class _Up:
         self.closed = False
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         self.closed = True

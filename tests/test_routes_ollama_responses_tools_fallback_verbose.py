@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any
-
-import pytest
+from typing import TYPE_CHECKING, Any
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_ollama_responses_tools_fallback_verbose_logs(

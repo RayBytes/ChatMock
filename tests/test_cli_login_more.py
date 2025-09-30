@@ -7,6 +7,7 @@ import runpy
 import sys
 
 import pytest
+from typing_extensions import Self
 
 from chatmock import cli
 
@@ -99,7 +100,7 @@ def test_cmd_login_state_mismatch_inline_thread(monkeypatch: pytest.MonkeyPatch)
     """Inline thread still handles state mismatch path."""
 
     class _Inline:
-        def __init__(self, target, _daemon: bool = False) -> None:  # type: ignore[no-untyped-def]
+        def __init__(self, target, daemon: bool = False) -> None:  # type: ignore[no-untyped-def]
             self._t = target
 
         def start(self) -> None:
@@ -110,7 +111,7 @@ def test_cmd_login_state_mismatch_inline_thread(monkeypatch: pytest.MonkeyPatch)
             self.exit_code = 1
             self.state = "EXPECTED"
 
-        def __enter__(self) -> _Fake:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, exc_type, exc, tb) -> bool:

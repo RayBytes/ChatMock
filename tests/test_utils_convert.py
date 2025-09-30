@@ -48,6 +48,7 @@ def test_convert_tools_chat_to_responses_function() -> None:
         }
     ]
     out = convert_tools_chat_to_responses(tools)
-    assert out and out[0]["type"] == "function"
+    assert out
+    assert out[0]["type"] == "function"
     # round-trip JSON to ensure serializable
     json.dumps(out)

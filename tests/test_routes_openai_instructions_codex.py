@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any
-
-import pytest
+from typing import TYPE_CHECKING, Any
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_openai_codex_instructions_selected(
@@ -36,7 +37,8 @@ def test_openai_codex_instructions_selected(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 200 and seen.get("instructions") == "CODEX"
+    assert resp.status_code == 200
+    assert seen.get("instructions") == "CODEX"
 
 
 def test_openai_codex_instructions_blank_uses_base(
@@ -66,4 +68,5 @@ def test_openai_codex_instructions_blank_uses_base(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 200 and seen.get("instructions") == "BASE"
+    assert resp.status_code == 200
+    assert seen.get("instructions") == "BASE"

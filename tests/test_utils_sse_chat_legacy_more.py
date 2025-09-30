@@ -12,8 +12,7 @@ class _Up:
         self._lines = lines
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -49,5 +48,7 @@ def test_sse_chat_legacy_reasoning_summary_and_failed_with_vlog() -> None:
         )
     )
     s = out.decode()
-    assert '"reasoning_summary": "RS"' in s and '"error": {"message": "oops"}' in s
-    assert '"usage": {"prompt_tokens":' in s and logs  # vlog path executed
+    assert '"reasoning_summary": "RS"' in s
+    assert '"error": {"message": "oops"}' in s
+    assert '"usage": {"prompt_tokens":' in s
+    assert logs

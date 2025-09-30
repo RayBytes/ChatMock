@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_ollama_codex_instructions_blank_uses_base(
@@ -33,4 +35,5 @@ def test_ollama_codex_instructions_blank_uses_base(
     client.application.config["GPT5_CODEX_INSTRUCTIONS"] = "  "
     body = {"model": "gpt-5-codex", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 200 and seen.get("instructions") == "BASE"
+    assert resp.status_code == 200
+    assert seen.get("instructions") == "BASE"

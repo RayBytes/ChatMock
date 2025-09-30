@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_openai_responses_tool_choice_none_forwards(
@@ -38,4 +40,5 @@ def test_openai_responses_tool_choice_none_forwards(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 200 and captured["tool_choice"] == "none"
+    assert resp.status_code == 200
+    assert captured["tool_choice"] == "none"

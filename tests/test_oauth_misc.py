@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
+from typing import TYPE_CHECKING
 
 from chatmock import oauth
 from chatmock.models import AuthBundle, TokenData
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_persist_auth_invokes_write(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -27,7 +30,7 @@ def test_persist_auth_invokes_write(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_handler_log_message_delegates_on_verbose() -> None:  # type: ignore[no-untyped-def]
     class _Fake(oauth.OAuthHandler):  # type: ignore[misc]
-        def __init__(self):
+        def __init__(self) -> None:
             # Avoid BaseHTTPRequestHandler initialization
             pass
 
@@ -68,7 +71,7 @@ def test_send_redirect_calls_headers() -> None:  # type: ignore[no-untyped-def]
 def test_shutdown_after_delay_executes_target(monkeypatch: pytest.MonkeyPatch) -> None:
     # Replace Thread to execute inline without real threads or sleeps
     class _Inline:
-        def __init__(self, target, daemon=False):  # type: ignore[no-untyped-def]
+        def __init__(self, target, daemon=False) -> None:  # type: ignore[no-untyped-def]
             self._target = target
 
         def start(self) -> None:

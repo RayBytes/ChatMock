@@ -8,7 +8,9 @@ from chatmock.utils import convert_chat_messages_to_responses_input, convert_too
 def test_convert_chat_messages_tool_role_list_content() -> None:
     msgs = [{"role": "tool", "tool_call_id": "c1", "content": [{"text": "a"}, {"content": "b"}]}]
     out = convert_chat_messages_to_responses_input(msgs)
-    assert out and out[0]["type"] == "function_call_output" and out[0]["output"] == "a\nb"
+    assert out
+    assert out[0]["type"] == "function_call_output"
+    assert out[0]["output"] == "a\nb"
 
 
 def test_convert_chat_messages_ignores_unknown_ptype() -> None:

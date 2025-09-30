@@ -13,7 +13,9 @@ def test_openai_models_expose_variants(client: object) -> None:
     r = client.get("/v1/models")
     data = r.get_json()
     ids = [m["id"] for m in data["data"]]
-    assert r.status_code == 200 and "gpt-5-high" in ids and "gpt-5-codex-low" in ids
+    assert r.status_code == 200
+    assert "gpt-5-high" in ids
+    assert "gpt-5-codex-low" in ids
 
 
 def test_ollama_tags_expose_variants(client: object) -> None:
@@ -21,24 +23,26 @@ def test_ollama_tags_expose_variants(client: object) -> None:
     r = client.get("/api/tags")
     data = r.get_json()
     names = [m["name"] for m in data["models"]]
-    assert r.status_code == 200 and "gpt-5-high" in names and "gpt-5-codex-low" in names
+    assert r.status_code == 200
+    assert "gpt-5-high" in names
+    assert "gpt-5-codex-low" in names
 
 
 def test_transform_tool_role_with_string_content() -> None:
     msgs = [{"role": "tool", "id": "c1", "content": "OUT"}]
     out = convert_ollama_messages(msgs, None)
     tool = out[0]
-    assert tool.get("role") == "tool" and tool.get("content")[0]["text"] == "OUT"  # type: ignore[index]
+    assert tool.get("role") == "tool"
+    assert tool.get("content")[0]["text"] == "OUT"
 
 
 class _UpStr:
-    def __init__(self, lines):  # type: ignore[no-untyped-def]
+    def __init__(self, lines) -> None:  # type: ignore[no-untyped-def]
         self._lines = lines
         self.closed = False
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         self.closed = True

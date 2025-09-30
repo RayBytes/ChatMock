@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_openai_chat_debug_model_override(client: object, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -35,4 +37,5 @@ def test_openai_chat_debug_model_override(client: object, monkeypatch: pytest.Mo
         ),
         content_type="application/json",
     )
-    assert resp.status_code == 200 and seen["model"] == "forced"
+    assert resp.status_code == 200
+    assert seen["model"] == "forced"

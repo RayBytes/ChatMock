@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 from chatmock import utils
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -15,8 +17,7 @@ class _Up:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -37,7 +38,8 @@ def test_output_item_done_args_dump_value_error(monkeypatch: pytest.MonkeyPatch)
 
     def _boom(obj, *a, **k):  # type: ignore[no-untyped-def]
         if isinstance(obj, dict) and set(obj.keys()) == {"a"}:  # match arguments dict shape
-            raise ValueError("x")
+            msg = "x"
+            raise ValueError(msg)
         return _orig(obj, *a, **k)
 
     monkeypatch.setattr(utils.json, "dumps", _boom, raising=True)

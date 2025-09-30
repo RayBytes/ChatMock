@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any
-
-import pytest
+from typing import TYPE_CHECKING, Any
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_ollama_responses_tool_choice_none_forwards(
@@ -37,4 +38,5 @@ def test_ollama_responses_tool_choice_none_forwards(
         "stream": True,
     }
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 200 and captured.get("tool_choice") == "none"
+    assert resp.status_code == 200
+    assert captured.get("tool_choice") == "none"

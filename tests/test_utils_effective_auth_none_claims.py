@@ -18,4 +18,5 @@ def test_get_effective_auth_no_account_id(monkeypatch) -> None:  # type: ignore[
     fake = {"tokens": {"access_token": "tok", "id_token": id_token}}
     monkeypatch.setattr(utils, "read_auth_file", lambda: fake, raising=True)
     access, account = utils.get_effective_chatgpt_auth()
-    assert access == "tok" and account is None
+    assert access == "tok"
+    assert account is None

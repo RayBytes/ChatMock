@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_chat_completions_responses_tool_unsupported(client: object) -> None:
@@ -60,9 +62,8 @@ def test_chat_completions_default_web_search_injected(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 200 and any(
-        t.get("type") == "web_search" for t in seen.get("tools", [])
-    )
+    assert resp.status_code == 200
+    assert any(t.get("type") == "web_search" for t in seen.get("tools", []))
 
 
 def test_chat_completions_upstream_error_no_tools(
@@ -80,7 +81,8 @@ def test_chat_completions_upstream_error_no_tools(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 400 and "bad" in resp.get_json()["error"]["message"]
+    assert resp.status_code == 400
+    assert "bad" in resp.get_json()["error"]["message"]
 
 
 def test_chat_completions_tools_fallback_on_error(
@@ -119,4 +121,5 @@ def test_chat_completions_tools_fallback_on_error(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 200 and calls["n"] == 2
+    assert resp.status_code == 200
+    assert calls["n"] == 2

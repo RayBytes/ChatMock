@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -23,4 +26,5 @@ def test_ollama_stream_done_early(client: object, monkeypatch: pytest.MonkeyPatc
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post("/api/chat", json=body)
-    assert resp.status_code == 200 and b'"done": true' in resp.data
+    assert resp.status_code == 200
+    assert b'"done": true' in resp.data

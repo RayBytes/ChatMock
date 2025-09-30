@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-import pytest
+from typing import TYPE_CHECKING
+
 import requests
 
 from chatmock import upstream
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_start_upstream_request_network_error(
     client: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def boom(*args, **kwargs):  # type: ignore[no-untyped-def]
-        raise requests.RequestException("boom")
+        msg = "boom"
+        raise requests.RequestException(msg)
 
     monkeypatch.setattr(upstream.requests, "post", boom, raising=True)
     monkeypatch.setattr(
@@ -30,5 +35,7 @@ def test_start_upstream_request_network_error(
                 }
             ],
         )
-    assert u is None and err is not None and err.status_code == 502
+    assert u is None
+    assert err is not None
+    assert err.status_code == 502
     assert err.headers.get("Access-Control-Allow-Origin") is not None

@@ -28,4 +28,6 @@ def test_sse_chat_vlog_called_for_web_search() -> None:
         logs.append(line)
 
     out = b"".join(sse_translate_chat(_Up(), "gpt-5", 1, verbose=True, vlog=vlog))
-    assert logs and any("CM_TOOLS" in l for l in logs) and b"data: [DONE]" in out
+    assert logs
+    assert any("CM_TOOLS" in log_line for log_line in logs)
+    assert b"data: [DONE]" in out

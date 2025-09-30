@@ -11,4 +11,5 @@ def test_convert_tools_params_defaults_and_description() -> None:
         {"type": "function", "function": {"name": "y"}},
     ]
     out = convert_tools_chat_to_responses(tools)
-    assert out[0]["parameters"]["type"] == "object" and out[1]["description"] == ""
+    assert out[0]["parameters"]["type"] == "object"
+    assert out[1]["description"] == ""

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any
-
-import pytest
+from typing import TYPE_CHECKING, Any
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_ollama_tools_fallback_failure_returns_rejected(
@@ -36,6 +37,5 @@ def test_ollama_tools_fallback_failure_returns_rejected(
     }
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
     data = resp.get_json()
-    assert (
-        resp.status_code == 400 and data.get("error", {}).get("code") == "RESPONSES_TOOLS_REJECTED"
-    )
+    assert resp.status_code == 400
+    assert data.get("error", {}).get("code") == "RESPONSES_TOOLS_REJECTED"

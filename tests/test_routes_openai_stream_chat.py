@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -33,5 +35,6 @@ def test_chat_completions_stream_minimal(client: object, monkeypatch: pytest.Mon
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 200 and resp.mimetype == "text/event-stream"
+    assert resp.status_code == 200
+    assert resp.mimetype == "text/event-stream"
     assert b"data: [DONE]" in resp.data

@@ -26,5 +26,7 @@ def test_parse_jwt_claims_valid_and_invalid() -> None:
 
 def test_generate_pkce_shapes() -> None:
     pk = utils.generate_pkce()
-    assert isinstance(pk.code_verifier, str) and len(pk.code_verifier) == 128
-    assert isinstance(pk.code_challenge, str) and re.fullmatch(r"[A-Za-z0-9_-]+", pk.code_challenge)
+    assert isinstance(pk.code_verifier, str)
+    assert len(pk.code_verifier) == 128
+    assert isinstance(pk.code_challenge, str)
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", pk.code_challenge)

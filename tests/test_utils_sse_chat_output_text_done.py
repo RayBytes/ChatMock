@@ -21,4 +21,5 @@ class _Up:
 def test_sse_chat_output_text_done_is_ignored() -> None:
     out = b"".join(sse_translate_chat(_Up(), "gpt-5", 1))
     # No explicit stop chunk is emitted for output_text.done (covered by generic .done)
-    assert b'"finish_reason": "stop"' not in out and b"data: [DONE]" in out
+    assert b'"finish_reason": "stop"' not in out
+    assert b"data: [DONE]" in out

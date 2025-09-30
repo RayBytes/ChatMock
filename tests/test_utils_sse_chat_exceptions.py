@@ -12,8 +12,7 @@ class _Up:
         self._lines = lines
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -31,7 +30,8 @@ def test_web_search_inner_try_except_swallowed(monkeypatch) -> None:  # type: ig
 
     # Arrange: make json.dumps raise inside the web_search try-block
     def _boom(*a, **k):  # type: ignore[no-untyped-def]
-        raise ValueError("x")
+        msg = "x"
+        raise ValueError(msg)
 
     monkeypatch.setattr(utils.json, "dumps", _boom, raising=True)
 

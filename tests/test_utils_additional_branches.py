@@ -46,7 +46,8 @@ def test_tool_role_list_with_non_dict_parts_yields_empty_output() -> None:
     msgs = [{"role": "tool", "tool_call_id": "c1", "content": ["not-a-dict"]}]
     out = utils.convert_chat_messages_to_responses_input(msgs)
     fco = next((o for o in out if o.get("type") == "function_call_output"), None)
-    assert fco is not None and fco.get("output") == ""
+    assert fco is not None
+    assert fco.get("output") == ""
 
 
 class _Up:
@@ -54,8 +55,7 @@ class _Up:
         self._lines = lines
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None

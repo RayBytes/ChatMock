@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_ollama_tools_forwarding(client: object, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -36,7 +38,8 @@ def test_ollama_tools_forwarding(client: object, monkeypatch: pytest.MonkeyPatch
         ],
     }
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 200 and [t.get("type") for t in captured["tools"]] == [
+    assert resp.status_code == 200
+    assert [t.get("type") for t in captured["tools"]] == [
         "function",
         "function",
     ]

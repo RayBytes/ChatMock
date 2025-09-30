@@ -12,8 +12,7 @@ class _Up:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -27,4 +26,5 @@ def test_think_tags_final_close_emitted() -> None:
     ]
     gen = routes._ollama_stream_gen(_Up(events), "gpt-5", "2023-01-01T00:00:00Z", "think-tags")
     out = "".join(gen)
-    assert "</think>" in out and '"done": true' in out.lower()
+    assert "</think>" in out
+    assert '"done": true' in out.lower()

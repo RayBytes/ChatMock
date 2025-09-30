@@ -12,12 +12,11 @@ class _U:
     content = b""
     text = ""
 
-    def __init__(self, lines):
+    def __init__(self, lines) -> None:
         self._lines = list(lines)
 
     def iter_lines(self, decode_unicode: bool = False):
-        for ln in self._lines:
-            yield ln
+        yield from self._lines
 
     def close(self):
         return None

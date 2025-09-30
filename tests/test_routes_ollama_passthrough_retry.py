@@ -7,7 +7,7 @@ from collections.abc import Iterator
 
 
 class _U:
-    def __init__(self, status_code: int):
+    def __init__(self, status_code: int) -> None:
         self.status_code = status_code
         self.text = ""
         self.content = b""

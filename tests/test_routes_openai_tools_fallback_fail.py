@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_chat_completions_tools_fallback_failure_returns_rejected(
@@ -35,6 +37,5 @@ def test_chat_completions_tools_fallback_failure_returns_rejected(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
     data = resp.get_json()
-    assert (
-        resp.status_code == 400 and data.get("error", {}).get("code") == "RESPONSES_TOOLS_REJECTED"
-    )
+    assert resp.status_code == 400
+    assert data.get("error", {}).get("code") == "RESPONSES_TOOLS_REJECTED"

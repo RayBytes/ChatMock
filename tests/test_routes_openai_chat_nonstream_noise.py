@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
     status_code = 200
 
-    def __init__(self, lines: list[bytes]):
+    def __init__(self, lines: list[bytes]) -> None:
         self._lines = lines
 
     def iter_lines(self, decode_unicode: bool = False) -> Iterator[bytes]:
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -42,8 +43,6 @@ def test_chat_nonstream_ignores_noise_and_includes_usage(
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     r = client.post("/v1/chat/completions", data=json.dumps(body), content_type="application/json")
     data = r.get_json()
-    assert (
-        r.status_code == 200
-        and data["choices"][0]["message"]["content"] == "Hello"
-        and data.get("usage", {}).get("total_tokens") == 3
-    )
+    assert r.status_code == 200
+    assert data["choices"][0]["message"]["content"] == "Hello"
+    assert data.get("usage", {}).get("total_tokens") == 3

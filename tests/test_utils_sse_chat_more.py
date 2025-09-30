@@ -12,8 +12,7 @@ class _Up:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -31,7 +30,8 @@ def test_sse_chat_think_tags_newline_and_stop() -> None:
     up = _Up(ev)
     out = b"".join(sse_translate_chat(up, "gpt-5", 1, reasoning_compat="think-tags"))
     s = out.decode()
-    assert "\n" in s and "data: [DONE]" in s
+    assert "\n" in s
+    assert "data: [DONE]" in s
 
 
 def test_sse_chat_failed_emits_error_chunk() -> None:

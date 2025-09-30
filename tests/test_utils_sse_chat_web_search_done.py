@@ -8,12 +8,11 @@ from chatmock.utils import sse_translate_chat
 
 
 class _Up:
-    def __init__(self, events):  # type: ignore[no-untyped-def]
+    def __init__(self, events) -> None:  # type: ignore[no-untyped-def]
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -31,6 +30,5 @@ def test_web_search_output_item_done_emits_tool_calls() -> None:
     out = b"".join(sse_translate_chat(_Up(ev), "gpt-5", 1, verbose=True, vlog=lambda s: None))
     s = out.decode()
     # Validate tool_calls appear and the finish reason is set to tool_calls on the same event stream
-    assert "tool_calls" in s and '"finish_reason": "tool_calls"'.replace(" ", "") in s.replace(
-        " ", ""
-    )
+    assert "tool_calls" in s
+    assert '"finish_reason": "tool_calls"'.replace(" ", "") in s.replace(" ", "")

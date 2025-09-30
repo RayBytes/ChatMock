@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any
-
-import pytest
+from typing import TYPE_CHECKING, Any
 
 from chatmock import utils
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def _b64url(data: bytes) -> str:
@@ -23,4 +24,5 @@ def test_get_effective_chatgpt_auth_uses_id_token(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(utils, "read_auth_file", lambda: fake_auth)
     access, account = utils.get_effective_chatgpt_auth()
-    assert access == "tok" and account == "acc_123"
+    assert access == "tok"
+    assert account == "acc_123"

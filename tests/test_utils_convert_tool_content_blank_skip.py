@@ -14,4 +14,5 @@ def test_tool_content_skips_blank_parts() -> None:
         }
     ]
     out = convert_chat_messages_to_responses_input(msgs)
-    assert out and out[0]["output"] == "X"
+    assert out
+    assert out[0]["output"] == "X"

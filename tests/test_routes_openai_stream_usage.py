@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -40,4 +42,5 @@ def test_chat_completions_stream_include_usage(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 200 and b'"usage": {' in resp.data
+    assert resp.status_code == 200
+    assert b'"usage": {' in resp.data

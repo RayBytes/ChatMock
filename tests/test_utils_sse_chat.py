@@ -13,8 +13,7 @@ class _Up:
         self.closed = False
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         self.closed = True
@@ -48,4 +47,7 @@ def test_sse_translate_chat_tool_calls_and_usage() -> None:
         sse_translate_chat(up, "gpt-5", 1, reasoning_compat="think-tags", include_usage=True)
     )
     s = out.decode()
-    assert '"tool_calls"' in s and "<think>" in s and "Hello" in s and "data: [DONE]" in s
+    assert '"tool_calls"' in s
+    assert "<think>" in s
+    assert "Hello" in s
+    assert "data: [DONE]" in s

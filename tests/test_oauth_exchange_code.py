@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from typing_extensions import Self
+
 from chatmock import oauth
 
 
@@ -34,7 +36,7 @@ def test_exchange_code_returns_bundle_and_success_url(monkeypatch) -> None:  # t
         def read(self):  # type: ignore[no-untyped-def]
             return json.dumps(self._data).encode()
 
-        def __enter__(self) -> _Resp:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, exc_type, exc, tb) -> bool:

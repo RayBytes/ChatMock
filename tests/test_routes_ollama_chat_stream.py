@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -26,5 +28,6 @@ def test_ollama_chat_stream_basic(client: object, monkeypatch: pytest.MonkeyPatc
     )
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
-    assert resp.status_code == 200 and resp.mimetype == "application/x-ndjson"
+    assert resp.status_code == 200
+    assert resp.mimetype == "application/x-ndjson"
     assert b"response.completed" not in resp.data  # generator translates

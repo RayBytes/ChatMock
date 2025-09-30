@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_chat_stream_forwards_include_usage_and_reasoning_compat(
@@ -53,11 +55,9 @@ def test_chat_stream_forwards_include_usage_and_reasoning_compat(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert (
-        resp.status_code == 200
-        and seen["include_usage"] is True
-        and seen["reasoning_compat"] == "o3"
-    )
+    assert resp.status_code == 200
+    assert seen["include_usage"] is True
+    assert seen["reasoning_compat"] == "o3"
 
 
 def test_chat_responses_tool_choice_none_overrides_and_parallel_flag(
@@ -89,8 +89,6 @@ def test_chat_responses_tool_choice_none_overrides_and_parallel_flag(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert (
-        resp.status_code == 200
-        and captured.get("tool_choice") == "none"
-        and captured.get("parallel_tool_calls") is True
-    )
+    assert resp.status_code == 200
+    assert captured.get("tool_choice") == "none"
+    assert captured.get("parallel_tool_calls") is True

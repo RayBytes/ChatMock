@@ -432,17 +432,21 @@ def sse_translate_chat(  # noqa: C901, PLR0913, PLR0912, PLR0915
 
     def _serialize_tool_args(eff_args: object) -> str:
         """Serialize tool call arguments with proper JSON handling."""
-        if isinstance(eff_args, (dict, list)):
-            return json.dumps(eff_args)
-        if isinstance(eff_args, str):
-            try:
-                parsed = json.loads(eff_args)
-                if isinstance(parsed, (dict, list)):
-                    return json.dumps(parsed)
-                return json.dumps({"query": eff_args})
-            except (json.JSONDecodeError, ValueError):
-                return json.dumps({"query": eff_args})
-        else:
+        try:
+            if isinstance(eff_args, (dict, list)):
+                return json.dumps(eff_args)
+            if isinstance(eff_args, str):
+                try:
+                    parsed = json.loads(eff_args)
+                    if isinstance(parsed, (dict, list)):
+                        return json.dumps(parsed)
+                    return json.dumps({"query": eff_args})
+                except (json.JSONDecodeError, ValueError):
+                    return json.dumps({"query": eff_args})
+            else:
+                return "{}"
+        except (TypeError, ValueError):
+            # Fallback for any JSON serialization errors
             return "{}"
 
     def _extract_usage(evt: dict[str, Any]) -> dict[str, int] | None:

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _U:
@@ -26,4 +28,5 @@ def test_openai_chat_verbose_error_no_tools(
     resp = client.post(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
-    assert resp.status_code == 400 and "error" in resp.get_json()
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()

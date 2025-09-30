@@ -11,4 +11,5 @@ def test_image_data_url_decode_error_returns_original() -> None:
     out = convert_chat_messages_to_responses_input(msgs)
     url = out[0]["content"][0]["image_url"]  # type: ignore[index]
     # Decoder normalizes by adding padding; just ensure it remains a data URL
-    assert isinstance(url, str) and url.startswith("data:image/png;base64,")
+    assert isinstance(url, str)
+    assert url.startswith("data:image/png;base64,")

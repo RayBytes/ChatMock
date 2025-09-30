@@ -12,8 +12,7 @@ class _Up:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -29,4 +28,6 @@ def test_o3_mode_inserts_newline_between_summary_paragraphs() -> None:
     ]
     out = b"".join(sse_translate_chat(_Up(ev), "gpt-5", 1, reasoning_compat="o3"))
     s = out.decode()
-    assert '"text": "\\n"' in s and '"text": "A"' in s and '"text": "B"' in s
+    assert '"text": "\\n"' in s
+    assert '"text": "A"' in s
+    assert '"text": "B"' in s

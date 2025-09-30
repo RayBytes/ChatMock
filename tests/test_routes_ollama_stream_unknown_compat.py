@@ -9,12 +9,11 @@ import chatmock.routes_ollama as routes
 
 
 class _Up:
-    def __init__(self, events: list[dict]):
+    def __init__(self, events: list[dict]) -> None:
         self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
 
     def iter_lines(self, decode_unicode: bool = False) -> Iterator[bytes]:
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
@@ -28,4 +27,5 @@ def test_stream_unknown_compat_ignores_reasoning_deltas() -> None:
     ]
     out = "".join(routes._ollama_stream_gen(_Up(events), "gpt-5", "2023", "unknown"))
     # Should only include the output_text content, not think tags
-    assert '"content": "Hi"' in out and "<think>" not in out
+    assert '"content": "Hi"' in out
+    assert "<think>" not in out

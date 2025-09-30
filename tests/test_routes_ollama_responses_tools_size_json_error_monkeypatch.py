@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json as _json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_ollama_responses_tools_size_json_error_monkeypatch(
@@ -21,7 +23,8 @@ def test_ollama_responses_tools_size_json_error_monkeypatch(
             and isinstance(obj[0], dict)
             and obj[0].get("type") in {"web_search", "web_search_preview"}
         ):
-            raise TypeError("boom")
+            msg = "boom"
+            raise TypeError(msg)
         return orig_dumps(obj, *a, **k)
 
     class _U:

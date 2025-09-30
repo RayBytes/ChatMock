@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
+from typing import TYPE_CHECKING, Any
 
 from chatmock import upstream
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _DummyResp:
@@ -45,11 +46,10 @@ def test_start_upstream_request_includes_reasoning_and_tools(
             parallel_tool_calls=True,
             reasoning_param={"effort": "medium"},
         )
-    assert err is None and u is not None
+    assert err is None
+    assert u is not None
     # start_upstream_request forwards model verbatim; normalization occurs earlier in routing
     assert captured["json"]["model"] == "gpt-5-medium"
     assert captured["json"]["include"] == ["reasoning.encrypted_content"]
-    assert (
-        captured["json"]["tool_choice"] == "auto"
-        and captured["json"]["parallel_tool_calls"] is True
-    )
+    assert captured["json"]["tool_choice"] == "auto"
+    assert captured["json"]["parallel_tool_calls"] is True

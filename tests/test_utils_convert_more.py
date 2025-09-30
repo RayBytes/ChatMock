@@ -16,4 +16,5 @@ def test_convert_chat_messages_image_data_url_normalization() -> None:
     ]
     out = convert_chat_messages_to_responses_input(msgs)
     url = out[0]["content"][0]["image_url"]  # type: ignore[index]
-    assert isinstance(url, str) and len(url.split(",", 1)[1]) % 4 == 0
+    assert isinstance(url, str)
+    assert len(url.split(",", 1)[1]) % 4 == 0

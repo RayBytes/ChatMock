@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -35,4 +37,5 @@ def test_openai_nonstream_includes_tool_calls(
         "/v1/chat/completions", data=json.dumps(body), content_type="application/json"
     )
     data = resp.get_json()
-    assert resp.status_code == 200 and data["choices"][0]["message"].get("tool_calls")
+    assert resp.status_code == 200
+    assert data["choices"][0]["message"].get("tool_calls")

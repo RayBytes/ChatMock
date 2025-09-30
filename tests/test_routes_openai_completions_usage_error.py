@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_openai as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -33,4 +35,5 @@ def test_completions_nonstream_usage_value_error(
     r = client.post("/v1/completions", data=json.dumps(body), content_type="application/json")
     data = r.get_json()
     # Should succeed and omit usage due to parse error
-    assert r.status_code == 200 and "usage" not in data
+    assert r.status_code == 200
+    assert "usage" not in data

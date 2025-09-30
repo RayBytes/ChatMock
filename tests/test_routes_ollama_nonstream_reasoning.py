@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+from typing import TYPE_CHECKING
 
 import chatmock.routes_ollama as routes
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Up:
@@ -31,4 +33,5 @@ def test_ollama_nonstream_reasoning_think_tags(
     body = {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "stream": False}
     resp = client.post("/api/chat", data=json.dumps(body), content_type="application/json")
     data = resp.get_json()
-    assert resp.status_code == 200 and data["message"]["content"].startswith("<think>")
+    assert resp.status_code == 200
+    assert data["message"]["content"].startswith("<think>")

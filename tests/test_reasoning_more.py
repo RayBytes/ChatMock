@@ -8,12 +8,14 @@ import chatmock.reasoning as rea
 def test_build_reasoning_param_invalid_override_summary() -> None:
     # invalid override summary should be ignored
     r = rea.build_reasoning_param("low", "auto", {"effort": "low", "summary": "weird"})
-    assert r["effort"] == "low" and r["summary"] == "auto"
+    assert r["effort"] == "low"
+    assert r["summary"] == "auto"
 
 
 def test_build_reasoning_param_invalid_base_and_no_overrides() -> None:
     r = rea.build_reasoning_param("low", "bad", None)
-    assert r["summary"] == "auto" and r["effort"] == "low"
+    assert r["summary"] == "auto"
+    assert r["effort"] == "low"
 
 
 def test_apply_reasoning_o3_variants() -> None:
@@ -30,9 +32,11 @@ def test_apply_reasoning_o3_variants() -> None:
 
 def test_apply_reasoning_legacy_current_partial_fields() -> None:
     out1 = rea.apply_reasoning_to_message({}, "sum", "", "legacy")
-    assert out1.get("reasoning_summary") == "sum" and "reasoning" not in out1
+    assert out1.get("reasoning_summary") == "sum"
+    assert "reasoning" not in out1
     out2 = rea.apply_reasoning_to_message({}, "", "full", "current")
-    assert out2.get("reasoning") == "full" and "reasoning_summary" not in out2
+    assert out2.get("reasoning") == "full"
+    assert "reasoning_summary" not in out2
 
 
 def test_think_tags_non_str_content() -> None:

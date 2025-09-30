@@ -6,7 +6,7 @@ from chatmock.utils import sse_translate_chat
 
 
 class _Up:
-    def __init__(self):
+    def __init__(self) -> None:
         self._lines = [
             b"noise",
             b"data: not-json",
@@ -14,8 +14,7 @@ class _Up:
         ]
 
     def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
-        for l in self._lines:
-            yield l
+        yield from self._lines
 
     def close(self) -> None:
         return None
