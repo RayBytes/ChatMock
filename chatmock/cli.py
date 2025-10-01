@@ -154,7 +154,7 @@ def main() -> None:
     p_serve.add_argument(
         "--expose-reasoning-models",
         action="store_true",
-        default=os.getenv("CHATGPT_LOCAL_EXPOSE_REASONING_MODELS", "").strip().lower() in ("1", "true", "yes", "on"),
+        default=(os.getenv("CHATGPT_LOCAL_EXPOSE_REASONING_MODELS") or "").strip().lower() in ("1", "true", "yes", "on"),
         help=(
             "Expose gpt-5 reasoning effort variants (minimal|low|medium|high) as separate models from /v1/models. "
             "This allows choosing effort via model selection in compatible UIs."
@@ -162,8 +162,12 @@ def main() -> None:
     )
     p_serve.add_argument(
         "--enable-web-search",
-        action="store_true",
-        help="Enable default web_search tool when a request omits responses_tools (off by default)",
+        action=argparse.BooleanOptionalAction,
+        default=(os.getenv("CHATGPT_LOCAL_ENABLE_WEB_SEARCH") or "").strip().lower() in ("1", "true", "yes", "on"),
+        help=(
+            "Enable default web_search tool when a request omits responses_tools (off by default). "
+            "Also configurable via CHATGPT_LOCAL_ENABLE_WEB_SEARCH."
+        ),
     )
 
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
