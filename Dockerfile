@@ -19,4 +19,3 @@ EXPOSE 8000 1455
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["serve"]
-

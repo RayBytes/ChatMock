@@ -1,14 +1,17 @@
+"""Flask application factory and global routes for ChatMock."""
+
 from __future__ import annotations
 
-from flask import Flask, jsonify
+from flask import Flask, Response, jsonify
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .http import build_cors_headers
-from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
+from .routes_openai import openai_bp
 
 
-def create_app(
+def create_app(  # noqa: PLR0913
+    *,
     verbose: bool = False,
     reasoning_effort: str = "medium",
     reasoning_summary: str = "auto",
@@ -17,6 +20,7 @@ def create_app(
     expose_reasoning_models: bool = False,
     default_web_search: bool = False,
 ) -> Flask:
+    """Create and configure the Flask application."""
     app = Flask(__name__)
 
     app.config.update(
@@ -33,11 +37,11 @@ def create_app(
 
     @app.get("/")
     @app.get("/health")
-    def health():
+    def health() -> Response:
         return jsonify({"status": "ok"})
 
     @app.after_request
-    def _cors(resp):
+    def _cors(resp: Response) -> Response:
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)
         return resp

@@ -1,0 +1,48 @@
+"""Cover sse_translate_chat branch where web_search args is a string."""
+
+from __future__ import annotations
+
+import json
+
+from chatmock.utils import _serialize_tool_args, sse_translate_chat
+
+
+class _Up:
+    def __init__(self, events: list[dict]) -> None:  # type: ignore[no-untyped-def]
+        self._lines = [f"data: {json.dumps(e)}".encode() for e in events]
+
+    def iter_lines(self, decode_unicode: bool = False):  # type: ignore[no-untyped-def]
+        yield from self._lines
+
+    def close(self) -> None:
+        return None
+
+
+def test_web_search_string_query_arguments() -> None:
+    events = [
+        {
+            "type": "web_search_call.delta",
+            "item_id": "w",
+            "item": {"query": "hello"},
+            "response": {"id": "r"},
+        },
+        {"type": "web_search_call.completed", "item_id": "w", "response": {"id": "r"}},
+        {"type": "response.completed", "response": {}},
+    ]
+    out = b"".join(sse_translate_chat(_Up(events), "m", 1))
+    s = out.decode()
+    assert '"arguments"' in s
+    assert "hello" in s
+    assert "data: [DONE]" in s
+
+
+def test_serialize_tool_args_numeric_string() -> None:
+    assert _serialize_tool_args("123") == json.dumps({"query": "123"})
+
+
+def test_serialize_tool_args_invalid_json() -> None:
+    assert _serialize_tool_args("{not-json}") == json.dumps({"query": "{not-json}"})
+
+
+def test_serialize_tool_args_other_types() -> None:
+    assert _serialize_tool_args(object()) == "{}"
