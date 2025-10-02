@@ -6,6 +6,7 @@ from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .http import build_cors_headers
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
+from .routes_responses import responses_bp
 
 
 def create_app(
@@ -16,6 +17,8 @@ def create_app(
     debug_model: str | None = None,
     expose_reasoning_models: bool = False,
     default_web_search: bool = False,
+    enable_responses_api: bool = False,
+    responses_no_base_instructions: bool = False,
 ) -> Flask:
     app = Flask(__name__)
 
@@ -29,6 +32,8 @@ def create_app(
         GPT5_CODEX_INSTRUCTIONS=GPT5_CODEX_INSTRUCTIONS,
         EXPOSE_REASONING_MODELS=bool(expose_reasoning_models),
         DEFAULT_WEB_SEARCH=bool(default_web_search),
+        ENABLE_RESPONSES_API=bool(enable_responses_api),
+        RESPONSES_NO_BASE_INSTRUCTIONS=bool(responses_no_base_instructions),
     )
 
     @app.get("/")
@@ -44,5 +49,7 @@ def create_app(
 
     app.register_blueprint(openai_bp)
     app.register_blueprint(ollama_bp)
+    if bool(app.config.get("ENABLE_RESPONSES_API")):
+        app.register_blueprint(responses_bp)
 
     return app
