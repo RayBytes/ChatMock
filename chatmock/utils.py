@@ -432,23 +432,46 @@ def sse_translate_chat(
         except Exception:
             return None
     try:
-        for raw in upstream.iter_lines(decode_unicode=False):
-            if not raw:
-                continue
-            line = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else raw
+        try:
+            line_iterator = upstream.iter_lines(decode_unicode=False)
+        except requests.exceptions.ChunkedEncodingError as e:
             if verbose and vlog:
-                vlog(line)
-            if not line.startswith("data: "):
-                continue
-            data = line[len("data: "):].strip()
-            if not data:
-                continue
-            if data == "[DONE]":
-                break
+                vlog(f"Failed to start stream: {e}")
+            yield b"data: [DONE]\n\n"
+            return
+
+        for raw in line_iterator:
             try:
-                evt = json.loads(data)
-            except Exception:
-                continue
+                if not raw:
+                    continue
+                line = (
+                    raw.decode("utf-8", errors="ignore")
+                    if isinstance(raw, (bytes, bytearray))
+                    else raw
+                )
+                if verbose and vlog:
+                    vlog(line)
+                if not line.startswith("data: "):
+                    continue
+                data = line[len("data: ") :].strip()
+                if not data:
+                    continue
+                if data == "[DONE]":
+                    break
+                try:
+                    evt = json.loads(data)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+            except (
+                requests.exceptions.ChunkedEncodingError,
+                ConnectionError,
+                BrokenPipeError,
+            ) as e:
+                # Connection interrupted mid-stream - end gracefully
+                if verbose and vlog:
+                    vlog(f"Stream interrupted: {e}")
+                yield b"data: [DONE]\n\n"
+                return
             kind = evt.get("type")
             if isinstance(evt.get("response"), dict) and isinstance(evt["response"].get("id"), str):
                 response_id = evt["response"].get("id") or response_id
