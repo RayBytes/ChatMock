@@ -1,9 +1,10 @@
+"""Configuration and prompt text loading for ChatMock."""
+
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
-
 
 CLIENT_ID_DEFAULT = os.getenv("CHATGPT_LOCAL_CLIENT_ID") or "app_EMoamEEZ73f0CkXaXp7hrann"
 OAUTH_ISSUER_DEFAULT = os.getenv("CHATGPT_LOCAL_ISSUER") or "https://auth.openai.com"
@@ -12,34 +13,51 @@ OAUTH_TOKEN_URL = f"{OAUTH_ISSUER_DEFAULT}/oauth/token"
 CHATGPT_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 
 
+def _read_candidate(candidate: Path) -> tuple[str | None, str | None]:
+    try:
+        if candidate.exists():
+            content = candidate.read_text(encoding="utf-8")
+            if isinstance(content, str) and content.strip():
+                return content, None
+    except (OSError, UnicodeDecodeError, ValueError) as exc:  # log and continue
+        return None, str(exc)
+    return None, None
+
+
 def _read_prompt_text(filename: str) -> str | None:
+    """Search common locations for the given prompt file and return its text."""
     candidates = [
-        Path(__file__).parent.parent / filename,
-        Path(__file__).parent / filename,
-        Path(getattr(sys, "_MEIPASS", "")) / filename if getattr(sys, "_MEIPASS", None) else None,
-        Path.cwd() / filename,
+        c
+        for c in [
+            Path(__file__).parent.parent / filename,
+            Path(__file__).parent / filename,
+            (Path(getattr(sys, "_MEIPASS", "")) / filename)
+            if getattr(sys, "_MEIPASS", None)
+            else None,
+            Path.cwd() / filename,
+        ]
+        if c
     ]
     for candidate in candidates:
-        if not candidate:
-            continue
-        try:
-            if candidate.exists():
-                content = candidate.read_text(encoding="utf-8")
-                if isinstance(content, str) and content.strip():
-                    return content
-        except Exception:
-            continue
+        content, err = _read_candidate(candidate)
+        if content is not None:
+            return content
+        if err:
+            sys.stderr.write(f"[config] failed reading {candidate}: {err}\n")
     return None
 
 
 def read_base_instructions() -> str:
+    """Load base instructions from prompt.md or raise if not found."""
     content = _read_prompt_text("prompt.md")
     if content is None:
-        raise FileNotFoundError("Failed to read prompt.md; expected adjacent to package or CWD.")
+        msg = "Failed to read prompt.md; expected adjacent to package or CWD."
+        raise FileNotFoundError(msg)
     return content
 
 
 def read_gpt5_codex_instructions(fallback: str) -> str:
+    """Load GPT-5 Codex prompt text or return the provided fallback."""
     content = _read_prompt_text("prompt_gpt5_codex.md")
     return content if isinstance(content, str) and content.strip() else fallback
 

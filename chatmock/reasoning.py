@@ -1,11 +1,14 @@
+"""Helpers for building reasoning parameters and presentation."""
+
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 
 def build_reasoning_param(
-    base_effort: str = "medium", base_summary: str = "auto", overrides: Dict[str, Any] | None = None
-) -> Dict[str, Any]:
+    base_effort: str = "medium", base_summary: str = "auto", overrides: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Build a Responses API reasoning object from inputs and overrides."""
     effort = (base_effort or "").strip().lower()
     summary = (base_summary or "").strip().lower()
 
@@ -24,22 +27,20 @@ def build_reasoning_param(
     if summary not in valid_summaries:
         summary = "auto"
 
-    reasoning: Dict[str, Any] = {"effort": effort}
+    reasoning: dict[str, Any] = {"effort": effort}
     if summary != "none":
         reasoning["summary"] = summary
     return reasoning
 
 
-def apply_reasoning_to_message(
-    message: Dict[str, Any],
+def apply_reasoning_to_message(  # noqa: C901
+    message: dict[str, Any],
     reasoning_summary_text: str,
     reasoning_full_text: str,
     compat: str,
-) -> Dict[str, Any]:
-    try:
-        compat = (compat or "think-tags").strip().lower()
-    except Exception:
-        compat = "think-tags"
+) -> dict[str, Any]:
+    """Attach reasoning content/summary to a chat message based on compatibility mode."""
+    compat = compat.strip().lower() if isinstance(compat, str) else "think-tags"
 
     if compat == "o3":
         rtxt_parts: list[str] = []
@@ -59,12 +60,12 @@ def apply_reasoning_to_message(
             message["reasoning"] = reasoning_full_text
         return message
 
-    rtxt_parts: list[str] = []
+    ttxt_parts: list[str] = []
     if isinstance(reasoning_summary_text, str) and reasoning_summary_text.strip():
-        rtxt_parts.append(reasoning_summary_text)
+        ttxt_parts.append(reasoning_summary_text)
     if isinstance(reasoning_full_text, str) and reasoning_full_text.strip():
-        rtxt_parts.append(reasoning_full_text)
-    rtxt = "\n\n".join([p for p in rtxt_parts if p])
+        ttxt_parts.append(reasoning_full_text)
+    rtxt = "\n\n".join([p for p in ttxt_parts if p])
     if rtxt:
         think_block = f"<think>{rtxt}</think>"
         content_text = message.get("content") or ""
@@ -73,7 +74,7 @@ def apply_reasoning_to_message(
     return message
 
 
-def extract_reasoning_from_model_name(model: str | None) -> Dict[str, Any] | None:
+def extract_reasoning_from_model_name(model: str | None) -> dict[str, Any] | None:  # noqa: PLR0911
     """Infer reasoning overrides from a model."""
     if not isinstance(model, str) or not model:
         return None

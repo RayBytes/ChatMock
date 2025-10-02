@@ -19,3 +19,9 @@ dist/
 
 # OS clutter
 .DS_Store
+
+# IDE files
+ChatMock.code-workspace
+.gitignore
+.claude/settings.local.json
+.serena/
