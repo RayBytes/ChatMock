@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import json
-import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import requests
-from flask import Response, jsonify, make_response
+from flask import jsonify, make_response
+from flask import request as flask_request
 
 from .config import CHATGPT_RESPONSES_URL
 from .http import build_cors_headers
 from .session import ensure_session_id
-from flask import request as flask_request
 from .utils import get_effective_chatgpt_auth
 
 
@@ -50,6 +48,7 @@ def start_upstream_request(
     tool_choice: Any | None = None,
     parallel_tool_calls: bool = False,
     reasoning_param: Dict[str, Any] | None = None,
+    extra_fields: Dict[str, Any] | None = None,
 ):
     access_token, account_id = get_effective_chatgpt_auth()
     if not access_token or not account_id:
@@ -58,8 +57,8 @@ def start_upstream_request(
                 {
                     "error": {
                         "message": "Missing ChatGPT credentials. Run 'python3 chatmock.py login' first.",
-                    }
-                }
+                    },
+                },
             ),
             401,
         )
@@ -68,7 +67,13 @@ def start_upstream_request(
         return None, resp
 
     include: List[str] = []
-    if isinstance(reasoning_param, dict):
+    # If caller provided include via extra_fields, respect it; otherwise add reasoning include
+    if isinstance(extra_fields, dict) and isinstance(extra_fields.get("include"), list):
+        try:
+            include = [x for x in extra_fields.get("include") if isinstance(x, str)]
+        except Exception:
+            include = []
+    if isinstance(reasoning_param, dict) and "reasoning.encrypted_content" not in include:
         include.append("reasoning.encrypted_content")
 
     client_session_id = None
@@ -98,6 +103,17 @@ def start_upstream_request(
 
     if reasoning_param is not None:
         responses_payload["reasoning"] = reasoning_param
+
+    # Merge extra fields (temperature, top_p, text, metadata, etc.)
+    if isinstance(extra_fields, dict):
+        for k, v in extra_fields.items():
+            # Never allow client to disable streaming here
+            if k == "stream":
+                continue
+            # Never forward client-provided 'store' upstream
+            if k == "store":
+                continue
+            responses_payload[k] = v
 
     headers = {
         "Authorization": f"Bearer {access_token}",

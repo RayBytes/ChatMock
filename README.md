@@ -149,6 +149,85 @@ You can enable it by starting the server with this parameter, which will allow O
 }
 ```
 
+### Responses API
+
+- `--enable-responses-api`<br>
+Exposes a Responses‑compatible surface at `/v1/responses`.
+
+**Important:** This proxies to ChatGPT's internal `backend-api/codex/responses` endpoint, which is a **restricted subset** of the official OpenAI Platform Responses API. Key differences:
+- The ChatGPT endpoint **requires** `store=false` (rejects `store=true` with 400 error)
+- The ChatGPT endpoint **does not support** `previous_response_id` parameter upstream
+- ChatMock implements local polyfills for these features to provide a more complete API experience
+
+What's supported
+- Streaming passthrough (typed SSE events)
+- Non‑stream aggregation (returns a final `response` object)
+- `GET /v1/responses/{id}` when a non‑stream request is sent with `"store": true` (local storage only)
+- `previous_response_id` (local threading simulation for non‑stream requests)
+
+Start the server
+```bash
+python chatmock.py serve --enable-responses-api
+```
+
+Streaming example
+```bash
+curl -sN http://127.0.0.1:8000/v1/responses \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "gpt-5",
+    "stream": true,
+    "input": [
+      {"role":"user","content":[{"type":"input_text","text":"hello world"}]}
+    ]
+  }'
+```
+
+Non‑stream + retrieve
+```bash
+# Create (non‑stream) and store
+CREATE=$(curl -s http://127.0.0.1:8000/v1/responses \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "gpt-5",
+    "stream": false,
+    "store": true,
+    "input": [{"role":"user","content":[{"type":"input_text","text":"Say hi"}]}]
+  }')
+ID=$(python - <<'PY'
+import json,sys; print(json.loads(sys.stdin.read())['id'])
+PY
+<<< "$CREATE")
+
+# Retrieve by id
+curl -s http://127.0.0.1:8000/v1/responses/$ID | jq .
+```
+
+Flags & behavior
+- `--responses-no-base-instructions`
+  - For `/v1/responses` only: forwards client `instructions` as‑is. If the client omits or sends invalid instructions, upstream may 400. Default (flag off) injects the base prompt.
+- Tokens params
+  - The ChatGPT codex/responses upstream rejects `max_output_tokens` and `max_completion_tokens`. The server strips these if present.
+- Storage & Threading (ChatGPT Endpoint Constraints)
+  - **`store` parameter behavior:**
+    - The upstream ChatGPT `backend-api/codex/responses` endpoint **requires** `store=false` (returns 400 error `"Store must be set to false"` for any other value, including when omitted)
+    - This differs from the official OpenAI Platform Responses API, which supports `store=true` for server-side conversation persistence
+    - ChatMock honors `store` **locally only**: when clients send `store=true`, it's used to persist aggregated non-stream responses for `GET /v1/responses/{id}` and build simple local threads
+    - The server strips `store` before forwarding requests upstream (always sends `store=false` to prevent 400 errors)
+  - **`previous_response_id` parameter behavior:**
+    - Handled **locally only** for non-stream requests to simulate conversation threading
+    - Not forwarded upstream (ChatGPT endpoint doesn't support this parameter)
+    - For streaming continuity, include prior context inline in `input` rather than relying on `previous_response_id`
+  - **Upstream response ID references:**
+    - Referencing upstream item ids (e.g. `rs_…`) across calls is not supported by the ChatGPT endpoint
+    - Include content inline, or use `previous_response_id` with `stream: false` to leverage local thread simulation
+    - Inputs containing upstream response references (`rs_…`) in structural fields are sanitized server-side (those fields/items dropped, logged via `client_input_refs_sanitized`)
+    - Plain text content containing `rs_…` strings is left intact
+
+Logging & debugging
+- Structured JSONL log at `responses_debug.jsonl` (enabled with `--verbose` or `CHATMOCK_RESPONSES_LOG=1`).
+- Events: `request_received`, `param_stripped`, `client_input_refs_sanitized`, `input_items_sanitized`, `pre_upstream_refs_count`, `stream_start`, `upstream_error` (+ `upstream_error_body`), `nonstream_aggregated`.
+
 ### Expose reasoning models
 
 - `--expose-reasoning-models`<br>
