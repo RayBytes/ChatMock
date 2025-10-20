@@ -1,15 +1,18 @@
+"""Build utilities for packaging ChatMock."""
+
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import platform
+import plistlib
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-import plistlib
-from PIL import Image
 
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).parent.resolve()
 BUILD_DIR = ROOT / "build"
@@ -17,16 +20,20 @@ ICONS_DIR = BUILD_DIR / "icons"
 
 
 def info(msg: str) -> None:
-    print(f"[build] {msg}")
+    """Log a simple build message to stdout."""
+    sys.stdout.write(f"[build] {msg}\n")
 
 
 def ensure_dirs() -> None:
+    """Ensure build output directories exist."""
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_icon_png(path: Path) -> Image.Image:
+    """Load an image, center it on a square transparent canvas, and return RGBA."""
     if Image is None:
-        raise RuntimeError("Pillow is required to process icons.")
+        msg = "Pillow is required to process icons."
+        raise RuntimeError(msg)
     img = Image.open(path).convert("RGBA")
     size = max(img.width, img.height)
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -37,6 +44,7 @@ def load_icon_png(path: Path) -> Image.Image:
 
 
 def rounded(img: Image.Image, radius_ratio: float = 0.22) -> Image.Image:
+    """Apply rounded corners to an image using the given radius ratio."""
     if Image is None:
         return img
     w, h = img.size
@@ -44,7 +52,7 @@ def rounded(img: Image.Image, radius_ratio: float = 0.22) -> Image.Image:
     if r <= 0:
         return img
     mask = Image.new("L", (w, h), 0)
-    from PIL import ImageDraw
+
     d = ImageDraw.Draw(mask)
     d.rounded_rectangle((0, 0, w, h), radius=r, fill=255)
     out = img.copy()
@@ -53,6 +61,7 @@ def rounded(img: Image.Image, radius_ratio: float = 0.22) -> Image.Image:
 
 
 def make_windows_ico(src_png: Path, out_ico: Path, radius_ratio: float) -> Path:
+    """Create a Windows .ico file from a PNG source and return the output path."""
     info("Generating Windows .ico")
     square = load_icon_png(src_png)
     sizes = [16, 24, 32, 48, 64, 128, 256]
@@ -62,6 +71,7 @@ def make_windows_ico(src_png: Path, out_ico: Path, radius_ratio: float) -> Path:
 
 
 def make_macos_icns(src_png: Path, out_icns: Path, radius_ratio: float) -> Path:
+    """Create a macOS .icns bundle from a PNG source and return the output path."""
     info("Generating macOS .icns")
     iconset = BUILD_DIR / "icon.iconset"
     if iconset.exists():
@@ -71,52 +81,72 @@ def make_macos_icns(src_png: Path, out_icns: Path, radius_ratio: float) -> Path:
     square = load_icon_png(src_png)
     sizes = [16, 32, 64, 128, 256, 512, 1024]
     mapping = {
-        16:  ["icon_16x16.png", "icon_32x32.png"],
-        32:  ["icon_16x16@2x.png"],
-        64:  ["icon_32x32@2x.png"],
+        16: ["icon_16x16.png", "icon_32x32.png"],
+        32: ["icon_16x16@2x.png"],
+        64: ["icon_32x32@2x.png"],
         128: ["icon_128x128.png", "icon_256x256.png"],
         256: ["icon_128x128@2x.png"],
         512: ["icon_512x512.png"],
-        1024:["icon_512x512@2x.png"],
+        1024: ["icon_512x512@2x.png"],
     }
     for s in sizes:
         img = rounded(square.resize((s, s), Image.LANCZOS), radius_ratio)
         for name in mapping.get(s, []):
             img.save(iconset / name, format="PNG")
 
+    iconutil = shutil.which("iconutil")
+    if not iconutil:
+        msg = "'iconutil' not found in PATH. Install Xcode command line tools."
+        raise RuntimeError(msg)
     try:
-        subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(out_icns)], check=True)
+        subprocess.run([iconutil, "-c", "icns", str(iconset), "-o", str(out_icns)], check=True)  # noqa: S603
     except Exception as e:
-        raise RuntimeError("Failed to create .icns. Ensure Xcode command line tools are installed (iconutil).\n"
-                           f"Details: {e}")
+        msg = (
+            "Failed to create .icns. Ensure Xcode command line tools are installed (iconutil).\n"
+            f"Details: {e}"
+        )
+        raise RuntimeError(msg) from e
     finally:
         shutil.rmtree(iconset, ignore_errors=True)
     return out_icns
 
 
 def pyinstaller_add_data_arg(src: Path, dest: str) -> str:
+    """Return a formatted --add-data argument for PyInstaller depending on OS."""
     sep = ";" if os.name == "nt" else ":"
     return f"{src}{sep}{dest}"
 
 
-def run_pyinstaller(entry: Path, name: str, icon: Path | None, extra_data: list[tuple[Path, str]], bundle_id: str | None = None) -> None:
+def run_pyinstaller(
+    entry: Path,
+    name: str,
+    icon: Path | None,
+    extra_data: list[tuple[Path, str]],
+    bundle_id: str | None = None,
+) -> None:
+    """Invoke PyInstaller to build the application binary."""
     cmd = [
-        sys.executable, "-m", "PyInstaller",
-        "--windowed", "--noconfirm",
-        "--name", name,
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--windowed",
+        "--noconfirm",
+        "--name",
+        name,
     ]
     if bundle_id and platform.system().lower() == "darwin":
         cmd += ["--osx-bundle-identifier", bundle_id]
     if icon is not None:
         cmd += ["--icon", str(icon)]
-    for (src, dest) in extra_data:
+    for src, dest in extra_data:
         cmd += ["--add-data", pyinstaller_add_data_arg(src, dest)]
     cmd.append(str(entry))
     info("Running: " + " ".join(cmd))
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True)  # noqa: S603
 
 
 def patch_macos_plist(app_path: Path, bundle_id: str, icon_base_name: str = "appicon") -> None:
+    """Patch the Info.plist inside a macOS .app bundle with metadata and icon name."""
     info("Patching macOS Info.plist")
     plist_path = app_path / "Contents" / "Info.plist"
     if not plist_path.exists():
@@ -132,7 +162,9 @@ def patch_macos_plist(app_path: Path, bundle_id: str, icon_base_name: str = "app
     with plist_path.open("wb") as f:
         plistlib.dump(data, f)
 
+
 def make_dmg(app_path: Path, dmg_path: Path, volume_name: str) -> None:
+    """Create a compressed DMG containing the specified .app bundle."""
     info("Creating DMG")
     staging = BUILD_DIR / "dmg_staging"
     if staging.exists():
@@ -140,22 +172,34 @@ def make_dmg(app_path: Path, dmg_path: Path, volume_name: str) -> None:
     (staging).mkdir(parents=True, exist_ok=True)
     shutil.rmtree(staging / app_path.name, ignore_errors=True)
     shutil.copytree(app_path, staging / app_path.name, symlinks=True)
-    try:
-        os.symlink("/Applications", staging / "Applications")
-    except FileExistsError:
-        pass
+    with contextlib.suppress(FileExistsError):
+        (staging / "Applications").symlink_to(Path("/Applications"))
     dmg_path.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run([
-        "hdiutil", "create", "-volname", volume_name,
-        "-srcfolder", str(staging),
-        "-format", "UDZO",
-        "-imagekey", "zlib-level=9",
-        str(dmg_path)
-    ], check=True)
+    hdiutil = shutil.which("hdiutil")
+    if not hdiutil:
+        msg = "'hdiutil' not found; cannot create DMG on this platform."
+        raise RuntimeError(msg)
+    subprocess.run(  # noqa: S603
+        [
+            hdiutil,
+            "create",
+            "-volname",
+            volume_name,
+            "-srcfolder",
+            str(staging),
+            "-format",
+            "UDZO",
+            "-imagekey",
+            "zlib-level=9",
+            str(dmg_path),
+        ],
+        check=True,
+    )
     shutil.rmtree(staging, ignore_errors=True)
 
 
 def main() -> None:
+    """CLI to generate icons and build distributables for ChatMock."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", default="ChatMock")
     parser.add_argument("--entry", default="gui.py")
@@ -169,9 +213,11 @@ def main() -> None:
     entry = ROOT / args.entry
     icon_src = ROOT / args.icon
     if not entry.exists():
-        raise SystemExit(f"Entry not found: {entry}")
+        msg = f"Entry not found: {entry}"
+        raise SystemExit(msg)
     if not icon_src.exists():
-        raise SystemExit(f"Icon PNG not found: {icon_src}")
+        msg = f"Icon PNG not found: {icon_src}"
+        raise SystemExit(msg)
 
     os_name = platform.system().lower()
     extra_data: list[tuple[Path, str]] = [(ROOT / "prompt.md", ".")]
@@ -207,7 +253,6 @@ def main() -> None:
             if args.dmg:
                 dmg = ROOT / "dist" / f"{args.name}.dmg"
                 make_dmg(app_path, dmg, args.name)
-
 
 
 if __name__ == "__main__":

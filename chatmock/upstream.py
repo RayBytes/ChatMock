@@ -1,20 +1,21 @@
+"""Upstream request helpers to the ChatGPT Responses API."""
+
 from __future__ import annotations
 
-import json
-import time
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 from flask import Response, jsonify, make_response
+from flask import request as flask_request
 
+from . import utils as utils_mod
 from .config import CHATGPT_RESPONSES_URL
 from .http import build_cors_headers
 from .session import ensure_session_id
-from flask import request as flask_request
-from .utils import get_effective_chatgpt_auth
 
 
 def normalize_model_name(name: str | None, debug_model: str | None = None) -> str:
+    """Map aliases and effort-suffixed model names to a canonical base."""
     if isinstance(debug_model, str) and debug_model.strip():
         return debug_model.strip()
     if not isinstance(name, str) or not name.strip():
@@ -41,23 +42,27 @@ def normalize_model_name(name: str | None, debug_model: str | None = None) -> st
     return mapping.get(base, base)
 
 
-def start_upstream_request(
+def start_upstream_request(  # noqa: PLR0913
     model: str,
-    input_items: List[Dict[str, Any]],
+    input_items: list[dict[str, Any]],
     *,
     instructions: str | None = None,
-    tools: List[Dict[str, Any]] | None = None,
-    tool_choice: Any | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | str | None = None,
     parallel_tool_calls: bool = False,
-    reasoning_param: Dict[str, Any] | None = None,
-):
-    access_token, account_id = get_effective_chatgpt_auth()
+    reasoning_param: dict[str, Any] | None = None,
+) -> tuple[requests.Response | None, Response | None]:
+    """Start a streaming Responses API request and return (upstream, error_response)."""
+    # Import via module attribute to allow pytest monkeypatching
+    access_token, account_id = utils_mod.get_effective_chatgpt_auth()
     if not access_token or not account_id:
         resp = make_response(
             jsonify(
                 {
                     "error": {
-                        "message": "Missing ChatGPT credentials. Run 'python3 chatmock.py login' first.",
+                        "message": (
+                            "Missing ChatGPT credentials. Run 'python3 chatmock.py login' first."
+                        ),
                     }
                 }
             ),
@@ -67,27 +72,23 @@ def start_upstream_request(
             resp.headers.setdefault(k, v)
         return None, resp
 
-    include: List[str] = []
+    include: list[str] = []
     if isinstance(reasoning_param, dict):
         include.append("reasoning.encrypted_content")
 
-    client_session_id = None
-    try:
-        client_session_id = (
-            flask_request.headers.get("X-Session-Id")
-            or flask_request.headers.get("session_id")
-            or None
-        )
-    except Exception:
-        client_session_id = None
+    client_session_id = (
+        flask_request.headers.get("X-Session-Id") or flask_request.headers.get("session_id") or None
+    )
     session_id = ensure_session_id(instructions, input_items, client_session_id)
 
     responses_payload = {
         "model": model,
-        "instructions": instructions if isinstance(instructions, str) and instructions.strip() else instructions,
+        "instructions": instructions,
         "input": input_items,
         "tools": tools or [],
-        "tool_choice": tool_choice if tool_choice in ("auto", "none") or isinstance(tool_choice, dict) else "auto",
+        "tool_choice": tool_choice
+        if tool_choice in ("auto", "none") or isinstance(tool_choice, dict)
+        else "auto",
         "parallel_tool_calls": bool(parallel_tool_calls),
         "store": False,
         "stream": True,
@@ -117,7 +118,9 @@ def start_upstream_request(
             timeout=600,
         )
     except requests.RequestException as e:
-        resp = make_response(jsonify({"error": {"message": f"Upstream ChatGPT request failed: {e}"}}), 502)
+        resp = make_response(
+            jsonify({"error": {"message": f"Upstream ChatGPT request failed: {e}"}}), 502
+        )
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)
         return None, resp
