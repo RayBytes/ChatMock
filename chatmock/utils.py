@@ -389,6 +389,7 @@ def sse_translate_chat(
     think_open = False
     think_closed = False
     saw_output = False
+    sent_stop_chunk = False
     saw_any_summary = False
     pending_summary_paragraph = False
     upstream_usage = None
@@ -738,6 +739,7 @@ def sse_translate_chat(
                     "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                 }
                 yield f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
+                sent_stop_chunk = True
             elif kind == "response.failed":
                 err = evt.get("response", {}).get("error", {}).get("message", "response.failed")
                 chunk = {"error": {"message": err}}
@@ -757,6 +759,17 @@ def sse_translate_chat(
                     yield f"data: {json.dumps(close_chunk)}\n\n".encode("utf-8")
                     think_open = False
                     think_closed = True
+                if not sent_stop_chunk:
+                    chunk = {
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": model,
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    }
+                    yield f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
+                    sent_stop_chunk = True
+
                 if include_usage and upstream_usage:
                     try:
                         usage_chunk = {
