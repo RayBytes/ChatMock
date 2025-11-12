@@ -20,6 +20,9 @@ if [[ "$cmd" == "serve" ]]; then
   if bool "${VERBOSE:-}" || bool "${CHATGPT_LOCAL_VERBOSE:-}"; then
     ARGS+=(--verbose)
   fi
+  if bool "${VERBOSE_OBFUSCATION:-}" || bool "${CHATGPT_LOCAL_VERBOSE_OBFUSCATION:-}"; then
+    ARGS+=(--verbose-obfuscation)
+  fi
 
   if [[ "$#" -gt 0 ]]; then
     ARGS+=("$@")
@@ -36,4 +39,3 @@ elif [[ "$cmd" == "login" ]]; then
 else
   exec "$cmd" "$@"
 fi
-

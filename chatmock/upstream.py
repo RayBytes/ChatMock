@@ -5,13 +5,23 @@ import time
 from typing import Any, Dict, List, Tuple
 
 import requests
-from flask import Response, jsonify, make_response
+from flask import Response, current_app, jsonify, make_response
 
 from .config import CHATGPT_RESPONSES_URL
 from .http import build_cors_headers
 from .session import ensure_session_id
 from flask import request as flask_request
 from .utils import get_effective_chatgpt_auth
+
+
+def _log_json(prefix: str, payload: Any) -> None:
+    try:
+        print(f"{prefix}\n{json.dumps(payload, indent=2, ensure_ascii=False)}")
+    except Exception:
+        try:
+            print(f"{prefix}\n{payload}")
+        except Exception:
+            pass
 
 
 def normalize_model_name(name: str | None, debug_model: str | None = None) -> str:
@@ -98,6 +108,14 @@ def start_upstream_request(
 
     if reasoning_param is not None:
         responses_payload["reasoning"] = reasoning_param
+
+    verbose = False
+    try:
+        verbose = bool(current_app.config.get("VERBOSE"))
+    except Exception:
+        verbose = False
+    if verbose:
+        _log_json("OUTBOUND >> ChatGPT Responses API payload", responses_payload)
 
     headers = {
         "Authorization": f"Bearer {access_token}",
