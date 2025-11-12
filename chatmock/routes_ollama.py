@@ -19,6 +19,19 @@ from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_
 ollama_bp = Blueprint("ollama", __name__)
 
 
+@ollama_bp.route("/api/version", methods=["GET"])
+def ollama_version() -> Response:
+    if bool(current_app.config.get("VERBOSE")):
+        print("IN GET /api/version")
+    version = current_app.config.get("OLLAMA_VERSION", "0.12.10")
+    if not isinstance(version, str) or not version.strip():
+        version = "0.12.10"
+    resp = make_response(jsonify({"version": version}), 200)
+    for k, v in build_cors_headers().items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
     if model == "gpt-5-codex":
