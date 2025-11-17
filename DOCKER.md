@@ -21,6 +21,8 @@
 ## Configuration
 Set options in `.env` or pass environment variables:
 - `PORT`: Container listening port (default 8000)
+- `PUID`: User ID to run the container as (default 1000)
+- `PGID`: Group ID to run the container as (default 1000)
 - `VERBOSE`: `true|false` to enable request/stream logs
 - `CHATGPT_LOCAL_REASONING_EFFORT`: minimal|low|medium|high
 - `CHATGPT_LOCAL_REASONING_SUMMARY`: auto|concise|detailed|none
@@ -29,6 +31,20 @@ Set options in `.env` or pass environment variables:
 - `CHATGPT_LOCAL_CLIENT_ID`: OAuth client id override (rarely needed)
 - `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS`: `true|false` to add reasoning model variants to `/v1/models`
 - `CHATGPT_LOCAL_ENABLE_WEB_SEARCH`: `true|false` to enable default web search tool
+
+### User/Group IDs (PUID/PGID)
+To avoid permission issues with mounted volumes, you can set `PUID` and `PGID` to match your host user:
+```bash
+# Find your user's UID and GID
+id -u  # Returns your user ID
+id -g  # Returns your group ID
+
+# Set in .env file
+PUID=1000
+PGID=1000
+```
+
+The container will run as the specified user, ensuring that files created in mounted volumes have the correct ownership.
 
 ## Logs
 Set `VERBOSE=true` to include extra logging for debugging issues in upstream or chat app requests. Please include and use these logs when submitting bug reports.
