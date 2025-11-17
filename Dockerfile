@@ -7,9 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install su-exec for user switching
+# Install gosu for user switching
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends su-exec && \
+    apt-get install -y --no-install-recommends gosu && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
