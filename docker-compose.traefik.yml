@@ -1,0 +1,118 @@
+# Docker Compose configuration for ChatMock with Traefik integration
+#
+# This file provides a production-ready setup with:
+# - Traefik reverse proxy for HTTPS/SSL
+# - Automatic Let's Encrypt certificate management
+# - WebUI accessible via domain
+# - API endpoints with proper routing
+#
+# Prerequisites:
+# 1. Traefik must be running and configured
+# 2. Update .env file with your domain and email
+# 3. Ensure Traefik network exists: docker network create traefik
+#
+# Usage:
+#   docker-compose -f docker-compose.traefik.yml up -d
+#
+# Login (first time setup):
+#   docker-compose -f docker-compose.traefik.yml --profile login up chatmock-login
+
+version: "3.9"
+
+services:
+  chatmock:
+    # To use pre-built image from GitHub Container Registry:
+    # image: ghcr.io/thebtf/chatmock:latest
+    #
+    # To build locally:
+    build: .
+    image: chatmock:latest
+    container_name: chatmock
+    command: ["serve"]
+    env_file: .env
+    environment:
+      - CHATGPT_LOCAL_HOME=/data
+      - USE_GUNICORN=1
+    volumes:
+      - chatmock_data:/data
+      - ./prompt.md:/app/prompt.md:ro
+    networks:
+      - traefik
+      - default
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)\" "]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      # Enable Traefik for this service
+      - "traefik.enable=true"
+
+      # HTTP to HTTPS redirect
+      - "traefik.http.middlewares.chatmock-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.chatmock-https-redirect.redirectscheme.permanent=true"
+
+      # CORS headers middleware
+      - "traefik.http.middlewares.chatmock-cors.headers.accessControlAllowOriginList=*"
+      - "traefik.http.middlewares.chatmock-cors.headers.accessControlAllowMethods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.chatmock-cors.headers.accessControlAllowHeaders=*"
+      - "traefik.http.middlewares.chatmock-cors.headers.accessControlMaxAge=100"
+      - "traefik.http.middlewares.chatmock-cors.headers.addVaryHeader=true"
+
+      # HTTP Router (redirect to HTTPS)
+      - "traefik.http.routers.chatmock-http.rule=Host(`${CHATMOCK_DOMAIN:-chatmock.localhost}`)"
+      - "traefik.http.routers.chatmock-http.entrypoints=web"
+      - "traefik.http.routers.chatmock-http.middlewares=chatmock-https-redirect"
+
+      # HTTPS Router
+      - "traefik.http.routers.chatmock.rule=Host(`${CHATMOCK_DOMAIN:-chatmock.localhost}`)"
+      - "traefik.http.routers.chatmock.entrypoints=websecure"
+      - "traefik.http.routers.chatmock.tls=true"
+      - "traefik.http.routers.chatmock.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.chatmock.middlewares=chatmock-cors"
+
+      # Service definition
+      - "traefik.http.services.chatmock.loadbalancer.server.port=8000"
+
+      # Health check
+      - "traefik.http.services.chatmock.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.chatmock.loadbalancer.healthcheck.interval=10s"
+
+      # Docker network to use
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+
+  chatmock-login:
+    image: chatmock:latest
+    profiles: ["login"]
+    command: ["login"]
+    environment:
+      - CHATGPT_LOCAL_HOME=/data
+      - CHATGPT_LOCAL_LOGIN_BIND=0.0.0.0
+    volumes:
+      - chatmock_data:/data
+    networks:
+      - traefik
+      - default
+    labels:
+      # Enable Traefik for login service
+      - "traefik.enable=true"
+
+      # HTTP Router for login (no HTTPS redirect needed, temporary service)
+      - "traefik.http.routers.chatmock-login.rule=Host(`${CHATMOCK_DOMAIN:-chatmock.localhost}`) && PathPrefix(`/oauth`)"
+      - "traefik.http.routers.chatmock-login.entrypoints=web"
+
+      # Service definition
+      - "traefik.http.services.chatmock-login.loadbalancer.server.port=1455"
+
+      # Docker network to use
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+
+networks:
+  traefik:
+    external: true
+  default:
+    driver: bridge
+
+volumes:
+  chatmock_data:

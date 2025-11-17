@@ -6,6 +6,7 @@ from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .http import build_cors_headers
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
+from .routes_webui import webui_bp
 
 
 def create_app(
@@ -44,5 +45,6 @@ def create_app(
 
     app.register_blueprint(openai_bp)
     app.register_blueprint(ollama_bp)
+    app.register_blueprint(webui_bp)
 
     return app
