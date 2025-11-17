@@ -6,7 +6,7 @@ This PR adds comprehensive Docker improvements and releases version 1.4.0.
 
 ### Features Added
 - ✅ **Docker PUID/PGID support**: Run containers with different user credentials to avoid permission issues with mounted volumes
-- ✅ **Multi-architecture Docker images**: Automated builds for linux/amd64 and linux/arm64
+- ✅ **Multi-architecture Docker images**: Automated builds for linux/amd64, linux/arm64, and linux/arm/v7
 - ✅ **GitHub Container Registry integration**: Automated image publishing via GitHub Actions
 - ✅ **Pre-built images**: Available at `ghcr.io/thebtf/chatmock:latest`
 - ✅ **docker-compose.registry.yml**: Easy deployment using pre-built images
@@ -43,7 +43,7 @@ This PR adds comprehensive Docker improvements and releases version 1.4.0.
 - Default values: PUID=1000, PGID=1000
 
 ### Multi-Architecture Build
-- GitHub Actions builds for linux/amd64 and linux/arm64
+- GitHub Actions builds for linux/amd64, linux/arm64, and linux/arm/v7
 - Uses Docker buildx for cross-platform builds
 - Automatic semantic versioning from git tags
 - Images cached for faster subsequent builds

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions workflow for automated Docker image builds and publishing to GitHub Container Registry
 - Pre-built Docker images available at `ghcr.io/thebtf/chatmock:latest`
 - `docker-compose.registry.yml` for easy deployment using pre-built images
-- Multi-architecture Docker images (linux/amd64, linux/arm64)
+- Multi-architecture Docker images (linux/amd64, linux/arm64, linux/arm/v7)
 - CONTRIBUTING guide for contributors
 - Environment variable toggles for reasoning and web search configuration
 - Graceful error handling for ChunkedEncodingError during streaming
