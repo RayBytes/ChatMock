@@ -36,6 +36,26 @@ Our Docker images are available for the following platforms:
   - Older ARM-based IoT devices
   - Many embedded Linux systems
 
+### ✅ linux/arm/v6
+- **Description**: 32-bit ARM v6 processors
+- **Use cases**: Very old ARM devices, legacy single-board computers
+- **Common platforms**: armv6l
+- **Examples**:
+  - Raspberry Pi Zero, Zero W
+  - Raspberry Pi 1 Model A, B, A+, B+
+  - Original Raspberry Pi Compute Module
+  - Legacy ARM IoT devices
+
+### ✅ linux/386
+- **Description**: 32-bit Intel and AMD processors
+- **Use cases**: Legacy x86 systems, older PCs, some embedded systems
+- **Common platforms**: i386, i686
+- **Examples**:
+  - Old PCs and servers (pre-2005)
+  - Legacy embedded x86 systems
+  - Some older thin clients
+  - Virtual machines with 32-bit guest OS
+
 ## Using Multi-Architecture Images
 
 Docker automatically selects the correct architecture for your system:
@@ -61,6 +81,12 @@ docker pull --platform linux/arm64 ghcr.io/thebtf/chatmock:latest
 
 # Force arm/v7
 docker pull --platform linux/arm/v7 ghcr.io/thebtf/chatmock:latest
+
+# Force arm/v6
+docker pull --platform linux/arm/v6 ghcr.io/thebtf/chatmock:latest
+
+# Force 386
+docker pull --platform linux/386 ghcr.io/thebtf/chatmock:latest
 ```
 
 ## Windows and macOS Support
@@ -88,16 +114,14 @@ docker pull --platform linux/arm/v7 ghcr.io/thebtf/chatmock:latest
 
 Additional Linux architectures that *could* be supported (but currently aren't):
 
-- **linux/386**: 32-bit Intel/AMD
-- **linux/arm/v6**: Older ARM v6 (Raspberry Pi Zero, Pi 1)
 - **linux/ppc64le**: PowerPC 64-bit Little Endian
 - **linux/s390x**: IBM System/390
 - **linux/riscv64**: RISC-V 64-bit
 
-These aren't included by default because:
+These aren't included because:
 1. Build time increases significantly with each architecture
 2. GitHub Actions has time limits
-3. Most users only need amd64, arm64, or arm/v7
+3. Very few users need these specialized architectures
 4. Some dependencies may not support all architectures
 
 If you need a specific architecture, you can build locally using the scripts provided.
@@ -122,9 +146,12 @@ Native Windows containers are fundamentally different:
 ### Recommended Approach
 Always use the native architecture for your platform:
 - x86_64 servers → linux/amd64
+- 32-bit x86 systems → linux/386
 - Apple Silicon Mac → linux/arm64
 - Raspberry Pi 4 (64-bit OS) → linux/arm64
 - Raspberry Pi 3 (32-bit OS) → linux/arm/v7
+- Raspberry Pi 2 (32-bit OS) → linux/arm/v7
+- Raspberry Pi Zero, Pi 1 → linux/arm/v6
 
 ## Building for Specific Architectures
 
@@ -192,6 +219,8 @@ Some dependencies may not support all architectures. Check:
 - ✅ linux/amd64 (Intel/AMD 64-bit)
 - ✅ linux/arm64 (ARM 64-bit)
 - ✅ linux/arm/v7 (ARM 32-bit v7)
+- ✅ linux/arm/v6 (ARM 32-bit v6)
+- ✅ linux/386 (Intel/AMD 32-bit)
 
 **Works on:**
 - ✅ Windows (via Docker Desktop + WSL2)
@@ -199,6 +228,9 @@ Some dependencies may not support all architectures. Check:
 - ✅ Linux (native)
 
 **Best for:**
-- 🖥️ Desktop/Server: amd64
+- 🖥️ Modern Desktop/Server: amd64
+- 🖥️ Legacy 32-bit PC: 386
 - 🍎 Apple Silicon: arm64
-- 🥧 Raspberry Pi: arm64 (64-bit OS) or arm/v7 (32-bit OS)
+- 🥧 Raspberry Pi 4: arm64 (64-bit OS) or arm/v7 (32-bit OS)
+- 🥧 Raspberry Pi 2/3: arm/v7
+- 🥧 Raspberry Pi Zero/1: arm/v6

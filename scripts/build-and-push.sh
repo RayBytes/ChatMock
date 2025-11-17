@@ -8,7 +8,7 @@ set -euo pipefail
 VERSION="${1:-latest}"
 REGISTRY="ghcr.io"
 IMAGE_NAME="thebtf/chatmock"
-PLATFORMS="linux/amd64,linux/arm64,linux/arm/v7"
+PLATFORMS="linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6,linux/386"
 
 echo "Building and pushing Docker image..."
 echo "Registry: ${REGISTRY}"
