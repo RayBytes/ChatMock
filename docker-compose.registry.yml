@@ -1,13 +1,11 @@
 version: "3.9"
 
+# This docker-compose file uses the pre-built image from GitHub Container Registry
+# Usage: docker compose -f docker-compose.registry.yml up -d
+
 services:
   chatmock:
-    # To use pre-built image from GitHub Container Registry:
-    # image: ghcr.io/raybytes/chatmock:latest
-    #
-    # To build locally:
-    build: .
-    image: chatmock:latest
+    image: ghcr.io/raybytes/chatmock:latest
     container_name: chatmock
     command: ["serve"]
     env_file: .env
@@ -26,7 +24,7 @@ services:
       start_period: 5s
 
   chatmock-login:
-    image: chatmock:latest
+    image: ghcr.io/raybytes/chatmock:latest
     profiles: ["login"]
     command: ["login"]
     environment:

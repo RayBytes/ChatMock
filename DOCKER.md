@@ -1,11 +1,36 @@
 # Docker Deployment
 
-## Quick Start
+## Using Pre-built Image from GitHub Container Registry
+
+You can use the pre-built image instead of building locally:
+
 1) Setup env:
+   ```bash
    cp .env.example .env
+   ```
+
+2) Use the registry compose file:
+   ```bash
+   docker compose -f docker-compose.registry.yml pull
+   ```
+
+3) Follow steps 3-5 in the Quick Start below, using `-f docker-compose.registry.yml` flag:
+   ```bash
+   docker compose -f docker-compose.registry.yml run --rm --service-ports chatmock-login login
+   docker compose -f docker-compose.registry.yml up -d chatmock
+   ```
+
+## Quick Start (Building Locally)
+
+1) Setup env:
+   ```bash
+   cp .env.example .env
+   ```
 
 2) Build the image:
+   ```bash
    docker compose build
+   ```
 
 3) Login:
    docker compose run --rm --service-ports chatmock-login login

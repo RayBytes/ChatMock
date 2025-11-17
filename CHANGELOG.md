@@ -10,9 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Support for GPT-5.1 models
 - Docker support with PUID and PGID environment variables for running container with different user credentials
+- GitHub Actions workflow for automated Docker image builds and publishing to GitHub Container Registry
+- Pre-built Docker images available at `ghcr.io/raybytes/chatmock:latest`
+- `docker-compose.registry.yml` for easy deployment using pre-built images
+- Multi-architecture Docker images (linux/amd64, linux/arm64)
 - CONTRIBUTING guide for contributors
 - Environment variable toggles for reasoning and web search configuration
 - Graceful error handling for ChunkedEncodingError during streaming
+- Comprehensive project documentation in CLAUDE.md
 
 ### Changed
 - Improved OAuth token refresh mechanism
