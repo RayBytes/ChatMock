@@ -441,6 +441,7 @@ def list_models() -> Response:
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
     model_groups = [
         ("gpt-5", ["high", "medium", "low", "minimal"]),
+        ("gpt-5.1", ["high", "medium", "low", "minimal"]),
         ("gpt-5-codex", ["high", "medium", "low"]),
         ("codex-mini", []),
     ]
