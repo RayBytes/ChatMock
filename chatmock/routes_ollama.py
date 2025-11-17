@@ -43,7 +43,7 @@ def ollama_tags() -> Response:
     if bool(current_app.config.get("VERBOSE")):
         print("IN GET /api/tags")
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    model_ids = ["gpt-5", "gpt-5-codex", "codex-mini"]
+    model_ids = ["gpt-5", "gpt-5.1", "gpt-5-codex", "codex-mini"]
     if expose_variants:
         model_ids.extend(
             [
@@ -51,6 +51,10 @@ def ollama_tags() -> Response:
                 "gpt-5-medium",
                 "gpt-5-low",
                 "gpt-5-minimal",
+                "gpt-5.1-high",
+                "gpt-5.1-medium",
+                "gpt-5.1-low",
+                "gpt-5.1-minimal",
                 "gpt-5-codex-high",
                 "gpt-5-codex-medium",
                 "gpt-5-codex-low",
