@@ -1,16 +1,26 @@
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PUID=1000 \
+    PGID=1000
 
 WORKDIR /app
+
+# Install su-exec for user switching
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends su-exec && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /app
 
-RUN mkdir -p /data
+RUN mkdir -p /data && \
+    groupadd -g 1000 chatmock && \
+    useradd -u 1000 -g chatmock -d /app -s /bin/bash chatmock && \
+    chown -R chatmock:chatmock /app /data
 
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
