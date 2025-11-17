@@ -5,7 +5,7 @@ version: "3.9"
 
 services:
   chatmock:
-    image: ghcr.io/raybytes/chatmock:latest
+    image: ghcr.io/thebtf/chatmock:latest
     container_name: chatmock
     command: ["serve"]
     env_file: .env
@@ -24,7 +24,7 @@ services:
       start_period: 5s
 
   chatmock-login:
-    image: ghcr.io/raybytes/chatmock:latest
+    image: ghcr.io/thebtf/chatmock:latest
     profiles: ["login"]
     command: ["login"]
     environment:

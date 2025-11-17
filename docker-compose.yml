@@ -3,7 +3,7 @@ version: "3.9"
 services:
   chatmock:
     # To use pre-built image from GitHub Container Registry:
-    # image: ghcr.io/raybytes/chatmock:latest
+    # image: ghcr.io/thebtf/chatmock:latest
     #
     # To build locally:
     build: .

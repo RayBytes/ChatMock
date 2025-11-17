@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for GPT-5.1 models
 - Docker support with PUID and PGID environment variables for running container with different user credentials
 - GitHub Actions workflow for automated Docker image builds and publishing to GitHub Container Registry
-- Pre-built Docker images available at `ghcr.io/raybytes/chatmock:latest`
+- Pre-built Docker images available at `ghcr.io/thebtf/chatmock:latest`
 - `docker-compose.registry.yml` for easy deployment using pre-built images
 - Multi-architecture Docker images (linux/amd64, linux/arm64)
 - CONTRIBUTING guide for contributors
