@@ -1145,30 +1145,57 @@
             } else {
                 container.innerHTML = `
                     <div class="auth-icon">🔐</div>
-                    <div class="auth-title">Not Authenticated</div>
+                    <div class="auth-title">Authentication Required</div>
                     <div class="auth-description">You need to authenticate with your ChatGPT account to use ChatMock.</div>
-                    <button class="btn btn-primary" id="loginBtn">Get Login URL</button>
+
+                    <div style="margin: 2rem 0;">
+                        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
+                            <strong>Step 1:</strong> Start the login service (required for OAuth callback):
+                        </p>
+                        <code style="background: var(--bg-tertiary); padding: 0.75rem 1rem; border-radius: 4px; display: block; font-size: 0.875rem; margin-bottom: 1.5rem;">
+                            docker exec -it chatmock python chatmock.py login
+                        </code>
+
+                        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
+                            <strong>Step 2:</strong> Click Authorize to open ChatGPT login:
+                        </p>
+                        <button class="btn btn-primary" id="authorizeBtn" style="margin-right: 0.5rem;">Authorize with ChatGPT</button>
+                        <button class="btn btn-secondary" id="refreshAuthBtn">Refresh Status</button>
+                    </div>
+
                     <div id="loginInfo" style="margin-top: 1.5rem;"></div>
                 `;
 
-                document.getElementById('loginBtn').addEventListener('click', async () => {
+                document.getElementById('authorizeBtn').addEventListener('click', async () => {
                     try {
                         const response = await fetch('/api/login-url');
+                        if (!response.ok) {
+                            throw new Error('Failed to get login URL');
+                        }
                         const data = await response.json();
 
+                        // Open OAuth URL in new window
+                        window.open(data.auth_url, '_blank');
+
                         document.getElementById('loginInfo').innerHTML = `
-                            <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
-                                ${data.note}
+                            <p style="color: var(--success); font-size: 0.875rem;">
+                                OAuth window opened. Complete authentication in the new window, then click "Refresh Status".
                             </p>
-                            <p style="font-size: 0.875rem; margin-bottom: 0.5rem;">
-                                For Docker deployments, use the login service on port 1455:
-                            </p>
-                            <code style="background: var(--bg-tertiary); padding: 0.5rem 1rem; border-radius: 4px; display: block; font-size: 0.75rem; overflow-x: auto;">
-                                docker exec -it chatmock python chatmock.py login
-                            </code>
                         `;
                     } catch (error) {
-                        showToast('Failed to get login URL', 'error');
+                        showToast('Failed to start authorization', 'error');
+                        console.error(error);
+                    }
+                });
+
+                document.getElementById('refreshAuthBtn').addEventListener('click', async () => {
+                    await fetchStatus();
+                    if (statusData?.authenticated) {
+                        showToast('Authentication successful!', 'success');
+                        // Reload page to enable all features
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast('Not authenticated yet', 'info');
                     }
                 });
             }
@@ -1181,10 +1208,26 @@
         // Initial load
         async function init() {
             await fetchStatus();
-            await fetchStats();
 
-            // Auto-refresh stats every 30 seconds
-            setInterval(fetchStats, 30000);
+            // If not authenticated, force auth page and hide others
+            if (!statusData?.authenticated) {
+                switchPage('auth');
+                // Disable other tabs
+                document.querySelectorAll('.nav-tab').forEach(tab => {
+                    if (tab.dataset.page !== 'auth') {
+                        tab.style.opacity = '0.5';
+                        tab.style.cursor = 'not-allowed';
+                        tab.onclick = (e) => {
+                            e.stopPropagation();
+                            showToast('Please authenticate first', 'error');
+                        };
+                    }
+                });
+            } else {
+                await fetchStats();
+                // Auto-refresh stats every 30 seconds
+                setInterval(fetchStats, 30000);
+            }
         }
 
         init();

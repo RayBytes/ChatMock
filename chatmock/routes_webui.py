@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -279,27 +280,34 @@ def api_config_update():
 
 @webui_bp.route("/api/login-url")
 def api_login_url():
-    """Get OAuth login URL"""
+    """Get OAuth login URL for authentication"""
     from .config import CLIENT_ID_DEFAULT, OAUTH_ISSUER_DEFAULT
-    from .oauth import REDIRECT_URI, REQUIRED_PORT
-    import secrets
+    from .oauth import REQUIRED_PORT
+    from .utils import generate_pkce
+    import urllib.parse
+
+    # Generate PKCE codes
+    pkce = generate_pkce()
 
     # Generate state for CSRF protection
     state = secrets.token_urlsafe(32)
 
-    # Build OAuth URL
-    auth_url = (
-        f"{OAUTH_ISSUER_DEFAULT}/authorize"
-        f"?client_id={CLIENT_ID_DEFAULT}"
-        f"&redirect_uri={REDIRECT_URI}"
-        f"&response_type=code"
-        f"&scope=openid%20profile%20email%20offline_access"
-        f"&state={state}"
-    )
+    redirect_uri = f"http://localhost:{REQUIRED_PORT}/auth/callback"
+
+    # Build OAuth URL with proper parameters
+    params = {
+        "response_type": "code",
+        "client_id": CLIENT_ID_DEFAULT,
+        "redirect_uri": redirect_uri,
+        "scope": "openid profile email offline_access",
+        "code_challenge": pkce.code_challenge,
+        "code_challenge_method": "S256",
+        "state": state,
+    }
+
+    auth_url = f"{OAUTH_ISSUER_DEFAULT}/oauth/authorize?{urllib.parse.urlencode(params)}"
 
     return jsonify({
         "auth_url": auth_url,
-        "state": state,
-        "redirect_uri": REDIRECT_URI,
-        "note": "For full OAuth flow, use the 'login' command or Docker login service",
+        "note": "Open this URL to authenticate. The callback requires the login service on port 1455.",
     })
