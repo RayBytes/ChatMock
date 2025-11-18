@@ -1197,11 +1197,78 @@
         document.getElementById('saveSettings').addEventListener('click', saveConfig);
         document.getElementById('resetSettings').addEventListener('click', loadConfig);
 
+        // Show password form overlay
+        function showPasswordForm() {
+            const overlay = document.createElement('div');
+            overlay.id = 'passwordOverlay';
+            overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-primary); z-index: 9999; display: flex; align-items: center; justify-content: center;';
+            overlay.innerHTML = `
+                <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; max-width: 400px; width: 90%;">
+                    <h2 style="margin-bottom: 1rem; text-align: center;">WebUI Login</h2>
+                    <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem; text-align: center;">
+                        Enter password to access ChatMock WebUI
+                    </p>
+                    <input type="password" id="webuiPassword" placeholder="Password"
+                        style="width: 100%; padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.875rem; margin-bottom: 1rem;">
+                    <button id="webuiLoginBtn" class="btn btn-primary" style="width: 100%;">Login</button>
+                    <p id="webuiLoginError" style="color: var(--error); font-size: 0.75rem; margin-top: 0.75rem; text-align: center; display: none;"></p>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            const passwordInput = document.getElementById('webuiPassword');
+            const loginBtn = document.getElementById('webuiLoginBtn');
+            const errorMsg = document.getElementById('webuiLoginError');
+
+            passwordInput.focus();
+
+            async function doLogin() {
+                const password = passwordInput.value;
+                try {
+                    const response = await fetch('/api/webui-auth', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        errorMsg.textContent = data.error || 'Invalid password';
+                        errorMsg.style.display = 'block';
+                        passwordInput.value = '';
+                        passwordInput.focus();
+                    }
+                } catch (error) {
+                    errorMsg.textContent = 'Login failed';
+                    errorMsg.style.display = 'block';
+                }
+            }
+
+            loginBtn.addEventListener('click', doLogin);
+            passwordInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') doLogin();
+            });
+        }
+
         // Initial load
         async function init() {
+            // First check WebUI auth
+            try {
+                const authResp = await fetch('/api/webui-auth');
+                const authData = await authResp.json();
+
+                if (authData.password_required && !authData.authenticated) {
+                    showPasswordForm();
+                    return;
+                }
+            } catch (error) {
+                console.error('Failed to check WebUI auth:', error);
+            }
+
             await fetchStatus();
 
-            // If not authenticated, force auth page and hide others
+            // If not authenticated with ChatGPT, force auth page and hide others
             if (!statusData?.authenticated) {
                 switchPage('auth');
                 // Disable other tabs

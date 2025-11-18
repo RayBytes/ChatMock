@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, jsonify, request, send_from_directory, current_app
+from flask import Blueprint, jsonify, request, send_from_directory, current_app, make_response
 
 from .limits import load_rate_limit_snapshot, compute_reset_at
 from .utils import get_home_dir, load_chatgpt_tokens, parse_jwt_claims, read_auth_file
@@ -17,6 +17,30 @@ webui_bp = Blueprint("webui", __name__)
 
 # Track request statistics
 STATS_FILE = Path(get_home_dir()) / "stats.json"
+
+# Session tokens for WebUI auth (in-memory)
+_webui_sessions = set()
+
+
+def check_webui_auth():
+    """Check if request is authenticated for WebUI access"""
+    password = os.getenv("WEBUI_PASSWORD", "")
+    if not password:
+        return True  # No password set, allow access
+
+    session_token = request.cookies.get("webui_session")
+    return session_token in _webui_sessions
+
+
+def require_webui_auth(f):
+    """Decorator to require WebUI authentication"""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not check_webui_auth():
+            return jsonify({"error": "Authentication required", "auth_required": True}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 
 def load_stats() -> dict[str, Any]:
@@ -93,7 +117,46 @@ def serve_webui(path):
     return send_from_directory("webui/dist", path)
 
 
+@webui_bp.route("/api/webui-auth", methods=["GET"])
+def api_webui_auth_check():
+    """Check if WebUI password is required and current auth status"""
+    password = os.getenv("WEBUI_PASSWORD", "")
+    return jsonify({
+        "password_required": bool(password),
+        "authenticated": check_webui_auth(),
+    })
+
+
+@webui_bp.route("/api/webui-auth", methods=["POST"])
+def api_webui_auth_login():
+    """Authenticate with WebUI password"""
+    password = os.getenv("WEBUI_PASSWORD", "")
+    if not password:
+        return jsonify({"success": True, "message": "No password required"})
+
+    data = request.get_json() or {}
+    provided = data.get("password", "")
+
+    if provided == password:
+        # Generate session token
+        session_token = secrets.token_urlsafe(32)
+        _webui_sessions.add(session_token)
+
+        response = make_response(jsonify({"success": True}))
+        response.set_cookie(
+            "webui_session",
+            session_token,
+            httponly=True,
+            samesite="Lax",
+            max_age=86400 * 7  # 7 days
+        )
+        return response
+    else:
+        return jsonify({"success": False, "error": "Invalid password"}), 401
+
+
 @webui_bp.route("/api/status")
+@require_webui_auth
 def api_status():
     """Get server status and authentication info"""
     access_token, account_id, id_token = load_chatgpt_tokens()
@@ -131,6 +194,7 @@ def api_status():
 
 
 @webui_bp.route("/api/stats")
+@require_webui_auth
 def api_stats():
     """Get usage statistics"""
     stats = load_stats()
@@ -168,6 +232,7 @@ def api_stats():
 
 
 @webui_bp.route("/api/models")
+@require_webui_auth
 def api_models():
     """Get list of available models"""
     expose_reasoning = current_app.config.get("EXPOSE_REASONING_MODELS", False)
@@ -229,6 +294,7 @@ def api_models():
 
 
 @webui_bp.route("/api/config", methods=["GET"])
+@require_webui_auth
 def api_config_get():
     """Get current configuration"""
     config = {
@@ -246,6 +312,7 @@ def api_config_get():
 
 
 @webui_bp.route("/api/config", methods=["POST"])
+@require_webui_auth
 def api_config_update():
     """Update configuration (runtime only, does not persist to env)"""
     data = request.get_json()
