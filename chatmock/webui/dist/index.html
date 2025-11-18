@@ -1148,30 +1148,46 @@
                     <div class="auth-title">Authentication Required</div>
                     <div class="auth-description">You need to authenticate with your ChatGPT account to use ChatMock.</div>
 
-                    <div style="margin: 2rem 0;">
-                        <button class="btn btn-primary" id="authorizeBtn" style="font-size: 1rem; padding: 1rem 2rem;">Authorize with ChatGPT</button>
+                    <div style="margin: 2rem 0; text-align: left; background: var(--bg-tertiary); padding: 1.5rem; border-radius: 8px;">
+                        <p style="font-weight: 600; margin-bottom: 1rem;">Authentication Options:</p>
+
+                        <div style="margin-bottom: 1.5rem;">
+                            <p style="font-weight: 500; color: var(--accent); margin-bottom: 0.5rem;">Option 1: Docker CLI (Recommended)</p>
+                            <code style="background: var(--bg-primary); padding: 0.5rem 0.75rem; border-radius: 4px; display: block; font-size: 0.8rem;">
+                                docker exec -it chatmock python chatmock.py login
+                            </code>
+                            <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                                Opens browser on server. Complete login, then refresh this page.
+                            </p>
+                        </div>
+
+                        <div style="margin-bottom: 1.5rem;">
+                            <p style="font-weight: 500; color: var(--accent); margin-bottom: 0.5rem;">Option 2: Port Forwarding (Remote access)</p>
+                            <code style="background: var(--bg-primary); padding: 0.5rem 0.75rem; border-radius: 4px; display: block; font-size: 0.8rem;">
+                                ssh -L 1455:localhost:1455 your-server
+                            </code>
+                            <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                                Run login command, then access http://localhost:1455 in your browser.
+                            </p>
+                        </div>
+
+                        <p style="font-size: 0.75rem; color: var(--warning); margin-top: 1rem;">
+                            <strong>Note:</strong> OAuth callback requires localhost:1455 due to OpenAI restrictions.
+                        </p>
                     </div>
 
-                    <p style="color: var(--text-secondary); font-size: 0.875rem;">
-                        You will be redirected to OpenAI to sign in with your ChatGPT account.
-                    </p>
+                    <button class="btn btn-secondary" id="refreshAuthBtn">Refresh Status</button>
 
                     <div id="loginInfo" style="margin-top: 1.5rem;"></div>
                 `;
 
-                document.getElementById('authorizeBtn').addEventListener('click', async () => {
-                    try {
-                        const response = await fetch('/api/login-url');
-                        if (!response.ok) {
-                            throw new Error('Failed to get login URL');
-                        }
-                        const data = await response.json();
-
-                        // Redirect to OAuth URL
-                        window.location.href = data.auth_url;
-                    } catch (error) {
-                        showToast('Failed to start authorization', 'error');
-                        console.error(error);
+                document.getElementById('refreshAuthBtn').addEventListener('click', async () => {
+                    await fetchStatus();
+                    if (statusData?.authenticated) {
+                        showToast('Authentication successful!', 'success');
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast('Not authenticated yet. Run login command first.', 'info');
                     }
                 });
             }
@@ -1181,11 +1197,78 @@
         document.getElementById('saveSettings').addEventListener('click', saveConfig);
         document.getElementById('resetSettings').addEventListener('click', loadConfig);
 
+        // Show password form overlay
+        function showPasswordForm() {
+            const overlay = document.createElement('div');
+            overlay.id = 'passwordOverlay';
+            overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-primary); z-index: 9999; display: flex; align-items: center; justify-content: center;';
+            overlay.innerHTML = `
+                <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; max-width: 400px; width: 90%;">
+                    <h2 style="margin-bottom: 1rem; text-align: center;">WebUI Login</h2>
+                    <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem; text-align: center;">
+                        Enter password to access ChatMock WebUI
+                    </p>
+                    <input type="password" id="webuiPassword" placeholder="Password"
+                        style="width: 100%; padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.875rem; margin-bottom: 1rem;">
+                    <button id="webuiLoginBtn" class="btn btn-primary" style="width: 100%;">Login</button>
+                    <p id="webuiLoginError" style="color: var(--error); font-size: 0.75rem; margin-top: 0.75rem; text-align: center; display: none;"></p>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            const passwordInput = document.getElementById('webuiPassword');
+            const loginBtn = document.getElementById('webuiLoginBtn');
+            const errorMsg = document.getElementById('webuiLoginError');
+
+            passwordInput.focus();
+
+            async function doLogin() {
+                const password = passwordInput.value;
+                try {
+                    const response = await fetch('/api/webui-auth', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        errorMsg.textContent = data.error || 'Invalid password';
+                        errorMsg.style.display = 'block';
+                        passwordInput.value = '';
+                        passwordInput.focus();
+                    }
+                } catch (error) {
+                    errorMsg.textContent = 'Login failed';
+                    errorMsg.style.display = 'block';
+                }
+            }
+
+            loginBtn.addEventListener('click', doLogin);
+            passwordInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') doLogin();
+            });
+        }
+
         // Initial load
         async function init() {
+            // First check WebUI auth
+            try {
+                const authResp = await fetch('/api/webui-auth');
+                const authData = await authResp.json();
+
+                if (authData.password_required && !authData.authenticated) {
+                    showPasswordForm();
+                    return;
+                }
+            } catch (error) {
+                console.error('Failed to check WebUI auth:', error);
+            }
+
             await fetchStatus();
 
-            // If not authenticated, force auth page and hide others
+            // If not authenticated with ChatGPT, force auth page and hide others
             if (!statusData?.authenticated) {
                 switchPage('auth');
                 // Disable other tabs

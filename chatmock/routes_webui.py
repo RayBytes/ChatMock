@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, jsonify, request, send_from_directory, current_app
+from flask import Blueprint, jsonify, request, send_from_directory, current_app, make_response
 
 from .limits import load_rate_limit_snapshot, compute_reset_at
 from .utils import get_home_dir, load_chatgpt_tokens, parse_jwt_claims, read_auth_file
@@ -18,12 +18,29 @@ webui_bp = Blueprint("webui", __name__)
 # Track request statistics
 STATS_FILE = Path(get_home_dir()) / "stats.json"
 
-# Store PKCE codes for OAuth flow (in-memory, single user)
-_oauth_state = {
-    "pkce": None,
-    "state": None,
-    "redirect_uri": None,
-}
+# Session tokens for WebUI auth (in-memory)
+_webui_sessions = set()
+
+
+def check_webui_auth():
+    """Check if request is authenticated for WebUI access"""
+    password = os.getenv("WEBUI_PASSWORD", "")
+    if not password:
+        return True  # No password set, allow access
+
+    session_token = request.cookies.get("webui_session")
+    return session_token in _webui_sessions
+
+
+def require_webui_auth(f):
+    """Decorator to require WebUI authentication"""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not check_webui_auth():
+            return jsonify({"error": "Authentication required", "auth_required": True}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 
 def load_stats() -> dict[str, Any]:
@@ -100,7 +117,46 @@ def serve_webui(path):
     return send_from_directory("webui/dist", path)
 
 
+@webui_bp.route("/api/webui-auth", methods=["GET"])
+def api_webui_auth_check():
+    """Check if WebUI password is required and current auth status"""
+    password = os.getenv("WEBUI_PASSWORD", "")
+    return jsonify({
+        "password_required": bool(password),
+        "authenticated": check_webui_auth(),
+    })
+
+
+@webui_bp.route("/api/webui-auth", methods=["POST"])
+def api_webui_auth_login():
+    """Authenticate with WebUI password"""
+    password = os.getenv("WEBUI_PASSWORD", "")
+    if not password:
+        return jsonify({"success": True, "message": "No password required"})
+
+    data = request.get_json() or {}
+    provided = data.get("password", "")
+
+    if provided == password:
+        # Generate session token
+        session_token = secrets.token_urlsafe(32)
+        _webui_sessions.add(session_token)
+
+        response = make_response(jsonify({"success": True}))
+        response.set_cookie(
+            "webui_session",
+            session_token,
+            httponly=True,
+            samesite="Lax",
+            max_age=86400 * 7  # 7 days
+        )
+        return response
+    else:
+        return jsonify({"success": False, "error": "Invalid password"}), 401
+
+
 @webui_bp.route("/api/status")
+@require_webui_auth
 def api_status():
     """Get server status and authentication info"""
     access_token, account_id, id_token = load_chatgpt_tokens()
@@ -138,6 +194,7 @@ def api_status():
 
 
 @webui_bp.route("/api/stats")
+@require_webui_auth
 def api_stats():
     """Get usage statistics"""
     stats = load_stats()
@@ -175,6 +232,7 @@ def api_stats():
 
 
 @webui_bp.route("/api/models")
+@require_webui_auth
 def api_models():
     """Get list of available models"""
     expose_reasoning = current_app.config.get("EXPOSE_REASONING_MODELS", False)
@@ -236,6 +294,7 @@ def api_models():
 
 
 @webui_bp.route("/api/config", methods=["GET"])
+@require_webui_auth
 def api_config_get():
     """Get current configuration"""
     config = {
@@ -253,6 +312,7 @@ def api_config_get():
 
 
 @webui_bp.route("/api/config", methods=["POST"])
+@require_webui_auth
 def api_config_update():
     """Update configuration (runtime only, does not persist to env)"""
     data = request.get_json()
@@ -289,10 +349,9 @@ def api_config_update():
 def api_login_url():
     """Get OAuth login URL for authentication"""
     from .config import CLIENT_ID_DEFAULT, OAUTH_ISSUER_DEFAULT
+    from .oauth import REQUIRED_PORT
     from .utils import generate_pkce
     import urllib.parse
-
-    global _oauth_state
 
     # Generate PKCE codes
     pkce = generate_pkce()
@@ -300,14 +359,7 @@ def api_login_url():
     # Generate state for CSRF protection
     state = secrets.token_urlsafe(32)
 
-    # Use main server port for callback (get from request)
-    port = os.getenv("PORT", "8000")
-    redirect_uri = f"http://localhost:{port}/auth/callback"
-
-    # Store for callback verification
-    _oauth_state["pkce"] = pkce
-    _oauth_state["state"] = state
-    _oauth_state["redirect_uri"] = redirect_uri
+    redirect_uri = f"http://localhost:{REQUIRED_PORT}/auth/callback"
 
     # Build OAuth URL with proper parameters
     params = {
@@ -324,139 +376,5 @@ def api_login_url():
 
     return jsonify({
         "auth_url": auth_url,
+        "note": "Open this URL to authenticate. The callback requires the login service on port 1455.",
     })
-
-
-@webui_bp.route("/auth/callback")
-def auth_callback():
-    """Handle OAuth callback and exchange code for tokens"""
-    from .config import CLIENT_ID_DEFAULT, OAUTH_ISSUER_DEFAULT
-    from .utils import write_auth_file
-    import urllib.request
-    import ssl
-    import certifi
-
-    global _oauth_state
-
-    # Get code and state from query params
-    code = request.args.get("code")
-    state = request.args.get("state")
-    error = request.args.get("error")
-
-    if error:
-        return f"""
-        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
-        <h1 style="color: #ef4444;">Authentication Failed</h1>
-        <p>Error: {error}</p>
-        <p>{request.args.get('error_description', '')}</p>
-        <p><a href="/webui">Return to WebUI</a></p>
-        </body></html>
-        """, 400
-
-    if not code:
-        return """
-        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
-        <h1 style="color: #ef4444;">Authentication Failed</h1>
-        <p>No authorization code received</p>
-        <p><a href="/webui">Return to WebUI</a></p>
-        </body></html>
-        """, 400
-
-    # Verify state
-    if state != _oauth_state.get("state"):
-        return """
-        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
-        <h1 style="color: #ef4444;">Authentication Failed</h1>
-        <p>Invalid state parameter (CSRF protection)</p>
-        <p><a href="/webui">Return to WebUI</a></p>
-        </body></html>
-        """, 400
-
-    pkce = _oauth_state.get("pkce")
-    redirect_uri = _oauth_state.get("redirect_uri")
-
-    if not pkce or not redirect_uri:
-        return """
-        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
-        <h1 style="color: #ef4444;">Authentication Failed</h1>
-        <p>OAuth session expired. Please try again.</p>
-        <p><a href="/webui">Return to WebUI</a></p>
-        </body></html>
-        """, 400
-
-    try:
-        # Exchange code for tokens
-        token_endpoint = f"{OAUTH_ISSUER_DEFAULT}/oauth/token"
-        data = urllib.parse.urlencode({
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": CLIENT_ID_DEFAULT,
-            "code_verifier": pkce.code_verifier,
-        }).encode()
-
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-
-        req = urllib.request.Request(
-            token_endpoint,
-            data=data,
-            method="POST",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-
-        with urllib.request.urlopen(req, context=ssl_context) as resp:
-            payload = json.loads(resp.read().decode())
-
-        id_token = payload.get("id_token", "")
-        access_token = payload.get("access_token", "")
-        refresh_token = payload.get("refresh_token", "")
-
-        # Parse tokens
-        id_token_claims = parse_jwt_claims(id_token) or {}
-        auth_claims = id_token_claims.get("https://api.openai.com/auth", {})
-        chatgpt_account_id = auth_claims.get("chatgpt_account_id", "")
-
-        # Save auth data
-        import datetime
-        auth_json = {
-            "OPENAI_API_KEY": None,
-            "tokens": {
-                "id_token": id_token,
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "account_id": chatgpt_account_id,
-            },
-            "last_refresh": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
-        }
-
-        if write_auth_file(auth_json):
-            # Clear OAuth state
-            _oauth_state["pkce"] = None
-            _oauth_state["state"] = None
-            _oauth_state["redirect_uri"] = None
-
-            return """
-            <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
-            <h1 style="color: #22c55e;">Authentication Successful!</h1>
-            <p>You are now logged in to ChatMock.</p>
-            <p>Redirecting to dashboard...</p>
-            <script>setTimeout(() => window.location.href = '/webui', 2000);</script>
-            </body></html>
-            """
-        else:
-            return """
-            <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
-            <h1 style="color: #ef4444;">Authentication Failed</h1>
-            <p>Failed to save authentication data</p>
-            <p><a href="/webui">Return to WebUI</a></p>
-            </body></html>
-            """, 500
-
-    except Exception as e:
-        return f"""
-        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
-        <h1 style="color: #ef4444;">Authentication Failed</h1>
-        <p>Token exchange error: {str(e)}</p>
-        <p><a href="/webui">Return to WebUI</a></p>
-        </body></html>
-        """, 500
