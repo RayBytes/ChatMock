@@ -13,6 +13,7 @@ services:
     env_file: .env
     environment:
       - CHATGPT_LOCAL_HOME=/data
+      - USE_GUNICORN=1
     ports:
       - "8000:8000"
     volumes:
@@ -23,7 +24,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
+      start_period: 10s
+    restart: unless-stopped
 
   chatmock-login:
     image: chatmock:latest
