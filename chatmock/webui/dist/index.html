@@ -1149,19 +1149,12 @@
                     <div class="auth-description">You need to authenticate with your ChatGPT account to use ChatMock.</div>
 
                     <div style="margin: 2rem 0;">
-                        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
-                            <strong>Step 1:</strong> Start the login service (required for OAuth callback):
-                        </p>
-                        <code style="background: var(--bg-tertiary); padding: 0.75rem 1rem; border-radius: 4px; display: block; font-size: 0.875rem; margin-bottom: 1.5rem;">
-                            docker exec -it chatmock python chatmock.py login
-                        </code>
-
-                        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
-                            <strong>Step 2:</strong> Click Authorize to open ChatGPT login:
-                        </p>
-                        <button class="btn btn-primary" id="authorizeBtn" style="margin-right: 0.5rem;">Authorize with ChatGPT</button>
-                        <button class="btn btn-secondary" id="refreshAuthBtn">Refresh Status</button>
+                        <button class="btn btn-primary" id="authorizeBtn" style="font-size: 1rem; padding: 1rem 2rem;">Authorize with ChatGPT</button>
                     </div>
+
+                    <p style="color: var(--text-secondary); font-size: 0.875rem;">
+                        You will be redirected to OpenAI to sign in with your ChatGPT account.
+                    </p>
 
                     <div id="loginInfo" style="margin-top: 1.5rem;"></div>
                 `;
@@ -1174,28 +1167,11 @@
                         }
                         const data = await response.json();
 
-                        // Open OAuth URL in new window
-                        window.open(data.auth_url, '_blank');
-
-                        document.getElementById('loginInfo').innerHTML = `
-                            <p style="color: var(--success); font-size: 0.875rem;">
-                                OAuth window opened. Complete authentication in the new window, then click "Refresh Status".
-                            </p>
-                        `;
+                        // Redirect to OAuth URL
+                        window.location.href = data.auth_url;
                     } catch (error) {
                         showToast('Failed to start authorization', 'error');
                         console.error(error);
-                    }
-                });
-
-                document.getElementById('refreshAuthBtn').addEventListener('click', async () => {
-                    await fetchStatus();
-                    if (statusData?.authenticated) {
-                        showToast('Authentication successful!', 'success');
-                        // Reload page to enable all features
-                        setTimeout(() => location.reload(), 1000);
-                    } else {
-                        showToast('Not authenticated yet', 'info');
                     }
                 });
             }

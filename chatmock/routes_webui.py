@@ -18,6 +18,13 @@ webui_bp = Blueprint("webui", __name__)
 # Track request statistics
 STATS_FILE = Path(get_home_dir()) / "stats.json"
 
+# Store PKCE codes for OAuth flow (in-memory, single user)
+_oauth_state = {
+    "pkce": None,
+    "state": None,
+    "redirect_uri": None,
+}
+
 
 def load_stats() -> dict[str, Any]:
     """Load usage statistics from file"""
@@ -282,9 +289,10 @@ def api_config_update():
 def api_login_url():
     """Get OAuth login URL for authentication"""
     from .config import CLIENT_ID_DEFAULT, OAUTH_ISSUER_DEFAULT
-    from .oauth import REQUIRED_PORT
     from .utils import generate_pkce
     import urllib.parse
+
+    global _oauth_state
 
     # Generate PKCE codes
     pkce = generate_pkce()
@@ -292,7 +300,14 @@ def api_login_url():
     # Generate state for CSRF protection
     state = secrets.token_urlsafe(32)
 
-    redirect_uri = f"http://localhost:{REQUIRED_PORT}/auth/callback"
+    # Use main server port for callback (get from request)
+    port = os.getenv("PORT", "8000")
+    redirect_uri = f"http://localhost:{port}/auth/callback"
+
+    # Store for callback verification
+    _oauth_state["pkce"] = pkce
+    _oauth_state["state"] = state
+    _oauth_state["redirect_uri"] = redirect_uri
 
     # Build OAuth URL with proper parameters
     params = {
@@ -309,5 +324,139 @@ def api_login_url():
 
     return jsonify({
         "auth_url": auth_url,
-        "note": "Open this URL to authenticate. The callback requires the login service on port 1455.",
     })
+
+
+@webui_bp.route("/auth/callback")
+def auth_callback():
+    """Handle OAuth callback and exchange code for tokens"""
+    from .config import CLIENT_ID_DEFAULT, OAUTH_ISSUER_DEFAULT
+    from .utils import write_auth_file
+    import urllib.request
+    import ssl
+    import certifi
+
+    global _oauth_state
+
+    # Get code and state from query params
+    code = request.args.get("code")
+    state = request.args.get("state")
+    error = request.args.get("error")
+
+    if error:
+        return f"""
+        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
+        <h1 style="color: #ef4444;">Authentication Failed</h1>
+        <p>Error: {error}</p>
+        <p>{request.args.get('error_description', '')}</p>
+        <p><a href="/webui">Return to WebUI</a></p>
+        </body></html>
+        """, 400
+
+    if not code:
+        return """
+        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
+        <h1 style="color: #ef4444;">Authentication Failed</h1>
+        <p>No authorization code received</p>
+        <p><a href="/webui">Return to WebUI</a></p>
+        </body></html>
+        """, 400
+
+    # Verify state
+    if state != _oauth_state.get("state"):
+        return """
+        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
+        <h1 style="color: #ef4444;">Authentication Failed</h1>
+        <p>Invalid state parameter (CSRF protection)</p>
+        <p><a href="/webui">Return to WebUI</a></p>
+        </body></html>
+        """, 400
+
+    pkce = _oauth_state.get("pkce")
+    redirect_uri = _oauth_state.get("redirect_uri")
+
+    if not pkce or not redirect_uri:
+        return """
+        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
+        <h1 style="color: #ef4444;">Authentication Failed</h1>
+        <p>OAuth session expired. Please try again.</p>
+        <p><a href="/webui">Return to WebUI</a></p>
+        </body></html>
+        """, 400
+
+    try:
+        # Exchange code for tokens
+        token_endpoint = f"{OAUTH_ISSUER_DEFAULT}/oauth/token"
+        data = urllib.parse.urlencode({
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": CLIENT_ID_DEFAULT,
+            "code_verifier": pkce.code_verifier,
+        }).encode()
+
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+
+        req = urllib.request.Request(
+            token_endpoint,
+            data=data,
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        with urllib.request.urlopen(req, context=ssl_context) as resp:
+            payload = json.loads(resp.read().decode())
+
+        id_token = payload.get("id_token", "")
+        access_token = payload.get("access_token", "")
+        refresh_token = payload.get("refresh_token", "")
+
+        # Parse tokens
+        id_token_claims = parse_jwt_claims(id_token) or {}
+        auth_claims = id_token_claims.get("https://api.openai.com/auth", {})
+        chatgpt_account_id = auth_claims.get("chatgpt_account_id", "")
+
+        # Save auth data
+        import datetime
+        auth_json = {
+            "OPENAI_API_KEY": None,
+            "tokens": {
+                "id_token": id_token,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "account_id": chatgpt_account_id,
+            },
+            "last_refresh": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+
+        if write_auth_file(auth_json):
+            # Clear OAuth state
+            _oauth_state["pkce"] = None
+            _oauth_state["state"] = None
+            _oauth_state["redirect_uri"] = None
+
+            return """
+            <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
+            <h1 style="color: #22c55e;">Authentication Successful!</h1>
+            <p>You are now logged in to ChatMock.</p>
+            <p>Redirecting to dashboard...</p>
+            <script>setTimeout(() => window.location.href = '/webui', 2000);</script>
+            </body></html>
+            """
+        else:
+            return """
+            <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
+            <h1 style="color: #ef4444;">Authentication Failed</h1>
+            <p>Failed to save authentication data</p>
+            <p><a href="/webui">Return to WebUI</a></p>
+            </body></html>
+            """, 500
+
+    except Exception as e:
+        return f"""
+        <html><body style="font-family: system-ui; max-width: 600px; margin: 80px auto; text-align: center;">
+        <h1 style="color: #ef4444;">Authentication Failed</h1>
+        <p>Token exchange error: {str(e)}</p>
+        <p><a href="/webui">Return to WebUI</a></p>
+        </body></html>
+        """, 500
