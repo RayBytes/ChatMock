@@ -129,7 +129,7 @@ Containerized deployment with Docker Compose:
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on contributing to this project.
+See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines on contributing to this project.
 
 ## License
 
