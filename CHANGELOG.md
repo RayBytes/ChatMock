@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built Docker images available at `ghcr.io/thebtf/chatmock:latest`
 - `docker-compose.registry.yml` for easy deployment using pre-built images
 - Multi-architecture Docker images (linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v6, linux/386)
+- Automated macOS application builds (DMG) via GitHub Actions on release tags
+- GitHub Releases with automatically attached macOS DMG files
+- Build dependencies documentation (requirements-build.txt)
 - CONTRIBUTING guide for contributors
 - Environment variable toggles for reasoning and web search configuration
 - Graceful error handling for ChunkedEncodingError during streaming

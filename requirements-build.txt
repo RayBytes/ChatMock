@@ -1,0 +1,13 @@
+# Build dependencies for creating macOS/Windows applications
+
+# PyInstaller for creating standalone executables
+pyinstaller>=6.0.0
+
+# GUI framework
+PySide6>=6.6.0
+
+# Image processing for icon generation
+Pillow>=10.0.0
+
+# Include runtime dependencies
+-r requirements.txt

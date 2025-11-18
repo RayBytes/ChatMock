@@ -10,7 +10,9 @@ This PR adds comprehensive Docker improvements and releases version 1.4.0.
 - ✅ **GitHub Container Registry integration**: Automated image publishing via GitHub Actions
 - ✅ **Pre-built images**: Available at `ghcr.io/thebtf/chatmock:latest`
 - ✅ **docker-compose.registry.yml**: Easy deployment using pre-built images
-- ✅ **Comprehensive documentation**: CHANGELOG.md, CLAUDE.md, MANUAL_BUILD.md
+- ✅ **Automated macOS builds**: GitHub Actions automatically builds and releases DMG installers
+- ✅ **GitHub Releases**: Automatic release creation with macOS DMG attachments
+- ✅ **Comprehensive documentation**: CHANGELOG.md, CLAUDE.md, MANUAL_BUILD.md, BUILD.md, ARCHITECTURES.md
 - ✅ **Build automation scripts**: Helper scripts for manual builds
 - ✅ **GPT-5.1 model support**: Added to supported models list
 - ✅ **Fork disclaimer**: Clear notice in README directing users to original repository
@@ -25,14 +27,18 @@ This PR adds comprehensive Docker improvements and releases version 1.4.0.
 - **CHANGELOG.md** - Complete version history tracking all changes
 - **CLAUDE.md** - Comprehensive project overview with architecture details
 - **MANUAL_BUILD.md** - Detailed manual build instructions with troubleshooting
+- **BUILD.md** - Guide for building macOS/Windows applications
+- **ARCHITECTURES.md** - Detailed multi-architecture support documentation
 - **DOCKER.md** - Updated with PUID/PGID configuration guide
 - **scripts/README.md** - Quick reference for build scripts
 - **RELEASE_v1.4.0.md** - Release instructions and checklist
 
 ### New Files
 - `.github/workflows/docker-publish.yml` - Automated Docker builds and publishing
+- `.github/workflows/build-release.yml` - Automated macOS DMG builds and GitHub Releases
 - `docker-compose.registry.yml` - Pre-built image deployment configuration
 - `scripts/build-and-push.sh` - Manual multi-arch build script
+- `requirements-build.txt` - Build dependencies for creating applications
 
 ## Technical Details
 
@@ -57,6 +63,13 @@ This PR adds comprehensive Docker improvements and releases version 1.4.0.
 - Automated publishing to `ghcr.io/thebtf/chatmock`
 - Tags: latest, version tags (v1.4.0, 1.4.0, 1.4, 1)
 - Triggered by: push to main, version tags, manual workflow dispatch
+
+### macOS Application Builds
+- Fully automated via GitHub Actions on version tags
+- Builds native .app bundle using PyInstaller
+- Creates DMG installer with Applications symlink
+- Automatically creates GitHub Release with attached DMG
+- No manual intervention required - just push a tag!
 
 ## Test Plan
 - [x] Docker build completes successfully with gosu
