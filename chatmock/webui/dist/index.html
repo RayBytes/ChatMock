@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatMock - Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #242424;
+            --bg-tertiary: #2d2d2d;
+            --text-primary: #e6e6e6;
+            --text-secondary: #a0a0a0;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --border: #404040;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        /* Header */
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--accent);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .auth-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-dot.authenticated {
+            background: var(--success);
+        }
+
+        .status-dot.unauthenticated {
+            background: var(--error);
+        }
+
+        /* Navigation */
+        nav {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 0 2rem;
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 0;
+        }
+
+        .nav-tab {
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            color: var(--text-secondary);
+        }
+
+        .nav-tab:hover {
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+        }
+
+        .nav-tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        /* Main Content */
+        main {
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .stat-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        /* Charts */
+        .chart-container {
+            height: 300px;
+            position: relative;
+        }
+
+        .chart-bars {
+            display: flex;
+            align-items: flex-end;
+            height: 100%;
+            gap: 4px;
+            padding-bottom: 30px;
+        }
+
+        .chart-bar {
+            flex: 1;
+            background: var(--accent);
+            border-radius: 4px 4px 0 0;
+            min-height: 4px;
+            position: relative;
+            transition: all 0.3s;
+        }
+
+        .chart-bar:hover {
+            background: var(--accent-hover);
+        }
+
+        .chart-bar-label {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.625rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        /* Model Usage */
+        .model-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .model-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .model-name {
+            width: 120px;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .model-bar-container {
+            flex: 1;
+            height: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .model-bar {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+
+        .model-count {
+            width: 60px;
+            text-align: right;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+        }
+
+        /* Rate Limits */
+        .rate-limit-section {
+            margin-top: 1rem;
+        }
+
+        .rate-limit-item {
+            margin-bottom: 1rem;
+        }
+
+        .rate-limit-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .rate-limit-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .rate-limit-value {
+            font-size: 0.875rem;
+            color: var(--text-primary);
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+
+        .progress-fill.low {
+            background: var(--success);
+        }
+
+        .progress-fill.medium {
+            background: var(--warning);
+        }
+
+        .progress-fill.high {
+            background: var(--error);
+        }
+
+        /* Settings Form */
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .form-description {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .form-input,
+        .form-select {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+        }
+
+        .form-checkbox input {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent);
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #16a34a;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        /* Authorization */
+        .auth-section {
+            text-align: center;
+            padding: 3rem;
+        }
+
+        .auth-icon {
+            width: 64px;
+            height: 64px;
+            background: var(--bg-tertiary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            font-size: 2rem;
+        }
+
+        .auth-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+
+        .auth-description {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .auth-user-card {
+            display: inline-block;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .auth-user-email {
+            font-size: 1.125rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .auth-user-plan {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .auth-user-plan span {
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1000;
+        }
+
+        .toast {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--error);
+        }
+
+        .toast.info {
+            border-left: 4px solid var(--accent);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Table */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            background: var(--bg-tertiary);
+        }
+
+        td {
+            font-size: 0.875rem;
+        }
+
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        /* Models Page */
+        .models-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .model-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+        }
+
+        .model-card-name {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .model-card-id {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.75rem;
+            font-family: monospace;
+        }
+
+        .model-card-description {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .model-capabilities {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .capability-tag {
+            padding: 0.25rem 0.5rem;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: var(--accent);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .nav-tabs {
+                overflow-x: auto;
+            }
+
+            main {
+                padding: 1rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="logo-icon">C</div>
+            <span class="logo-text">ChatMock</span>
+        </div>
+        <div class="user-info">
+            <div class="auth-status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Checking...</span>
+            </div>
+        </div>
+    </header>
+
+    <nav>
+        <div class="nav-tabs">
+            <div class="nav-tab active" data-page="dashboard">Dashboard</div>
+            <div class="nav-tab" data-page="models">Models</div>
+            <div class="nav-tab" data-page="settings">Settings</div>
+            <div class="nav-tab" data-page="auth">Authorization</div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Dashboard Page -->
+        <div class="page active" id="page-dashboard">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Requests</div>
+                    <div class="stat-value" id="totalRequests">0</div>
+                    <div class="stat-subtitle" id="firstRequest">No requests yet</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Tokens</div>
+                    <div class="stat-value" id="totalTokens">0</div>
+                    <div class="stat-subtitle" id="lastRequest">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Models Used</div>
+                    <div class="stat-value" id="modelsUsed">0</div>
+                    <div class="stat-subtitle">Unique models</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Server Status</div>
+                    <div class="stat-value" id="serverStatus">-</div>
+                    <div class="stat-subtitle" id="serverVersion">-</div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                <div class="card">
+                    <div class="card-title">Requests by Date</div>
+                    <div class="chart-container">
+                        <div class="chart-bars" id="dateChart">
+                            <div style="color: var(--text-secondary); text-align: center; padding-top: 100px;">No data yet</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Model Usage</div>
+                    <div class="model-list" id="modelUsage">
+                        <div style="color: var(--text-secondary); text-align: center; padding: 50px 0;">No data yet</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Rate Limits</div>
+                <div class="rate-limit-section" id="rateLimits">
+                    <div style="color: var(--text-secondary);">Rate limit information not available</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Models Page -->
+        <div class="page" id="page-models">
+            <div class="card">
+                <div class="card-title">Available Models</div>
+                <div class="models-grid" id="modelsList">
+                    <div style="color: var(--text-secondary);">Loading models...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Page -->
+        <div class="page" id="page-settings">
+            <div class="card">
+                <div class="card-title">Server Configuration</div>
+                <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.875rem;">
+                    These settings are runtime only and will reset on server restart. Update environment variables for persistent changes.
+                </p>
+
+                <div class="settings-grid">
+                    <div>
+                        <div class="form-group">
+                            <label class="form-label">Reasoning Effort</label>
+                            <div class="form-description">Control the depth of model reasoning</div>
+                            <select class="form-select" id="reasoningEffort">
+                                <option value="minimal">Minimal</option>
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Reasoning Summary</label>
+                            <div class="form-description">Format of reasoning output</div>
+                            <select class="form-select" id="reasoningSummary">
+                                <option value="auto">Auto</option>
+                                <option value="concise">Concise</option>
+                                <option value="detailed">Detailed</option>
+                                <option value="none">None</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Reasoning Compatibility</label>
+                            <div class="form-description">Compatibility mode for reasoning output</div>
+                            <select class="form-select" id="reasoningCompat">
+                                <option value="think-tags">Think Tags</option>
+                                <option value="legacy">Legacy</option>
+                                <option value="o3">O3</option>
+                                <option value="current">Current</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="form-group">
+                            <label class="form-label">Debug Model</label>
+                            <div class="form-description">Force a specific model for debugging</div>
+                            <input type="text" class="form-input" id="debugModel" placeholder="Leave empty for default">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-checkbox">
+                                <input type="checkbox" id="verbose">
+                                <span>Verbose Logging</span>
+                            </label>
+                            <div class="form-description" style="margin-left: 2rem;">Enable detailed request/response logging</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-checkbox">
+                                <input type="checkbox" id="exposeReasoningModels">
+                                <span>Expose Reasoning Models</span>
+                            </label>
+                            <div class="form-description" style="margin-left: 2rem;">Show reasoning levels as separate models</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-checkbox">
+                                <input type="checkbox" id="defaultWebSearch">
+                                <span>Default Web Search</span>
+                            </label>
+                            <div class="form-description" style="margin-left: 2rem;">Enable web search by default</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-primary" id="saveSettings">Save Settings</button>
+                    <button class="btn btn-secondary" id="resetSettings">Reset to Current</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Server Information</div>
+                <table>
+                    <tr>
+                        <td style="color: var(--text-secondary);">Port</td>
+                        <td id="serverPort">-</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">Version</td>
+                        <td id="settingsVersion">-</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Authorization Page -->
+        <div class="page" id="page-auth">
+            <div class="card">
+                <div class="auth-section" id="authContent">
+                    <div class="auth-icon">🔐</div>
+                    <div class="auth-title">Checking Authorization...</div>
+                    <div class="auth-description">Please wait while we verify your authentication status.</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // State
+        let currentPage = 'dashboard';
+        let statusData = null;
+        let statsData = null;
+        let configData = null;
+
+        // Navigation
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const page = tab.dataset.page;
+                switchPage(page);
+            });
+        });
+
+        function switchPage(page) {
+            currentPage = page;
+
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`[data-page="${page}"]`).classList.add('active');
+
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(`page-${page}`).classList.add('active');
+
+            // Load page-specific data
+            if (page === 'models') {
+                loadModels();
+            } else if (page === 'settings') {
+                loadConfig();
+            } else if (page === 'auth') {
+                updateAuthPage();
+            }
+        }
+
+        // Toast notifications
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // API calls
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/api/status');
+                statusData = await response.json();
+                updateStatusUI();
+            } catch (error) {
+                console.error('Failed to fetch status:', error);
+            }
+        }
+
+        async function fetchStats() {
+            try {
+                const response = await fetch('/api/stats');
+                statsData = await response.json();
+                updateStatsUI();
+            } catch (error) {
+                console.error('Failed to fetch stats:', error);
+            }
+        }
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                configData = await response.json();
+                updateConfigUI();
+            } catch (error) {
+                console.error('Failed to fetch config:', error);
+            }
+        }
+
+        async function saveConfig() {
+            const config = {
+                verbose: document.getElementById('verbose').checked,
+                reasoning_effort: document.getElementById('reasoningEffort').value,
+                reasoning_summary: document.getElementById('reasoningSummary').value,
+                reasoning_compat: document.getElementById('reasoningCompat').value,
+                expose_reasoning_models: document.getElementById('exposeReasoningModels').checked,
+                default_web_search: document.getElementById('defaultWebSearch').checked,
+                debug_model: document.getElementById('debugModel').value || null
+            };
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showToast('Settings saved successfully', 'success');
+                } else {
+                    showToast('Failed to save settings', 'error');
+                }
+            } catch (error) {
+                showToast('Error saving settings', 'error');
+            }
+        }
+
+        async function loadModels() {
+            try {
+                const response = await fetch('/api/models');
+                const data = await response.json();
+                updateModelsUI(data.models);
+            } catch (error) {
+                console.error('Failed to fetch models:', error);
+            }
+        }
+
+        // UI updates
+        function updateStatusUI() {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+
+            if (statusData.authenticated) {
+                statusDot.className = 'status-dot authenticated';
+                statusText.textContent = statusData.user?.email || 'Authenticated';
+            } else {
+                statusDot.className = 'status-dot unauthenticated';
+                statusText.textContent = 'Not authenticated';
+            }
+
+            document.getElementById('serverStatus').textContent = statusData.status === 'ok' ? 'Online' : 'Offline';
+            document.getElementById('serverVersion').textContent = `v${statusData.version}`;
+        }
+
+        function updateStatsUI() {
+            // Basic stats
+            document.getElementById('totalRequests').textContent = statsData.total_requests.toLocaleString();
+            document.getElementById('totalTokens').textContent = statsData.total_tokens.toLocaleString();
+
+            const modelCount = Object.keys(statsData.requests_by_model || {}).length;
+            document.getElementById('modelsUsed').textContent = modelCount;
+
+            // Timestamps
+            if (statsData.first_request) {
+                const first = new Date(statsData.first_request);
+                document.getElementById('firstRequest').textContent = `Since ${first.toLocaleDateString()}`;
+            }
+
+            if (statsData.last_request) {
+                const last = new Date(statsData.last_request);
+                document.getElementById('lastRequest').textContent = `Last: ${last.toLocaleString()}`;
+            }
+
+            // Date chart
+            updateDateChart();
+
+            // Model usage
+            updateModelUsage();
+
+            // Rate limits
+            updateRateLimits();
+        }
+
+        function updateDateChart() {
+            const chartContainer = document.getElementById('dateChart');
+            const dates = statsData.requests_by_date || {};
+            const entries = Object.entries(dates).sort((a, b) => a[0].localeCompare(b[0])).slice(-14);
+
+            if (entries.length === 0) {
+                chartContainer.innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding-top: 100px;">No data yet</div>';
+                return;
+            }
+
+            const maxValue = Math.max(...entries.map(e => e[1]));
+
+            chartContainer.innerHTML = entries.map(([date, count]) => {
+                const height = maxValue > 0 ? (count / maxValue * 100) : 0;
+                const shortDate = date.slice(5); // MM-DD
+                return `
+                    <div class="chart-bar" style="height: ${Math.max(height, 2)}%" title="${date}: ${count} requests">
+                        <span class="chart-bar-label">${shortDate}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateModelUsage() {
+            const container = document.getElementById('modelUsage');
+            const models = statsData.requests_by_model || {};
+            const entries = Object.entries(models).sort((a, b) => b[1] - a[1]);
+
+            if (entries.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 50px 0;">No data yet</div>';
+                return;
+            }
+
+            const maxValue = Math.max(...entries.map(e => e[1]));
+
+            container.innerHTML = entries.map(([model, count]) => {
+                const width = maxValue > 0 ? (count / maxValue * 100) : 0;
+                return `
+                    <div class="model-item">
+                        <span class="model-name">${model}</span>
+                        <div class="model-bar-container">
+                            <div class="model-bar" style="width: ${width}%"></div>
+                        </div>
+                        <span class="model-count">${count}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateRateLimits() {
+            const container = document.getElementById('rateLimits');
+            const limits = statsData.rate_limits;
+
+            if (!limits) {
+                container.innerHTML = '<div style="color: var(--text-secondary);">Rate limit information not available</div>';
+                return;
+            }
+
+            let html = '';
+
+            if (limits.primary) {
+                const pct = limits.primary.used_percent;
+                const colorClass = pct < 50 ? 'low' : pct < 80 ? 'medium' : 'high';
+                html += `
+                    <div class="rate-limit-item">
+                        <div class="rate-limit-header">
+                            <span class="rate-limit-label">Primary Rate Limit</span>
+                            <span class="rate-limit-value">${pct.toFixed(1)}% used</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill ${colorClass}" style="width: ${pct}%"></div>
+                        </div>
+                        ${limits.primary.reset_at ? `<div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">Resets: ${new Date(limits.primary.reset_at).toLocaleString()}</div>` : ''}
+                    </div>
+                `;
+            }
+
+            if (limits.secondary) {
+                const pct = limits.secondary.used_percent;
+                const colorClass = pct < 50 ? 'low' : pct < 80 ? 'medium' : 'high';
+                html += `
+                    <div class="rate-limit-item">
+                        <div class="rate-limit-header">
+                            <span class="rate-limit-label">Secondary Rate Limit</span>
+                            <span class="rate-limit-value">${pct.toFixed(1)}% used</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill ${colorClass}" style="width: ${pct}%"></div>
+                        </div>
+                        ${limits.secondary.reset_at ? `<div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">Resets: ${new Date(limits.secondary.reset_at).toLocaleString()}</div>` : ''}
+                    </div>
+                `;
+            }
+
+            if (!html) {
+                html = '<div style="color: var(--text-secondary);">No rate limit data captured yet</div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        function updateConfigUI() {
+            document.getElementById('verbose').checked = configData.verbose;
+            document.getElementById('reasoningEffort').value = configData.reasoning_effort;
+            document.getElementById('reasoningSummary').value = configData.reasoning_summary;
+            document.getElementById('reasoningCompat').value = configData.reasoning_compat;
+            document.getElementById('exposeReasoningModels').checked = configData.expose_reasoning_models;
+            document.getElementById('defaultWebSearch').checked = configData.default_web_search;
+            document.getElementById('debugModel').value = configData.debug_model || '';
+            document.getElementById('serverPort').textContent = configData.port;
+            document.getElementById('settingsVersion').textContent = statusData?.version || '-';
+        }
+
+        function updateModelsUI(models) {
+            const container = document.getElementById('modelsList');
+
+            if (!models || models.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-secondary);">No models available</div>';
+                return;
+            }
+
+            container.innerHTML = models.map(model => `
+                <div class="model-card">
+                    <div class="model-card-name">${model.name}</div>
+                    <div class="model-card-id">${model.id}</div>
+                    <div class="model-card-description">${model.description}</div>
+                    <div class="model-capabilities">
+                        ${model.capabilities.map(cap => `<span class="capability-tag">${cap}</span>`).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateAuthPage() {
+            const container = document.getElementById('authContent');
+
+            if (statusData?.authenticated) {
+                container.innerHTML = `
+                    <div class="auth-icon">✓</div>
+                    <div class="auth-title">Authenticated</div>
+                    <div class="auth-description">You are successfully authenticated with your ChatGPT account.</div>
+                    <div class="auth-user-card">
+                        <div class="auth-user-email">${statusData.user?.email || 'Unknown'}</div>
+                        <div class="auth-user-plan">Plan: <span>${statusData.user?.plan || 'Unknown'}</span></div>
+                    </div>
+                    <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 1rem;">
+                        To re-authenticate or use a different account, run <code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 4px;">chatmock login</code> or use the Docker login service.
+                    </p>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="auth-icon">🔐</div>
+                    <div class="auth-title">Not Authenticated</div>
+                    <div class="auth-description">You need to authenticate with your ChatGPT account to use ChatMock.</div>
+                    <button class="btn btn-primary" id="loginBtn">Get Login URL</button>
+                    <div id="loginInfo" style="margin-top: 1.5rem;"></div>
+                `;
+
+                document.getElementById('loginBtn').addEventListener('click', async () => {
+                    try {
+                        const response = await fetch('/api/login-url');
+                        const data = await response.json();
+
+                        document.getElementById('loginInfo').innerHTML = `
+                            <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
+                                ${data.note}
+                            </p>
+                            <p style="font-size: 0.875rem; margin-bottom: 0.5rem;">
+                                For Docker deployments, use the login service on port 1455:
+                            </p>
+                            <code style="background: var(--bg-tertiary); padding: 0.5rem 1rem; border-radius: 4px; display: block; font-size: 0.75rem; overflow-x: auto;">
+                                docker exec -it chatmock python chatmock.py login
+                            </code>
+                        `;
+                    } catch (error) {
+                        showToast('Failed to get login URL', 'error');
+                    }
+                });
+            }
+        }
+
+        // Event listeners
+        document.getElementById('saveSettings').addEventListener('click', saveConfig);
+        document.getElementById('resetSettings').addEventListener('click', loadConfig);
+
+        // Initial load
+        async function init() {
+            await fetchStatus();
+            await fetchStats();
+
+            // Auto-refresh stats every 30 seconds
+            setInterval(fetchStats, 30000);
+        }
+
+        init();
+    </script>
+</body>
+</html>

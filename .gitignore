@@ -11,6 +11,7 @@ venv/
 # Packaging artifacts
 build/
 dist/
+!chatmock/webui/dist/
 *.egg-info/
 
 # Tool caches
