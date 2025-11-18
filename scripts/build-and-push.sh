@@ -18,7 +18,7 @@ echo "Platforms: ${PLATFORMS}"
 echo ""
 
 # Check if logged in to GHCR
-if ! docker info 2>/dev/null | grep -q "${REGISTRY}"; then
+if ! grep -q "${REGISTRY}" ~/.docker/config.json 2>/dev/null; then
     echo "⚠️  You may not be logged in to ${REGISTRY}"
     echo "Run: echo YOUR_TOKEN | docker login ${REGISTRY} -u YOUR_USERNAME --password-stdin"
     echo ""
