@@ -170,6 +170,7 @@ def api_stats():
 def api_models():
     """Get list of available models"""
     expose_reasoning = current_app.config.get("EXPOSE_REASONING_MODELS", False)
+    expose_gpt51 = current_app.config.get("EXPOSE_GPT51_MODELS", False)
 
     # Define model information based on routes_openai.py structure
     model_info = {
@@ -181,9 +182,10 @@ def api_models():
         },
         "gpt-5.1": {
             "name": "GPT-5.1",
-            "description": "Enhanced version of GPT-5 with improved capabilities",
+            "description": "Enhanced version of GPT-5 with improved capabilities (experimental)",
             "capabilities": ["reasoning", "function_calling", "vision", "web_search"],
             "efforts": ["high", "medium", "low", "minimal"],
+            "experimental": True,
         },
         "gpt-5-codex": {
             "name": "GPT-5 Codex",
@@ -201,6 +203,10 @@ def api_models():
 
     models_list = []
     for model_id, info in model_info.items():
+        # Skip gpt-5.1 models if not explicitly enabled
+        if info.get("experimental") and not expose_gpt51:
+            continue
+
         models_list.append({
             "id": model_id,
             "name": info["name"],
@@ -231,6 +237,7 @@ def api_config_get():
         "reasoning_compat": current_app.config.get("REASONING_COMPAT", "think-tags"),
         "expose_reasoning_models": current_app.config.get("EXPOSE_REASONING_MODELS", False),
         "default_web_search": current_app.config.get("DEFAULT_WEB_SEARCH", False),
+        "expose_gpt51_models": current_app.config.get("EXPOSE_GPT51_MODELS", False),
         "debug_model": current_app.config.get("DEBUG_MODEL"),
         "port": os.getenv("PORT", "8000"),
     }
@@ -253,6 +260,7 @@ def api_config_update():
         "reasoning_compat": "REASONING_COMPAT",
         "expose_reasoning_models": "EXPOSE_REASONING_MODELS",
         "default_web_search": "DEFAULT_WEB_SEARCH",
+        "expose_gpt51_models": "EXPOSE_GPT51_MODELS",
         "debug_model": "DEBUG_MODEL",
     }
 
