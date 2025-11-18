@@ -119,7 +119,7 @@ docker-compose -f docker-compose.traefik.yml up -d
 # Access at https://chatmock.example.com/webui
 ```
 
-📖 **[Complete Docker Documentation](https://github.com/RayBytes/ChatMock/blob/main/DOCKER.md)** | 🚀 **[Production Guide](./docs/PRODUCTION.md)** | 🔒 **[Traefik Setup](./docs/TRAEFIK.md)**
+📖 **[Complete Docker Documentation](./docs/DOCKER.md)** | 🚀 **[Production Guide](./docs/PRODUCTION.md)** | 🔒 **[Traefik Setup](./docs/TRAEFIK.md)**
 
 # Examples
 
@@ -442,7 +442,7 @@ Complete guides for all aspects of ChatMock:
 - 🎨 **[WebUI Guide](./docs/WEBUI.md)** - Dashboard features and API
 - 🚀 **[Production Deployment](./docs/PRODUCTION.md)** - Performance tuning and scaling
 - 🔒 **[Traefik Integration](./docs/TRAEFIK.md)** - Automatic HTTPS setup
-- 📖 **[Docker Instructions](https://github.com/RayBytes/ChatMock/blob/main/DOCKER.md)** - Docker basics
+- 📖 **[Docker Instructions](./docs/DOCKER.md)** - Docker basics and deployment
 - ⚙️ **[.env Reference](./.env.example)** - All configuration options
 
 # Troubleshooting
