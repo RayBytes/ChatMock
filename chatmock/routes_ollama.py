@@ -185,11 +185,15 @@ def ollama_show() -> Response:
 
 @ollama_bp.route("/api/chat", methods=["POST"])
 def ollama_chat() -> Response:
+    from .routes_webui import record_request
+    import time
+
     verbose = bool(current_app.config.get("VERBOSE"))
     reasoning_effort = current_app.config.get("REASONING_EFFORT", "medium")
     reasoning_summary = current_app.config.get("REASONING_SUMMARY", "auto")
     reasoning_compat = current_app.config.get("REASONING_COMPAT", "think-tags")
 
+    start_time = time.time()
     try:
         raw = request.get_data(cache=True, as_text=True) or ""
         if verbose:
@@ -278,17 +282,27 @@ def ollama_chat() -> Response:
         reasoning_param=build_reasoning_param(reasoning_effort, reasoning_summary, model_reasoning),
     )
     if error_resp is not None:
+        response_time = time.time() - start_time
+        error_msg = "Upstream request failed"
         if verbose:
             try:
                 body = error_resp.get_data(as_text=True)
                 if body:
                     try:
                         parsed = json.loads(body)
+                        error_msg = parsed.get("error", {}).get("message", error_msg) if isinstance(parsed, dict) else error_msg
                     except Exception:
                         parsed = body
                     _log_json("OUT POST /api/chat", parsed)
             except Exception:
                 pass
+        record_request(
+            model=model or "unknown",
+            endpoint="ollama/chat",
+            success=False,
+            response_time=response_time,
+            error_message=error_msg,
+        )
         return error_resp
 
     record_rate_limits_from_response(upstream)
@@ -319,6 +333,14 @@ def ollama_chat() -> Response:
                 err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error"), "code": "RESPONSES_TOOLS_REJECTED"}}
                 if verbose:
                     _log_json("OUT POST /api/chat", err)
+                response_time = time.time() - start_time
+                record_request(
+                    model=model or "unknown",
+                    endpoint="ollama/chat",
+                    success=False,
+                    response_time=response_time,
+                    error_message=err["error"]["message"],
+                )
                 return jsonify(err), (upstream2.status_code if upstream2 is not None else upstream.status_code)
         else:
             if verbose:
@@ -326,12 +348,28 @@ def ollama_chat() -> Response:
             err = {"error": (err_body.get("error", {}) or {}).get("message", "Upstream error")}
             if verbose:
                 _log_json("OUT POST /api/chat", err)
+            response_time = time.time() - start_time
+            record_request(
+                model=model or "unknown",
+                endpoint="ollama/chat",
+                success=False,
+                response_time=response_time,
+                error_message=err["error"] if isinstance(err["error"], str) else str(err["error"]),
+            )
             return jsonify(err), upstream.status_code
 
     created_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     model_out = model if isinstance(model, str) and model.strip() else normalized_model
 
     if stream_req:
+        # Record streaming request (without token counts as they're not available yet)
+        response_time = time.time() - start_time
+        record_request(
+            model=model or "unknown",
+            endpoint="ollama/chat/stream",
+            success=True,
+            response_time=response_time,
+        )
         def _gen():
             compat = (current_app.config.get("REASONING_COMPAT", "think-tags") or "think-tags").strip().lower()
             think_open = False
@@ -571,6 +609,22 @@ def ollama_chat() -> Response:
     out_json.update(_OLLAMA_FAKE_EVAL)
     if verbose:
         _log_json("OUT POST /api/chat", out_json)
+
+    # Record statistics (Ollama doesn't provide token counts, so we estimate)
+    response_time = time.time() - start_time
+    # Rough estimate based on fake eval data
+    prompt_tokens = _OLLAMA_FAKE_EVAL.get("prompt_eval_count", 0)
+    completion_tokens = _OLLAMA_FAKE_EVAL.get("eval_count", 0)
+    record_request(
+        model=model or "unknown",
+        endpoint="ollama/chat",
+        success=True,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=prompt_tokens + completion_tokens,
+        response_time=response_time,
+    )
+
     resp = make_response(jsonify(out_json), 200)
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)

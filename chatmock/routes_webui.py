@@ -45,27 +45,35 @@ def require_webui_auth(f):
 
 def load_stats() -> dict[str, Any]:
     """Load usage statistics from file"""
+    default_stats = {
+        "total_requests": 0,
+        "total_successful": 0,
+        "total_failed": 0,
+        "requests_by_model": {},
+        "requests_by_endpoint": {},
+        "requests_by_date": {},
+        "total_tokens": 0,
+        "total_prompt_tokens": 0,
+        "total_completion_tokens": 0,
+        "tokens_by_model": {},
+        "avg_response_time": 0,
+        "total_response_time": 0,
+        "last_request": None,
+        "first_request": None,
+        "recent_requests": [],  # Last 100 requests
+    }
     if not STATS_FILE.exists():
-        return {
-            "total_requests": 0,
-            "requests_by_model": {},
-            "requests_by_date": {},
-            "total_tokens": 0,
-            "last_request": None,
-            "first_request": None,
-        }
+        return default_stats
     try:
         with open(STATS_FILE, "r") as f:
-            return json.load(f)
+            stats = json.load(f)
+            # Ensure all keys exist (for backward compatibility)
+            for key, value in default_stats.items():
+                if key not in stats:
+                    stats[key] = value
+            return stats
     except Exception:
-        return {
-            "total_requests": 0,
-            "requests_by_model": {},
-            "requests_by_date": {},
-            "total_tokens": 0,
-            "last_request": None,
-            "first_request": None,
-        }
+        return default_stats
 
 
 def save_stats(stats: dict[str, Any]) -> None:
@@ -78,16 +86,42 @@ def save_stats(stats: dict[str, Any]) -> None:
         pass
 
 
-def record_request(model: str, tokens: int = 0) -> None:
-    """Record a request in statistics"""
+def record_request(
+    model: str,
+    endpoint: str = "unknown",
+    success: bool = True,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    total_tokens: int = 0,
+    response_time: float = 0.0,
+    error_message: str | None = None,
+) -> None:
+    """Record a request in statistics with detailed metrics"""
     stats = load_stats()
     now = datetime.utcnow().isoformat()
     date_key = now[:10]  # YYYY-MM-DD
 
+    # Update counters
     stats["total_requests"] += 1
-    stats["total_tokens"] += tokens
-    stats["last_request"] = now
+    if success:
+        stats["total_successful"] += 1
+    else:
+        stats["total_failed"] += 1
 
+    # Update token counters
+    if total_tokens == 0 and (prompt_tokens > 0 or completion_tokens > 0):
+        total_tokens = prompt_tokens + completion_tokens
+
+    stats["total_tokens"] += total_tokens
+    stats["total_prompt_tokens"] += prompt_tokens
+    stats["total_completion_tokens"] += completion_tokens
+
+    # Update timing
+    stats["total_response_time"] += response_time
+    if stats["total_requests"] > 0:
+        stats["avg_response_time"] = stats["total_response_time"] / stats["total_requests"]
+
+    stats["last_request"] = now
     if stats["first_request"] is None:
         stats["first_request"] = now
 
@@ -96,10 +130,41 @@ def record_request(model: str, tokens: int = 0) -> None:
         stats["requests_by_model"][model] = 0
     stats["requests_by_model"][model] += 1
 
+    # Track tokens by model
+    if model not in stats["tokens_by_model"]:
+        stats["tokens_by_model"][model] = {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+        }
+    stats["tokens_by_model"][model]["total"] += total_tokens
+    stats["tokens_by_model"][model]["prompt"] += prompt_tokens
+    stats["tokens_by_model"][model]["completion"] += completion_tokens
+
+    # Track by endpoint
+    if endpoint not in stats["requests_by_endpoint"]:
+        stats["requests_by_endpoint"][endpoint] = 0
+    stats["requests_by_endpoint"][endpoint] += 1
+
     # Track by date
     if date_key not in stats["requests_by_date"]:
         stats["requests_by_date"][date_key] = 0
     stats["requests_by_date"][date_key] += 1
+
+    # Add to recent requests (keep last 100)
+    request_record = {
+        "timestamp": now,
+        "model": model,
+        "endpoint": endpoint,
+        "success": success,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "response_time": response_time,
+        "error": error_message,
+    }
+    stats["recent_requests"].insert(0, request_record)
+    stats["recent_requests"] = stats["recent_requests"][:100]  # Keep last 100
 
     save_stats(stats)
 
@@ -291,6 +356,25 @@ def api_models():
                 })
 
     return jsonify({"models": models_list})
+
+
+@webui_bp.route("/api/request-history")
+@require_webui_auth
+def api_request_history():
+    """Get recent request history"""
+    stats = load_stats()
+    limit = request.args.get("limit", "50")
+    try:
+        limit = int(limit)
+        limit = min(max(1, limit), 100)  # Clamp between 1-100
+    except (ValueError, TypeError):
+        limit = 50
+
+    recent = stats.get("recent_requests", [])[:limit]
+    return jsonify({
+        "requests": recent,
+        "total_count": len(stats.get("recent_requests", [])),
+    })
 
 
 @webui_bp.route("/api/config", methods=["GET"])
