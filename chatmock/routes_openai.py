@@ -22,9 +22,39 @@ from .utils import (
 openai_bp = Blueprint("openai", __name__)
 
 
+def _log_json(prefix: str, payload: Any) -> None:
+    try:
+        print(f"{prefix}\n{json.dumps(payload, indent=2, ensure_ascii=False)}")
+    except Exception:
+        try:
+            print(f"{prefix}\n{payload}")
+        except Exception:
+            pass
+
+
+def _wrap_stream_logging(label: str, iterator, enabled: bool):
+    if not enabled:
+        return iterator
+
+    def _gen():
+        for chunk in iterator:
+            try:
+                text = (
+                    chunk.decode("utf-8", errors="replace")
+                    if isinstance(chunk, (bytes, bytearray))
+                    else str(chunk)
+                )
+                print(f"{label}\n{text}")
+            except Exception:
+                pass
+            yield chunk
+
+    return _gen()
+
+
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if model == "gpt-5-codex":
+    if model == "gpt-5-codex" or model == "gpt-5.1-codex":
         codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
         if isinstance(codex, str) and codex.strip():
             return codex
@@ -33,27 +63,32 @@ def _instructions_for_model(model: str) -> str:
 
 @openai_bp.route("/v1/chat/completions", methods=["POST"])
 def chat_completions() -> Response:
+    from .routes_webui import record_request
+
     verbose = bool(current_app.config.get("VERBOSE"))
+    verbose_obfuscation = bool(current_app.config.get("VERBOSE_OBFUSCATION"))
     reasoning_effort = current_app.config.get("REASONING_EFFORT", "medium")
     reasoning_summary = current_app.config.get("REASONING_SUMMARY", "auto")
     reasoning_compat = current_app.config.get("REASONING_COMPAT", "think-tags")
     debug_model = current_app.config.get("DEBUG_MODEL")
 
+    start_time = time.time()
+    raw = request.get_data(cache=True, as_text=True) or ""
     if verbose:
         try:
-            body_preview = (request.get_data(cache=True, as_text=True) or "")[:2000]
-            print("IN POST /v1/chat/completions\n" + body_preview)
+            print("IN POST /v1/chat/completions\n" + raw)
         except Exception:
             pass
-
-    raw = request.get_data(cache=True, as_text=True) or ""
     try:
         payload = json.loads(raw) if raw else {}
     except Exception:
         try:
             payload = json.loads(raw.replace("\r", "").replace("\n", ""))
         except Exception:
-            return jsonify({"error": {"message": "Invalid JSON body"}}), 400
+            err = {"error": {"message": "Invalid JSON body"}}
+            if verbose:
+                _log_json("OUT POST /v1/chat/completions", err)
+            return jsonify(err), 400
 
     requested_model = payload.get("model")
     model = normalize_model_name(requested_model, debug_model)
@@ -65,7 +100,10 @@ def chat_completions() -> Response:
     if messages is None:
         messages = []
     if not isinstance(messages, list):
-        return jsonify({"error": {"message": "Request must include messages: []"}}), 400
+        err = {"error": {"message": "Request must include messages: []"}}
+        if verbose:
+            _log_json("OUT POST /v1/chat/completions", err)
+        return jsonify(err), 400
 
     if isinstance(messages, list):
         sys_idx = next((i for i, m in enumerate(messages) if isinstance(m, dict) and m.get("role") == "system"), None)
@@ -88,17 +126,15 @@ def chat_completions() -> Response:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
                 continue
             if _t.get("type") not in ("web_search", "web_search_preview"):
-                return (
-                    jsonify(
-                        {
-                            "error": {
-                                "message": "Only web_search/web_search_preview are supported in responses_tools",
-                                "code": "RESPONSES_TOOL_UNSUPPORTED",
-                            }
-                        }
-                    ),
-                    400,
-                )
+                err = {
+                    "error": {
+                        "message": "Only web_search/web_search_preview are supported in responses_tools",
+                        "code": "RESPONSES_TOOL_UNSUPPORTED",
+                    }
+                }
+                if verbose:
+                    _log_json("OUT POST /v1/chat/completions", err)
+                return jsonify(err), 400
             extra_tools.append(_t)
 
         if not extra_tools and bool(current_app.config.get("DEFAULT_WEB_SEARCH")):
@@ -114,7 +150,10 @@ def chat_completions() -> Response:
             except Exception:
                 size = 0
             if size > MAX_TOOLS_BYTES:
-                return jsonify({"error": {"message": "responses_tools too large", "code": "RESPONSES_TOOLS_TOO_LARGE"}}), 400
+                err = {"error": {"message": "responses_tools too large", "code": "RESPONSES_TOOLS_TOO_LARGE"}}
+                if verbose:
+                    _log_json("OUT POST /v1/chat/completions", err)
+                return jsonify(err), 400
             had_responses_tools = True
             tools_responses = (tools_responses or []) + extra_tools
 
@@ -142,6 +181,27 @@ def chat_completions() -> Response:
         reasoning_param=reasoning_param,
     )
     if error_resp is not None:
+        response_time = time.time() - start_time
+        error_msg = "Upstream request failed"
+        if verbose:
+            try:
+                body = error_resp.get_data(as_text=True)
+                if body:
+                    try:
+                        parsed = json.loads(body)
+                        error_msg = parsed.get("error", {}).get("message", error_msg) if isinstance(parsed, dict) else error_msg
+                    except Exception:
+                        parsed = body
+                    _log_json("OUT POST /v1/chat/completions", parsed)
+            except Exception:
+                pass
+        record_request(
+            model=requested_model or model,
+            endpoint="openai/chat/completions",
+            success=False,
+            response_time=response_time,
+            error_message=error_msg,
+        )
         return error_resp
 
     record_rate_limits_from_response(upstream)
@@ -171,36 +231,64 @@ def chat_completions() -> Response:
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
                 upstream = upstream2
             else:
-                return (
-                    jsonify(
-                        {
-                            "error": {
-                                "message": (err_body.get("error", {}) or {}).get("message", "Upstream error"),
-                                "code": "RESPONSES_TOOLS_REJECTED",
-                            }
-                        }
-                    ),
-                    (upstream2.status_code if upstream2 is not None else upstream.status_code),
+                err = {
+                    "error": {
+                        "message": (err_body.get("error", {}) or {}).get("message", "Upstream error"),
+                        "code": "RESPONSES_TOOLS_REJECTED",
+                    }
+                }
+                if verbose:
+                    _log_json("OUT POST /v1/chat/completions", err)
+                response_time = time.time() - start_time
+                record_request(
+                    model=requested_model or model,
+                    endpoint="openai/chat/completions",
+                    success=False,
+                    response_time=response_time,
+                    error_message=err["error"]["message"],
                 )
+                return jsonify(err), (upstream2.status_code if upstream2 is not None else upstream.status_code)
         else:
             if verbose:
                 print("Upstream error status=", upstream.status_code)
-            return (
-                jsonify({"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}),
-                upstream.status_code,
+            err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}
+            if verbose:
+                _log_json("OUT POST /v1/chat/completions", err)
+            response_time = time.time() - start_time
+            record_request(
+                model=requested_model or model,
+                endpoint="openai/chat/completions",
+                success=False,
+                response_time=response_time,
+                error_message=err["error"]["message"],
             )
+            return jsonify(err), upstream.status_code
 
     if is_stream:
+        if verbose:
+            print("OUT POST /v1/chat/completions (streaming response)")
+
+        # Record streaming request (without token counts as they're not available yet)
+        response_time = time.time() - start_time
+        record_request(
+            model=requested_model or model,
+            endpoint="openai/chat/completions/stream",
+            success=True,
+            response_time=response_time,
+        )
+
+        stream_iter = sse_translate_chat(
+            upstream,
+            requested_model or model,
+            created,
+            verbose=verbose_obfuscation,
+            vlog=print if verbose_obfuscation else None,
+            reasoning_compat=reasoning_compat,
+            include_usage=include_usage,
+        )
+        stream_iter = _wrap_stream_logging("STREAM OUT /v1/chat/completions", stream_iter, verbose)
         resp = Response(
-            sse_translate_chat(
-                upstream,
-                requested_model or model,
-                created,
-                verbose=verbose,
-                vlog=print if verbose else None,
-                reasoning_compat=reasoning_compat,
-                include_usage=include_usage,
-            ),
+            stream_iter,
             status=upstream.status_code,
             mimetype="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
@@ -278,6 +366,14 @@ def chat_completions() -> Response:
         upstream.close()
 
     if error_message:
+        response_time = time.time() - start_time
+        record_request(
+            model=requested_model or model,
+            endpoint="openai/chat/completions",
+            success=False,
+            response_time=response_time,
+            error_message=error_message,
+        )
         resp = make_response(jsonify({"error": {"message": error_message}}), 502)
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)
@@ -301,6 +397,21 @@ def chat_completions() -> Response:
         ],
         **({"usage": usage_obj} if usage_obj else {}),
     }
+    if verbose:
+        _log_json("OUT POST /v1/chat/completions", completion)
+
+    # Record statistics
+    response_time = time.time() - start_time
+    record_request(
+        model=requested_model or model,
+        endpoint="openai/chat/completions",
+        success=True,
+        prompt_tokens=usage_obj.get("prompt_tokens", 0) if usage_obj else 0,
+        completion_tokens=usage_obj.get("completion_tokens", 0) if usage_obj else 0,
+        total_tokens=usage_obj.get("total_tokens", 0) if usage_obj else 0,
+        response_time=response_time,
+    )
+
     resp = make_response(jsonify(completion), upstream.status_code)
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
@@ -309,16 +420,28 @@ def chat_completions() -> Response:
 
 @openai_bp.route("/v1/completions", methods=["POST"])
 def completions() -> Response:
+    from .routes_webui import record_request
+
     verbose = bool(current_app.config.get("VERBOSE"))
+    verbose_obfuscation = bool(current_app.config.get("VERBOSE_OBFUSCATION"))
     debug_model = current_app.config.get("DEBUG_MODEL")
     reasoning_effort = current_app.config.get("REASONING_EFFORT", "medium")
     reasoning_summary = current_app.config.get("REASONING_SUMMARY", "auto")
 
+    start_time = time.time()
     raw = request.get_data(cache=True, as_text=True) or ""
+    if verbose:
+        try:
+            print("IN POST /v1/completions\n" + raw)
+        except Exception:
+            pass
     try:
         payload = json.loads(raw) if raw else {}
     except Exception:
-        return jsonify({"error": {"message": "Invalid JSON body"}}), 400
+        err = {"error": {"message": "Invalid JSON body"}}
+        if verbose:
+            _log_json("OUT POST /v1/completions", err)
+        return jsonify(err), 400
 
     requested_model = payload.get("model")
     model = normalize_model_name(requested_model, debug_model)
@@ -344,6 +467,27 @@ def completions() -> Response:
         reasoning_param=reasoning_param,
     )
     if error_resp is not None:
+        response_time = time.time() - start_time
+        error_msg = "Upstream request failed"
+        if verbose:
+            try:
+                body = error_resp.get_data(as_text=True)
+                if body:
+                    try:
+                        parsed = json.loads(body)
+                        error_msg = parsed.get("error", {}).get("message", error_msg) if isinstance(parsed, dict) else error_msg
+                    except Exception:
+                        parsed = body
+                    _log_json("OUT POST /v1/completions", parsed)
+            except Exception:
+                pass
+        record_request(
+            model=requested_model or model,
+            endpoint="openai/completions",
+            success=False,
+            response_time=response_time,
+            error_message=error_msg,
+        )
         return error_resp
 
     record_rate_limits_from_response(upstream)
@@ -354,21 +498,43 @@ def completions() -> Response:
             err_body = json.loads(upstream.content.decode("utf-8", errors="ignore")) if upstream.content else {"raw": upstream.text}
         except Exception:
             err_body = {"raw": upstream.text}
-        return (
-            jsonify({"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}),
-            upstream.status_code,
+        err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}
+        if verbose:
+            _log_json("OUT POST /v1/completions", err)
+        response_time = time.time() - start_time
+        record_request(
+            model=requested_model or model,
+            endpoint="openai/completions",
+            success=False,
+            response_time=response_time,
+            error_message=err["error"]["message"],
         )
+        return jsonify(err), upstream.status_code
 
     if stream_req:
+        if verbose:
+            print("OUT POST /v1/completions (streaming response)")
+
+        # Record streaming request (without token counts as they're not available yet)
+        response_time = time.time() - start_time
+        record_request(
+            model=requested_model or model,
+            endpoint="openai/completions/stream",
+            success=True,
+            response_time=response_time,
+        )
+
+        stream_iter = sse_translate_text(
+            upstream,
+            requested_model or model,
+            created,
+            verbose=verbose_obfuscation,
+            vlog=(print if verbose_obfuscation else None),
+            include_usage=include_usage,
+        )
+        stream_iter = _wrap_stream_logging("STREAM OUT /v1/completions", stream_iter, verbose)
         resp = Response(
-            sse_translate_text(
-                upstream,
-                requested_model or model,
-                created,
-                verbose=verbose,
-                vlog=(print if verbose else None),
-                include_usage=include_usage,
-            ),
+            stream_iter,
             status=upstream.status_code,
             mimetype="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
@@ -430,6 +596,21 @@ def completions() -> Response:
         ],
         **({"usage": usage_obj} if usage_obj else {}),
     }
+    if verbose:
+        _log_json("OUT POST /v1/completions", completion)
+
+    # Record statistics
+    response_time = time.time() - start_time
+    record_request(
+        model=requested_model or model,
+        endpoint="openai/completions",
+        success=True,
+        prompt_tokens=usage_obj.get("prompt_tokens", 0) if usage_obj else 0,
+        completion_tokens=usage_obj.get("completion_tokens", 0) if usage_obj else 0,
+        total_tokens=usage_obj.get("total_tokens", 0) if usage_obj else 0,
+        response_time=response_time,
+    )
+
     resp = make_response(jsonify(completion), upstream.status_code)
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
@@ -443,6 +624,8 @@ def list_models() -> Response:
         ("gpt-5", ["high", "medium", "low", "minimal"]),
         ("gpt-5.1", ["high", "medium", "low", "minimal"]),
         ("gpt-5-codex", ["high", "medium", "low"]),
+        ("gpt-5.1-codex", ["high", "medium", "low"]),
+        ("gpt-5.1-codex-mini", []),
         ("codex-mini", []),
     ]
     model_ids: List[str] = []
@@ -456,4 +639,3 @@ def list_models() -> Response:
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp
-
