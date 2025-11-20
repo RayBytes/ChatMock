@@ -301,8 +301,10 @@ def api_stats():
 def api_models():
     """Get list of available models"""
     expose_reasoning = current_app.config.get("EXPOSE_REASONING_MODELS", False)
+    expose_experimental = current_app.config.get("EXPOSE_EXPERIMENTAL_MODELS", False)
 
     # Define model information based on routes_openai.py structure
+    # Note: Set "experimental": True for models that are in testing/preview
     model_info = {
         "gpt-5": {
             "name": "GPT-5",
@@ -340,10 +342,23 @@ def api_models():
             "capabilities": ["coding", "function_calling"],
             "efforts": [],
         },
+        # Future experimental models can be added here with "experimental": True
+        # Example:
+        # "gpt-6-preview": {
+        #     "name": "GPT-6 Preview",
+        #     "description": "Next generation model (experimental preview)",
+        #     "capabilities": ["reasoning", "function_calling", "vision", "web_search"],
+        #     "efforts": ["high", "medium", "low", "minimal"],
+        #     "experimental": True,
+        # },
     }
 
     models_list = []
     for model_id, info in model_info.items():
+        # Skip experimental models unless explicitly enabled
+        if info.get("experimental", False) and not expose_experimental:
+            continue
+
         models_list.append({
             "id": model_id,
             "name": info["name"],
@@ -394,6 +409,7 @@ def api_config_get():
         "reasoning_compat": current_app.config.get("REASONING_COMPAT", "think-tags"),
         "expose_reasoning_models": current_app.config.get("EXPOSE_REASONING_MODELS", False),
         "default_web_search": current_app.config.get("DEFAULT_WEB_SEARCH", False),
+        "expose_experimental_models": current_app.config.get("EXPOSE_EXPERIMENTAL_MODELS", False),
         "debug_model": current_app.config.get("DEBUG_MODEL"),
         "port": os.getenv("PORT", "8000"),
     }
@@ -417,6 +433,7 @@ def api_config_update():
         "reasoning_compat": "REASONING_COMPAT",
         "expose_reasoning_models": "EXPOSE_REASONING_MODELS",
         "default_web_search": "DEFAULT_WEB_SEARCH",
+        "expose_experimental_models": "EXPOSE_EXPERIMENTAL_MODELS",
         "debug_model": "DEBUG_MODEL",
     }
 
