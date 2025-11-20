@@ -79,6 +79,15 @@ PYEOF
 
     exec gosu chatmock python chatmock.py "${ARGS[@]}"
   fi
+  if bool "${VERBOSE_OBFUSCATION:-}" || bool "${CHATGPT_LOCAL_VERBOSE_OBFUSCATION:-}"; then
+    ARGS+=(--verbose-obfuscation)
+  fi
+
+  if [[ "$#" -gt 0 ]]; then
+    ARGS+=("$@")
+  fi
+
+  exec gosu chatmock python chatmock.py "${ARGS[@]}"
 elif [[ "$cmd" == "login" ]]; then
   ARGS=(login --no-browser)
   if bool "${VERBOSE:-}" || bool "${CHATGPT_LOCAL_VERBOSE:-}"; then
@@ -89,4 +98,3 @@ elif [[ "$cmd" == "login" ]]; then
 else
   exec gosu chatmock "$cmd" "$@"
 fi
-

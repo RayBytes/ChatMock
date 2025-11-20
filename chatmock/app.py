@@ -11,6 +11,7 @@ from .routes_webui import webui_bp
 
 def create_app(
     verbose: bool = False,
+    verbose_obfuscation: bool = False,
     reasoning_effort: str = "medium",
     reasoning_summary: str = "auto",
     reasoning_compat: str = "think-tags",
@@ -23,6 +24,7 @@ def create_app(
 
     app.config.update(
         VERBOSE=bool(verbose),
+        VERBOSE_OBFUSCATION=bool(verbose_obfuscation),
         REASONING_EFFORT=reasoning_effort,
         REASONING_SUMMARY=reasoning_summary,
         REASONING_COMPAT=reasoning_compat,
