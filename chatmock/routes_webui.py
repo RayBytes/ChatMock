@@ -376,7 +376,10 @@ def api_models():
                     "capabilities": info["capabilities"],
                 })
 
-    return jsonify({"models": models_list})
+    # Check if there are any experimental models defined
+    has_experimental = any(info.get("experimental", False) for info in model_info.values())
+
+    return jsonify({"models": models_list, "has_experimental_models": has_experimental})
 
 
 @webui_bp.route("/api/request-history")

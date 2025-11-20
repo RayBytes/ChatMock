@@ -780,13 +780,13 @@
                             <div class="form-description" style="margin-left: 2rem;">Enable web search by default</div>
                         </div>
 
-                        <div class="form-group" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+                        <div class="form-group" id="experimentalModelsGroup" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); display: none;">
                             <label class="form-checkbox">
-                                <input type="checkbox" id="exposeGpt51Models">
-                                <span style="color: var(--error);">Expose GPT-5.1 Models</span>
+                                <input type="checkbox" id="exposeExperimentalModels">
+                                <span style="color: var(--warning);">Expose Experimental Models</span>
                             </label>
-                            <div class="form-description" style="margin-left: 2rem; color: var(--warning);">
-                                <strong>WARNING:</strong> Experimental and untested. May cause instability or unexpected behavior. Use at your own risk.
+                            <div class="form-description" style="margin-left: 2rem; color: var(--text-secondary);">
+                                Show preview/experimental models in model lists. These models may have limited testing.
                             </div>
                         </div>
                     </div>
@@ -914,7 +914,7 @@
                 reasoning_compat: document.getElementById('reasoningCompat').value,
                 expose_reasoning_models: document.getElementById('exposeReasoningModels').checked,
                 default_web_search: document.getElementById('defaultWebSearch').checked,
-                expose_gpt51_models: document.getElementById('exposeGpt51Models').checked,
+                expose_experimental_models: document.getElementById('exposeExperimentalModels').checked,
                 debug_model: document.getElementById('debugModel').value || null
             };
 
@@ -941,6 +941,14 @@
                 const response = await fetch('/api/models');
                 const data = await response.json();
                 updateModelsUI(data.models);
+
+                // Show experimental models toggle only if there are experimental models defined
+                const experimentalGroup = document.getElementById('experimentalModelsGroup');
+                if (experimentalGroup && data.has_experimental_models) {
+                    experimentalGroup.style.display = 'block';
+                } else if (experimentalGroup) {
+                    experimentalGroup.style.display = 'none';
+                }
             } catch (error) {
                 console.error('Failed to fetch models:', error);
             }
@@ -1100,7 +1108,7 @@
             document.getElementById('reasoningCompat').value = configData.reasoning_compat;
             document.getElementById('exposeReasoningModels').checked = configData.expose_reasoning_models;
             document.getElementById('defaultWebSearch').checked = configData.default_web_search;
-            document.getElementById('exposeGpt51Models').checked = configData.expose_gpt51_models;
+            document.getElementById('exposeExperimentalModels').checked = configData.expose_experimental_models || false;
             document.getElementById('debugModel').value = configData.debug_model || '';
             document.getElementById('serverPort').textContent = configData.port;
             document.getElementById('settingsVersion').textContent = statusData?.version || '-';
