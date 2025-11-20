@@ -121,12 +121,12 @@ if __name__ == "__main__":
     try:
         response = requests.get(f"{BASE_URL}/health", timeout=5)
         if response.ok:
-            print("✓ Server is running\n")
+            print("[OK] Server is running\n")
         else:
-            print("✗ Server returned error\n")
+            print("[ERROR] Server returned error\n")
             exit(1)
     except Exception as e:
-        print(f"✗ Cannot connect to server: {e}")
+        print(f"[ERROR] Cannot connect to server: {e}")
         print(f"\nMake sure the server is running on {BASE_URL}")
         exit(1)
 
