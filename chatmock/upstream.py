@@ -32,7 +32,7 @@ def normalize_model_name(name: str | None, debug_model: str | None = None) -> st
     base = name.split(":", 1)[0].strip()
     for sep in ("-", "_"):
         lowered = base.lower()
-        for effort in ("minimal", "low", "medium", "high"):
+        for effort in ("minimal", "low", "medium", "high", "xhigh"):
             suffix = f"{sep}{effort}"
             if lowered.endswith(suffix):
                 base = base[: -len(suffix)]
@@ -46,6 +46,7 @@ def normalize_model_name(name: str | None, debug_model: str | None = None) -> st
         "gpt-5-codex": "gpt-5-codex",
         "gpt-5-codex-latest": "gpt-5-codex",
         "gpt-5.1-codex": "gpt-5.1-codex",
+        "gpt-5.1-codex-max": "gpt-5.1-codex-max",
         "codex": "codex-mini-latest",
         "codex-mini": "codex-mini-latest",
         "codex-mini-latest": "codex-mini-latest",

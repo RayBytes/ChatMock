@@ -9,7 +9,12 @@ from flask import Blueprint, Response, current_app, jsonify, make_response, requ
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
-from .reasoning import apply_reasoning_to_message, build_reasoning_param, extract_reasoning_from_model_name
+from .reasoning import (
+    allowed_efforts_for_model,
+    apply_reasoning_to_message,
+    build_reasoning_param,
+    extract_reasoning_from_model_name,
+)
 from .upstream import normalize_model_name, start_upstream_request
 from .utils import (
     convert_chat_messages_to_responses_input,
@@ -54,7 +59,7 @@ def _wrap_stream_logging(label: str, iterator, enabled: bool):
 
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if model == "gpt-5-codex" or model == "gpt-5.1-codex":
+    if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex"):
         codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
         if isinstance(codex, str) and codex.strip():
             return codex
@@ -166,7 +171,12 @@ def chat_completions() -> Response:
 
     model_reasoning = extract_reasoning_from_model_name(requested_model)
     reasoning_overrides = payload.get("reasoning") if isinstance(payload.get("reasoning"), dict) else model_reasoning
-    reasoning_param = build_reasoning_param(reasoning_effort, reasoning_summary, reasoning_overrides)
+    reasoning_param = build_reasoning_param(
+        reasoning_effort,
+        reasoning_summary,
+        reasoning_overrides,
+        allowed_efforts=allowed_efforts_for_model(model),
+    )
 
     upstream, error_resp = start_upstream_request(
         model,
@@ -396,7 +406,12 @@ def completions() -> Response:
 
     model_reasoning = extract_reasoning_from_model_name(requested_model)
     reasoning_overrides = payload.get("reasoning") if isinstance(payload.get("reasoning"), dict) else model_reasoning
-    reasoning_param = build_reasoning_param(reasoning_effort, reasoning_summary, reasoning_overrides)
+    reasoning_param = build_reasoning_param(
+        reasoning_effort,
+        reasoning_summary,
+        reasoning_overrides,
+        allowed_efforts=allowed_efforts_for_model(model),
+    )
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
@@ -518,9 +533,10 @@ def list_models() -> Response:
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
     model_groups = [
         ("gpt-5", ["high", "medium", "low", "minimal"]),
-        ("gpt-5.1", ["high", "medium", "low", "minimal"]),
+        ("gpt-5.1", ["high", "medium", "low"]),
         ("gpt-5-codex", ["high", "medium", "low"]),
         ("gpt-5.1-codex", ["high", "medium", "low"]),
+        ("gpt-5.1-codex-max", ["xhigh", "high", "medium", "low"]),
         ("gpt-5.1-codex-mini", []),
         ("codex-mini", []),
     ]

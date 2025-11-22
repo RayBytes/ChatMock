@@ -114,15 +114,19 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 # Supported models
 - `gpt-5`
+- `gpt-5.1`
 - `gpt-5-codex`
+- `gpt-5.1-codex`
+- `gpt-5.1-codex-max`
+- `gpt-5.1-codex-mini`
 - `codex-mini`
 
 # Customisation / Configuration
 
 ### Thinking effort
 
-- `--reasoning-effort` (choice of minimal,low,medium,high)<br>
-GPT-5 has a configurable amount of "effort" it can put into thinking, which may cause it to take more time for a response to return, but may overall give a smarter answer. Applying this parameter after `serve` forces the server to use this reasoning effort by default, unless overrided by the API request with a different effort set. The default reasoning effort without setting this parameter is `medium`.
+- `--reasoning-effort` (choice of minimal,low,medium,high,xhigh)<br>
+GPT-5 has a configurable amount of "effort" it can put into thinking, which may cause it to take more time for a response to return, but may overall give a smarter answer. Applying this parameter after `serve` forces the server to use this reasoning effort by default, unless overrided by the API request with a different effort set. The default reasoning effort without setting this parameter is `medium`. The `gpt-5.1` family (including codex) supports `low`, `medium`, and `high` while `gpt-5.1-codex-max` adds `xhigh`; neither offers a `minimal` variant.
 
 ### Thinking summaries
 

@@ -10,7 +10,11 @@ from flask import Blueprint, Response, current_app, jsonify, make_response, requ
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
-from .reasoning import build_reasoning_param, extract_reasoning_from_model_name
+from .reasoning import (
+    allowed_efforts_for_model,
+    build_reasoning_param,
+    extract_reasoning_from_model_name,
+)
 from .transform import convert_ollama_messages, normalize_ollama_tools
 from .upstream import normalize_model_name, start_upstream_request
 from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_to_responses
@@ -67,7 +71,7 @@ def ollama_version() -> Response:
 
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if model == "gpt-5-codex" or model == "gpt-5.1-codex":
+    if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex"):
         codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
         if isinstance(codex, str) and codex.strip():
             return codex
@@ -89,7 +93,15 @@ def ollama_tags() -> Response:
     if bool(current_app.config.get("VERBOSE")):
         print("IN GET /api/tags")
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    model_ids = ["gpt-5", "gpt-5.1", "gpt-5-codex", "gpt-5.1-codex", "gpt-5.1-codex-mini", "codex-mini"]
+    model_ids = [
+        "gpt-5",
+        "gpt-5.1",
+        "gpt-5-codex",
+        "gpt-5.1-codex",
+        "gpt-5.1-codex-max",
+        "gpt-5.1-codex-mini",
+        "codex-mini",
+    ]
     if expose_variants:
         model_ids.extend(
             [
@@ -100,13 +112,16 @@ def ollama_tags() -> Response:
                 "gpt-5.1-high",
                 "gpt-5.1-medium",
                 "gpt-5.1-low",
-                "gpt-5.1-minimal",
                 "gpt-5-codex-high",
                 "gpt-5-codex-medium",
                 "gpt-5-codex-low",
                 "gpt-5.1-codex-high",
                 "gpt-5.1-codex-medium",
                 "gpt-5.1-codex-low",
+                "gpt-5.1-codex-max-xhigh",
+                "gpt-5.1-codex-max-high",
+                "gpt-5.1-codex-max-medium",
+                "gpt-5.1-codex-max-low",
             ]
         )
     models = []
@@ -275,7 +290,12 @@ def ollama_chat() -> Response:
         tools=tools_responses,
         tool_choice=tool_choice,
         parallel_tool_calls=parallel_tool_calls,
-        reasoning_param=build_reasoning_param(reasoning_effort, reasoning_summary, model_reasoning),
+        reasoning_param=build_reasoning_param(
+            reasoning_effort,
+            reasoning_summary,
+            model_reasoning,
+            allowed_efforts=allowed_efforts_for_model(model),
+        ),
     )
     if error_resp is not None:
         if verbose:
@@ -310,7 +330,12 @@ def ollama_chat() -> Response:
                 tools=base_tools_only,
                 tool_choice=safe_choice,
                 parallel_tool_calls=parallel_tool_calls,
-                reasoning_param=build_reasoning_param(reasoning_effort, reasoning_summary, model_reasoning),
+                reasoning_param=build_reasoning_param(
+                    reasoning_effort,
+                    reasoning_summary,
+                    model_reasoning,
+                    allowed_efforts=allowed_efforts_for_model(model),
+                ),
             )
             record_rate_limits_from_response(upstream2)
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:

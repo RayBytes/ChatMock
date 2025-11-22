@@ -1,15 +1,34 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Set
+
+
+DEFAULT_REASONING_EFFORTS: Set[str] = {"minimal", "low", "medium", "high", "xhigh"}
+
+
+def allowed_efforts_for_model(model: str | None) -> Set[str]:
+    base = (model or "").strip().lower()
+    if not base:
+        return DEFAULT_REASONING_EFFORTS
+    normalized = base.split(":", 1)[0]
+    if normalized.startswith("gpt-5.1-codex-max"):
+        return {"low", "medium", "high", "xhigh"}
+    if normalized.startswith("gpt-5.1"):
+        return {"low", "medium", "high"}
+    return DEFAULT_REASONING_EFFORTS
 
 
 def build_reasoning_param(
-    base_effort: str = "medium", base_summary: str = "auto", overrides: Dict[str, Any] | None = None
+    base_effort: str = "medium",
+    base_summary: str = "auto",
+    overrides: Dict[str, Any] | None = None,
+    *,
+    allowed_efforts: Set[str] | None = None,
 ) -> Dict[str, Any]:
     effort = (base_effort or "").strip().lower()
     summary = (base_summary or "").strip().lower()
 
-    valid_efforts = {"minimal", "low", "medium", "high"}
+    valid_efforts = allowed_efforts or DEFAULT_REASONING_EFFORTS
     valid_summaries = {"auto", "concise", "detailed", "none"}
 
     if isinstance(overrides, dict):
@@ -80,7 +99,7 @@ def extract_reasoning_from_model_name(model: str | None) -> Dict[str, Any] | Non
     s = model.strip().lower()
     if not s:
         return None
-    efforts = {"minimal", "low", "medium", "high"}
+    efforts = {"minimal", "low", "medium", "high", "xhigh"}
 
     if ":" in s:
         maybe = s.rsplit(":", 1)[-1].strip()
@@ -96,5 +115,7 @@ def extract_reasoning_from_model_name(model: str | None) -> Dict[str, Any] | Non
             return {"effort": "medium"}
         if s.endswith(sep + "high"):
             return {"effort": "high"}
+        if s.endswith(sep + "xhigh"):
+            return {"effort": "xhigh"}
 
     return None
