@@ -49,7 +49,7 @@ Set options in `.env` or pass environment variables:
 - `PUID`: User ID to run the container as (default 1000)
 - `PGID`: Group ID to run the container as (default 1000)
 - `VERBOSE`: `true|false` to enable request/stream logs
-- `CHATGPT_LOCAL_REASONING_EFFORT`: minimal|low|medium|high
+- `CHATGPT_LOCAL_REASONING_EFFORT`: minimal|low|medium|high|xhigh (xhigh only for gpt-5.1-codex-max)
 - `CHATGPT_LOCAL_REASONING_SUMMARY`: auto|concise|detailed|none
 - `CHATGPT_LOCAL_REASONING_COMPAT`: legacy|o3|think-tags|current
 - `CHATGPT_LOCAL_DEBUG_MODEL`: force model override (e.g., `gpt-5`)
