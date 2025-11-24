@@ -218,6 +218,9 @@ GUNICORN_WORKERS=8          # Number of worker processes
 - `gpt-5`
 - `gpt-5.1`
 - `gpt-5-codex`
+- `gpt-5.1-codex`
+- `gpt-5.1-codex-max`
+- `gpt-5.1-codex-mini`
 - `codex-mini`
 
 # Configuration
@@ -237,7 +240,7 @@ USE_GUNICORN=1                    # Enable production server
 GUNICORN_WORKERS=4                # Number of workers
 
 # Reasoning
-CHATGPT_LOCAL_REASONING_EFFORT=medium      # minimal|low|medium|high
+CHATGPT_LOCAL_REASONING_EFFORT=medium      # minimal|low|medium|high|xhigh
 CHATGPT_LOCAL_REASONING_SUMMARY=auto       # auto|concise|detailed|none
 CHATGPT_LOCAL_REASONING_COMPAT=think-tags  # legacy|o3|think-tags|current
 
@@ -286,10 +289,11 @@ All parameters: `python chatmock.py serve --help`
 
 ### Thinking Controls
 
-- **`CHATGPT_LOCAL_REASONING_EFFORT`** (minimal|low|medium|high)
+- **`CHATGPT_LOCAL_REASONING_EFFORT`** (minimal|low|medium|high|xhigh)
   - Controls computational effort for reasoning
   - Higher effort = slower but potentially smarter responses
   - Default: `medium`
+  - Note: `gpt-5.1` family supports `low`, `medium`, and `high` while `gpt-5.1-codex-max` adds `xhigh`; neither offers a `minimal` variant
 
 - **`CHATGPT_LOCAL_REASONING_SUMMARY`** (auto|concise|detailed|none)
   - Controls how reasoning summaries are presented
