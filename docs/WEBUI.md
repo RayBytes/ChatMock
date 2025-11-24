@@ -28,7 +28,7 @@ ChatMock includes a modern web-based dashboard for monitoring, configuration, an
 ### 3. Configuration Page
 - **Runtime Configuration**: Adjust settings without restarting the container
 - **Reasoning Controls**:
-  - Effort level (minimal, low, medium, high)
+  - Effort level (minimal, low, medium, high, xhigh)
   - Summary verbosity (auto, concise, detailed, none)
   - Compatibility mode (legacy, o3, think-tags, current)
 - **Feature Toggles**:

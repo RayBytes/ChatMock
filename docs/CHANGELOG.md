@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Support for GPT-5.1 models
+- Support for GPT-5.1-Codex-Max model with xhigh reasoning effort
+- Extra high (xhigh) reasoning effort option for gpt-5.1-codex-max
 - Docker support with PUID and PGID environment variables for running container with different user credentials
 - GitHub Actions workflow for automated Docker image builds and publishing to GitHub Container Registry
 - Pre-built Docker images available at `ghcr.io/thebtf/chatmock:latest`
