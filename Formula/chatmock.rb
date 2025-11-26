@@ -3,8 +3,8 @@ class Chatmock < Formula
 
   desc "OpenAI & Ollama compatible API powered by your ChatGPT plan"
   homepage "https://github.com/RayBytes/ChatMock"
-  url "https://github.com/RayBytes/ChatMock/archive/refs/tags/v1.3.tar.gz"
-  sha256 "9bb1a839f84e277ccd4233a7a0024759d9e2e60c9881ed1e20b57cd1b12033b4"
+  url "https://github.com/RayBytes/ChatMock/archive/refs/tags/v1.35.tar.gz"
+  sha256 "0f710e100d325effe0cd927845e40bbc98aa7d20e6c3eefb87428c876b2168bf"
   license "MIT"
   head "https://github.com/RayBytes/ChatMock.git", branch: "main"
 
