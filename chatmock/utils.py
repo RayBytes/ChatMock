@@ -115,6 +115,8 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
             return url
 
     input_items: List[Dict[str, Any]] = []
+    seen_function_call_ids: set[str] = set()
+    debug_tools = bool(os.getenv("CHATMOCK_DEBUG_TOOLS"))
     for message in messages:
         role = message.get("role")
         if role == "system":
@@ -133,6 +135,17 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
                                 texts.append(t)
                     content = "\n".join(texts)
                 if isinstance(content, str):
+                    if call_id not in seen_function_call_ids:
+                        if debug_tools:
+                            try:
+                                eprint(
+                                    f"[CHATMOCK_DEBUG_TOOLS] function_call_output without matching function_call: call_id={call_id!r}"
+                                )
+                            except Exception:
+                                pass
+                        # Не отправляем function_call_output без соответствующего function_call.
+                        # Это предотвращает 400 от Responses: "No tool call found for function call output".
+                        continue
                     input_items.append(
                         {
                             "type": "function_call_output",
@@ -153,6 +166,8 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
                 name = fn.get("name") if isinstance(fn, dict) else None
                 args = fn.get("arguments") if isinstance(fn, dict) else None
                 if isinstance(call_id, str) and isinstance(name, str) and isinstance(args, str):
+                    if isinstance(call_id, str):
+                        seen_function_call_ids.add(call_id)
                     input_items.append(
                         {
                             "type": "function_call",
