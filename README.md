@@ -69,7 +69,7 @@ Read [the docker instrunctions here](https://github.com/RayBytes/ChatMock/blob/m
 
 ## Continuous Integration
 
-Every push or pull request to `main` runs the workflow at `.github/workflows/docker-image.yml`, which builds the Docker image and (on pushes) publishes it to GitHub's container registry using the built-in `GITHUB_TOKEN`. The image is tagged for the branch, tag, and commit SHA, so you can pull `ghcr.io/<your-org-or-user>/ChatMock:main` (or whatever tag was built) directly after CI completes. If you prefer Docker Hub or another registry, update the `REGISTRY` or `IMAGE_NAME` env vars in the workflow file accordingly.
+Every push or pull request to `main` runs the workflow at `.github/workflows/docker-image.yml`, which builds multi-arch (linux/amd64 + linux/arm64) Docker images and (on pushes) publishes them to GitHub's container registry using the built-in `GITHUB_TOKEN`. The image is tagged for the branch, tag, and commit SHA, so you can pull `ghcr.io/<your-org-or-user>/ChatMock:main` (or whatever tag was built) directly after CI completes. If you prefer Docker Hub or another registry, update the `REGISTRY` or `IMAGE_NAME` env vars in the workflow file accordingly.
 
 # Examples
 
@@ -173,6 +173,5 @@ When the model returns a thinking summary, the model will send back thinking tag
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=RayBytes/ChatMock&type=Timeline)](https://www.star-history.com/#RayBytes/ChatMock&Timeline)
-
 
 
