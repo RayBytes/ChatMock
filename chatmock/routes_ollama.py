@@ -117,7 +117,6 @@ def ollama_tags() -> Response:
                 "gpt-5.2-high",
                 "gpt-5.2-medium",
                 "gpt-5.2-low",
-                "gpt-5.2-none",
                 "gpt-5-codex-high",
                 "gpt-5-codex-medium",
                 "gpt-5-codex-low",
