@@ -219,6 +219,8 @@ def responses_create() -> Response:
     debug = bool(current_app.config.get("DEBUG_LOG"))
     if debug:
         print(f"[responses] {requested_model} -> {model}")
+        # Log incoming payload keys for debugging
+        print(f"[responses] payload keys: {list(payload.keys())}")
 
     # Parse input - accept Responses `input` or Chat-style `messages`/`prompt`
     input_items: Optional[List[Dict[str, Any]]] = None
@@ -274,12 +276,14 @@ def responses_create() -> Response:
     # Final sanitization
     input_items = _sanitize_input_remove_refs(input_items)
 
-    # Handle previous_response_id (local threading simulation)
-    prev_id = payload.get("previous_response_id")
+    # Handle previous_response_id or conversation_id (local threading simulation)
+    prev_id = payload.get("previous_response_id") or payload.get("conversation_id")
     if isinstance(prev_id, str) and prev_id.strip():
         prior = _get_thread(prev_id.strip())
         if isinstance(prior, list) and prior:
             input_items = prior + input_items
+        elif debug:
+            print(f"[responses] previous_response_id '{prev_id}' not found in local store (session may have expired)")
 
     # Parse tools
     tools_responses: List[Dict[str, Any]] = []
