@@ -335,7 +335,7 @@ def main() -> None:
         action="store_true",
         default=(os.getenv("CHATGPT_LOCAL_EXPOSE_REASONING_MODELS") or "").strip().lower() in ("1", "true", "yes", "on"),
         help=(
-            "Expose gpt-5 reasoning effort variants (minimal|low|medium|high|xhigh where supported) "
+            "Expose GPT-5 family reasoning effort variants (minimal|low|medium|high|xhigh where supported) "
             "as separate models from /v1/models. This allows choosing effort via model selection in compatible UIs."
         ),
     )

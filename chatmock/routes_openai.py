@@ -638,6 +638,7 @@ def list_models() -> Response:
     model_groups = [
         ("gpt-5", ["high", "medium", "low", "minimal"]),
         ("gpt-5.1", ["high", "medium", "low"]),
+        ("gpt-5.2", ["xhigh", "high", "medium", "low"]),
         ("gpt-5-codex", ["high", "medium", "low"]),
         ("gpt-5.1-codex", ["high", "medium", "low"]),
         ("gpt-5.1-codex-max", ["xhigh", "high", "medium", "low"]),

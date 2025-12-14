@@ -96,6 +96,7 @@ def ollama_tags() -> Response:
     model_ids = [
         "gpt-5",
         "gpt-5.1",
+        "gpt-5.2",
         "gpt-5-codex",
         "gpt-5.1-codex",
         "gpt-5.1-codex-max",
@@ -112,6 +113,10 @@ def ollama_tags() -> Response:
                 "gpt-5.1-high",
                 "gpt-5.1-medium",
                 "gpt-5.1-low",
+                "gpt-5.2-xhigh",
+                "gpt-5.2-high",
+                "gpt-5.2-medium",
+                "gpt-5.2-low",
                 "gpt-5-codex-high",
                 "gpt-5-codex-medium",
                 "gpt-5-codex-low",
