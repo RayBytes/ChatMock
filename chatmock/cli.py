@@ -273,6 +273,7 @@ def cmd_serve(
     default_web_search: bool,
     enable_responses_api: bool = False,
     responses_no_base_instructions: bool = False,
+    api_key: str | None = None,
 ) -> int:
     app = create_app(
         verbose=verbose,
@@ -286,6 +287,7 @@ def cmd_serve(
         default_web_search=default_web_search,
         enable_responses_api=enable_responses_api,
         responses_no_base_instructions=responses_no_base_instructions,
+        api_key=api_key,
     )
 
     app.run(host=host, debug=False, use_reloader=False, port=port, threaded=True)
@@ -383,6 +385,16 @@ def main() -> None:
             "Also configurable via CHATGPT_LOCAL_RESPONSES_NO_BASE_INSTRUCTIONS."
         ),
     )
+    p_serve.add_argument(
+        "--api-key",
+        dest="api_key",
+        default=os.getenv("API_KEY") or os.getenv("CHATGPT_LOCAL_API_KEY"),
+        help=(
+            "Require this API key for all requests (Authorization: Bearer <key>). "
+            "If not set, no authentication is required. "
+            "Also configurable via API_KEY or CHATGPT_LOCAL_API_KEY."
+        ),
+    )
 
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
     p_info.add_argument("--json", action="store_true", help="Output raw auth.json contents")
@@ -407,6 +419,7 @@ def main() -> None:
                 default_web_search=args.enable_web_search,
                 enable_responses_api=args.enable_responses_api,
                 responses_no_base_instructions=args.responses_no_base_instructions,
+                api_key=args.api_key,
             )
         )
     elif args.command == "info":

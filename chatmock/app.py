@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .http import build_cors_headers
@@ -23,6 +23,7 @@ def create_app(
     expose_experimental_models: bool = False,
     enable_responses_api: bool = False,
     responses_no_base_instructions: bool = False,
+    api_key: str | None = None,
 ) -> Flask:
     app = Flask(__name__)
 
@@ -41,12 +42,45 @@ def create_app(
         EXPOSE_EXPERIMENTAL_MODELS=bool(expose_experimental_models),
         ENABLE_RESPONSES_API=bool(enable_responses_api),
         RESPONSES_NO_BASE_INSTRUCTIONS=bool(responses_no_base_instructions),
+        API_KEY=api_key if isinstance(api_key, str) and api_key.strip() else None,
     )
 
     @app.get("/")
     @app.get("/health")
     def health():
         return jsonify({"status": "ok"})
+
+    @app.before_request
+    def _check_api_key():
+        """Check API key for protected endpoints."""
+        required_key = app.config.get("API_KEY")
+        if not required_key:
+            return None  # No key configured, allow all
+
+        # Skip auth for health, root, OPTIONS (CORS preflight), webui and its API
+        if request.method == "OPTIONS":
+            return None
+        path = request.path
+        if path in ("/", "/health"):
+            return None
+        if path.startswith("/webui") or path.startswith("/api/"):
+            return None
+
+        # Check Authorization header
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            provided_key = auth_header[7:].strip()
+        else:
+            provided_key = auth_header.strip()
+
+        if provided_key != required_key:
+            resp = jsonify({"error": {"message": "Invalid API key", "code": "invalid_api_key"}})
+            resp.status_code = 401
+            for k, v in build_cors_headers().items():
+                resp.headers.setdefault(k, v)
+            return resp
+
+        return None
 
     @app.after_request
     def _cors(resp):
