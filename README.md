@@ -202,6 +202,7 @@ GUNICORN_WORKERS=8          # Number of worker processes
 - Tool/Function calling
 - Vision/Image understanding
 - Thinking summaries (through thinking tags)
+- Responses API (experimental)
 - Thinking effort
 - Web search (OpenAI native)
 - High-performance production server
@@ -312,6 +313,8 @@ All parameters: `python chatmock.py serve --help`
 - **`CHATGPT_LOCAL_ENABLE_WEB_SEARCH`** - Enable web search tool by default
 - **`CHATGPT_LOCAL_EXPOSE_REASONING_MODELS`** - Expose reasoning levels as separate models (e.g., gpt-5-high, gpt-5-low)
 - **`CHATGPT_LOCAL_DEBUG_MODEL`** - Force specific model for all requests
+- **`CHATGPT_LOCAL_ENABLE_RESPONSES_API`** - Enable experimental Responses API at `/v1/responses`
+- **`CHATGPT_LOCAL_RESPONSES_NO_BASE_INSTRUCTIONS`** - Forward client instructions as-is (don't inject base prompt)
 
 ### Web Search Usage
 
@@ -335,6 +338,61 @@ Supported tools:
 - `{"type": "web_search_preview"}` - Preview mode
 
 Tool choice: `"auto"` (let model decide) or `"none"` (disable)
+
+### Responses API (Experimental)
+
+ChatMock supports the OpenAI Responses API at `/v1/responses`. Enable it with:
+
+```bash
+python chatmock.py serve --enable-responses-api
+```
+
+Or via environment variable:
+```bash
+CHATGPT_LOCAL_ENABLE_RESPONSES_API=true
+```
+
+**Important:** This proxies to ChatGPT's internal endpoint, which has limitations compared to the official OpenAI Platform API:
+- `store=true` is handled locally only (upstream requires `store=false`)
+- `previous_response_id` is simulated locally (not supported upstream)
+- ChatMock provides local polyfills for these features
+
+**Streaming example:**
+```bash
+curl -sN http://127.0.0.1:8000/v1/responses \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "gpt-5",
+    "stream": true,
+    "input": [
+      {"role":"user","content":[{"type":"input_text","text":"hello world"}]}
+    ]
+  }'
+```
+
+**Non-streaming with storage:**
+```bash
+curl -s http://127.0.0.1:8000/v1/responses \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "gpt-5",
+    "stream": false,
+    "store": true,
+    "input": [{"role":"user","content":[{"type":"input_text","text":"Say hi"}]}]
+  }'
+```
+
+**Retrieve stored response:**
+```bash
+curl -s http://127.0.0.1:8000/v1/responses/{response_id}
+```
+
+**Supported features:**
+- Streaming and non-streaming modes
+- Function tools and web_search
+- `store` (local storage for `GET /v1/responses/{id}`)
+- `previous_response_id` (local threading simulation)
+- Input formats: Responses `input`, Chat-style `messages`, or `prompt` string
 
 ### Production Settings
 

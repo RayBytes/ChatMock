@@ -263,6 +263,7 @@ def cmd_serve(
     host: str,
     port: int,
     verbose: bool,
+    debug_log: bool,
     verbose_obfuscation: bool,
     reasoning_effort: str,
     reasoning_summary: str,
@@ -270,9 +271,12 @@ def cmd_serve(
     debug_model: str | None,
     expose_reasoning_models: bool,
     default_web_search: bool,
+    enable_responses_api: bool = False,
+    responses_no_base_instructions: bool = False,
 ) -> int:
     app = create_app(
         verbose=verbose,
+        debug_log=debug_log,
         verbose_obfuscation=verbose_obfuscation,
         reasoning_effort=reasoning_effort,
         reasoning_summary=reasoning_summary,
@@ -280,6 +284,8 @@ def cmd_serve(
         debug_model=debug_model,
         expose_reasoning_models=expose_reasoning_models,
         default_web_search=default_web_search,
+        enable_responses_api=enable_responses_api,
+        responses_no_base_instructions=responses_no_base_instructions,
     )
 
     app.run(host=host, debug=False, use_reloader=False, port=port, threaded=True)
@@ -297,7 +303,13 @@ def main() -> None:
     p_serve = sub.add_parser("serve", help="Run local OpenAI-compatible server")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
-    p_serve.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    p_serve.add_argument("--verbose", action="store_true", help="Enable verbose logging (full request/response bodies)")
+    p_serve.add_argument(
+        "--debug",
+        action="store_true",
+        default=(os.getenv("CHATGPT_LOCAL_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on"),
+        help="Enable compact debug logging (model, counts, no bodies). Also: CHATGPT_LOCAL_DEBUG.",
+    )
     p_serve.add_argument(
         "--verbose-obfuscation",
         action="store_true",
@@ -348,6 +360,24 @@ def main() -> None:
             "Also configurable via CHATGPT_LOCAL_ENABLE_WEB_SEARCH."
         ),
     )
+    p_serve.add_argument(
+        "--enable-responses-api",
+        action="store_true",
+        default=(os.getenv("CHATGPT_LOCAL_ENABLE_RESPONSES_API") or "").strip().lower() in ("1", "true", "yes", "on"),
+        help=(
+            "Expose experimental Responses API at /v1/responses (off by default). "
+            "Also configurable via CHATGPT_LOCAL_ENABLE_RESPONSES_API."
+        ),
+    )
+    p_serve.add_argument(
+        "--responses-no-base-instructions",
+        action="store_true",
+        default=(os.getenv("CHATGPT_LOCAL_RESPONSES_NO_BASE_INSTRUCTIONS") or "").strip().lower() in ("1", "true", "yes", "on"),
+        help=(
+            "Do not inject base prompt for /v1/responses; forward client 'instructions' as-is. "
+            "Also configurable via CHATGPT_LOCAL_RESPONSES_NO_BASE_INSTRUCTIONS."
+        ),
+    )
 
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
     p_info.add_argument("--json", action="store_true", help="Output raw auth.json contents")
@@ -362,6 +392,7 @@ def main() -> None:
                 host=args.host,
                 port=args.port,
                 verbose=args.verbose,
+                debug_log=args.debug,
                 verbose_obfuscation=args.verbose_obfuscation,
                 reasoning_effort=args.reasoning_effort,
                 reasoning_summary=args.reasoning_summary,
@@ -369,6 +400,8 @@ def main() -> None:
                 debug_model=args.debug_model,
                 expose_reasoning_models=args.expose_reasoning_models,
                 default_web_search=args.enable_web_search,
+                enable_responses_api=args.enable_responses_api,
+                responses_no_base_instructions=args.responses_no_base_instructions,
             )
         )
     elif args.command == "info":

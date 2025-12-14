@@ -201,7 +201,8 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
         if not content_items:
             continue
         role_out = "assistant" if role == "assistant" else "user"
-        input_items.append({"type": "message", "role": role_out, "content": content_items})
+        # Note: No "type": "message" - upstream Responses API doesn't accept it
+        input_items.append({"role": role_out, "content": content_items})
     return input_items
 
 

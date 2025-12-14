@@ -69,6 +69,7 @@ def start_upstream_request(
     tool_choice: Any | None = None,
     parallel_tool_calls: bool = False,
     reasoning_param: Dict[str, Any] | None = None,
+    extra_fields: Dict[str, Any] | None = None,
 ):
     access_token, account_id = get_effective_chatgpt_auth()
     if not access_token or not account_id:
@@ -118,13 +119,28 @@ def start_upstream_request(
     if reasoning_param is not None:
         responses_payload["reasoning"] = reasoning_param
 
+    # Merge extra fields (e.g., temperature, top_p, seed, etc.)
+    if isinstance(extra_fields, dict):
+        for k, v in extra_fields.items():
+            if v is not None:
+                responses_payload[k] = v
+
     verbose = False
+    debug = False
     try:
         verbose = bool(current_app.config.get("VERBOSE"))
+        debug = bool(current_app.config.get("DEBUG_LOG"))
     except Exception:
-        verbose = False
+        pass
     if verbose:
         _log_json("OUTBOUND >> ChatGPT Responses API payload", responses_payload)
+    elif debug:
+        # Compact log: model + input count + tools count
+        input_count = len(input_items) if input_items else 0
+        tools_count = len(responses_payload.get("tools") or [])
+        reasoning_info = responses_payload.get("reasoning", {})
+        effort = reasoning_info.get("effort", "-") if isinstance(reasoning_info, dict) else "-"
+        print(f"[upstream] model={model} input_items={input_count} tools={tools_count} reasoning_effort={effort}")
 
     headers = {
         "Authorization": f"Bearer {access_token}",

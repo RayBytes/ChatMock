@@ -634,22 +634,10 @@ def completions() -> Response:
 
 @openai_bp.route("/v1/models", methods=["GET"])
 def list_models() -> Response:
+    from .config import get_model_ids
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    model_groups = [
-        ("gpt-5", ["high", "medium", "low", "minimal"]),
-        ("gpt-5.1", ["high", "medium", "low"]),
-        ("gpt-5.2", ["xhigh", "high", "medium", "low"]),
-        ("gpt-5-codex", ["high", "medium", "low"]),
-        ("gpt-5.1-codex", ["high", "medium", "low"]),
-        ("gpt-5.1-codex-max", ["xhigh", "high", "medium", "low"]),
-        ("gpt-5.1-codex-mini", []),
-        ("codex-mini", []),
-    ]
-    model_ids: List[str] = []
-    for base, efforts in model_groups:
-        model_ids.append(base)
-        if expose_variants:
-            model_ids.extend([f"{base}-{effort}" for effort in efforts])
+    expose_experimental = bool(current_app.config.get("EXPOSE_EXPERIMENTAL_MODELS"))
+    model_ids = get_model_ids(expose_variants, expose_experimental)
     data = [{"id": mid, "object": "model", "owned_by": "owner"} for mid in model_ids]
     models = {"object": "list", "data": data}
     resp = make_response(jsonify(models), 200)
