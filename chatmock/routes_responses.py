@@ -518,6 +518,19 @@ def responses_create() -> Response:
     return resp
 
 
+@responses_bp.route("/v1/responses", methods=["GET"])
+def responses_list() -> Response:
+    """List responses endpoint - returns empty list (not supported).
+
+    OpenAI doesn't support listing responses without an ID.
+    This endpoint exists to handle GET /v1/responses gracefully.
+    """
+    resp = make_response(jsonify({"object": "list", "data": []}), 200)
+    for k, v in build_cors_headers().items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
 @responses_bp.route("/v1/responses/<response_id>", methods=["GET"])
 def responses_retrieve(response_id: str) -> Response:
     """Retrieve a stored response by ID.
