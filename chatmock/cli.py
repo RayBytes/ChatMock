@@ -303,12 +303,17 @@ def main() -> None:
     p_serve = sub.add_parser("serve", help="Run local OpenAI-compatible server")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
-    p_serve.add_argument("--verbose", action="store_true", help="Enable verbose logging (full request/response bodies)")
+    p_serve.add_argument(
+        "--verbose",
+        action="store_true",
+        default=(os.getenv("VERBOSE") or os.getenv("CHATGPT_LOCAL_VERBOSE") or "").strip().lower() in ("1", "true", "yes", "on"),
+        help="Enable verbose logging (full request/response bodies). Also: VERBOSE or CHATGPT_LOCAL_VERBOSE.",
+    )
     p_serve.add_argument(
         "--debug",
         action="store_true",
-        default=(os.getenv("CHATGPT_LOCAL_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on"),
-        help="Enable compact debug logging (model, counts, no bodies). Also: CHATGPT_LOCAL_DEBUG.",
+        default=(os.getenv("DEBUG_LOG") or os.getenv("CHATGPT_LOCAL_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on"),
+        help="Enable compact debug logging (model, counts, no bodies). Also: DEBUG_LOG or CHATGPT_LOCAL_DEBUG.",
     )
     p_serve.add_argument(
         "--verbose-obfuscation",
