@@ -97,11 +97,25 @@ def chat_completions() -> Response:
 
     requested_model = payload.get("model")
     model = normalize_model_name(requested_model, debug_model)
+
+    # Debug: log payload keys when DEBUG_LOG is enabled
+    debug = bool(current_app.config.get("DEBUG_LOG"))
+    if debug:
+        print(f"[chat/completions] payload keys: {list(payload.keys())}")
+        if not payload.get("messages"):
+            print(f"[chat/completions] no messages, checking alternatives...")
+            for k in ("input", "prompt", "conversation_id", "previous_response_id"):
+                if payload.get(k):
+                    print(f"[chat/completions] found {k}={type(payload.get(k)).__name__}")
+
     messages = payload.get("messages")
     if messages is None and isinstance(payload.get("prompt"), str):
         messages = [{"role": "user", "content": payload.get("prompt") or ""}]
     if messages is None and isinstance(payload.get("input"), str):
         messages = [{"role": "user", "content": payload.get("input") or ""}]
+    # Support Responses API style input (list of items)
+    if messages is None and isinstance(payload.get("input"), list):
+        messages = payload.get("input")
     if messages is None:
         messages = []
     if not isinstance(messages, list):
@@ -171,6 +185,60 @@ def chat_completions() -> Response:
         input_items = [
             {"role": "user", "content": [{"type": "input_text", "text": payload.get("prompt")}]}
         ]
+
+    # Support previous_response_id / conversation_id (get history from local store)
+    prev_id = payload.get("previous_response_id") or payload.get("conversation_id")
+    if isinstance(prev_id, str) and prev_id.strip():
+        try:
+            from .routes_responses import _get_thread
+            prior = _get_thread(prev_id.strip())
+            if isinstance(prior, list) and prior:
+                input_items = prior + (input_items or [])
+                if debug:
+                    print(f"[chat/completions] loaded {len(prior)} items from previous_response_id={prev_id}")
+            elif debug:
+                print(f"[chat/completions] previous_response_id={prev_id} not found in local store")
+        except ImportError:
+            if debug:
+                print(f"[chat/completions] previous_response_id support unavailable (routes_responses not loaded)")
+
+    # Debug: log when input_items is empty
+    if debug and not input_items:
+        print(f"[chat/completions] WARNING: input_items empty after conversion")
+        print(f"[chat/completions] messages count={len(messages)}, messages={messages[:2] if messages else 'empty'}...")
+
+    # Fallback: if still empty but we have messages with content, try direct pass
+    if not input_items and messages:
+        for msg in messages:
+            if isinstance(msg, dict):
+                content = msg.get("content")
+                role = msg.get("role", "user")
+                if role == "system":
+                    role = "user"
+                if isinstance(content, str) and content.strip():
+                    input_items.append({
+                        "role": role if role in ("user", "assistant") else "user",
+                        "content": [{"type": "input_text" if role != "assistant" else "output_text", "text": content}]
+                    })
+                elif isinstance(content, list) and content:
+                    # Pass through as-is if it's already structured
+                    input_items.append({"role": role if role in ("user", "assistant") else "user", "content": content})
+        if debug and input_items:
+            print(f"[chat/completions] fallback produced {len(input_items)} items")
+
+    # Final check: reject if still no input
+    if not input_items:
+        err = {
+            "error": {
+                "message": "Request must include non-empty 'messages', 'input', or 'prompt'",
+                "code": "EMPTY_INPUT",
+            }
+        }
+        if debug or verbose:
+            print(f"[chat/completions] ERROR: no input items, payload keys={list(payload.keys())}")
+            if verbose:
+                _log_json("OUT POST /v1/chat/completions", err)
+        return jsonify(err), 400
 
     model_reasoning = extract_reasoning_from_model_name(requested_model)
     reasoning_overrides = payload.get("reasoning") if isinstance(payload.get("reasoning"), dict) else model_reasoning

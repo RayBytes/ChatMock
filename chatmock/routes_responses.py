@@ -13,11 +13,14 @@ a more complete API experience.
 """
 from __future__ import annotations
 
+import atexit
 import json
+import os
 import time
 import threading
 import uuid
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
@@ -33,7 +36,7 @@ from .http import build_cors_headers
 from .limits import record_rate_limits_from_response
 from .reasoning import build_reasoning_param, extract_reasoning_from_model_name
 from .upstream import normalize_model_name, start_upstream_request
-from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_to_responses
+from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_to_responses, get_home_dir
 
 try:
     from .routes_webui import record_request
@@ -54,6 +57,93 @@ _THREADS: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
 _MAX_THREAD_ITEMS = 40
 _MAX_THREAD_RESPONSES = 200
 
+# Persistence file names
+_STORE_FILE = "responses_store.json"
+_THREADS_FILE = "responses_threads.json"
+_PERSISTENCE_ENABLED = True  # Can be disabled via env var
+
+
+def _get_persistence_dir() -> Path:
+    """Get directory for persistence files."""
+    return Path(get_home_dir())
+
+
+def _load_persisted_data() -> None:
+    """Load persisted store and threads from disk on startup."""
+    global _STORE, _THREADS
+    if not _PERSISTENCE_ENABLED:
+        return
+
+    persist_dir = _get_persistence_dir()
+
+    # Load store
+    store_path = persist_dir / _STORE_FILE
+    if store_path.exists():
+        try:
+            with open(store_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                with _STORE_LOCK:
+                    _STORE.clear()
+                    for k, v in data.items():
+                        if isinstance(k, str) and isinstance(v, dict):
+                            _STORE[k] = v
+                    # Trim to max size
+                    while len(_STORE) > _MAX_STORE_ITEMS:
+                        _STORE.popitem(last=False)
+        except Exception:
+            pass
+
+    # Load threads
+    threads_path = persist_dir / _THREADS_FILE
+    if threads_path.exists():
+        try:
+            with open(threads_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                with _THREADS_LOCK:
+                    _THREADS.clear()
+                    for k, v in data.items():
+                        if isinstance(k, str) and isinstance(v, list):
+                            _THREADS[k] = v[-_MAX_THREAD_ITEMS:]
+                    # Trim to max size
+                    while len(_THREADS) > _MAX_THREAD_RESPONSES:
+                        _THREADS.popitem(last=False)
+        except Exception:
+            pass
+
+
+def _save_store() -> None:
+    """Persist store to disk."""
+    if not _PERSISTENCE_ENABLED:
+        return
+    try:
+        persist_dir = _get_persistence_dir()
+        persist_dir.mkdir(parents=True, exist_ok=True)
+        store_path = persist_dir / _STORE_FILE
+        with _STORE_LOCK:
+            data = dict(_STORE)
+        with open(store_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _save_threads() -> None:
+    """Persist threads to disk."""
+    if not _PERSISTENCE_ENABLED:
+        return
+    try:
+        persist_dir = _get_persistence_dir()
+        persist_dir.mkdir(parents=True, exist_ok=True)
+        threads_path = persist_dir / _THREADS_FILE
+        with _THREADS_LOCK:
+            data = dict(_THREADS)
+        with open(threads_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
+
 
 def _store_response(obj: Dict[str, Any]) -> None:
     """Store a response object in memory for later retrieval."""
@@ -67,6 +157,7 @@ def _store_response(obj: Dict[str, Any]) -> None:
             _STORE[rid] = obj
             while len(_STORE) > _MAX_STORE_ITEMS:
                 _STORE.popitem(last=False)
+        _save_store()
     except Exception:
         pass
 
@@ -89,6 +180,7 @@ def _set_thread(rid: str, items: List[Dict[str, Any]]) -> None:
             _THREADS[rid] = trimmed
             while len(_THREADS) > _MAX_THREAD_RESPONSES:
                 _THREADS.popitem(last=False)
+        _save_threads()
     except Exception:
         pass
 
@@ -97,6 +189,10 @@ def _get_thread(rid: str) -> Optional[List[Dict[str, Any]]]:
     """Get conversation thread for a response ID."""
     with _THREADS_LOCK:
         return _THREADS.get(rid)
+
+
+# Load persisted data on module import
+_load_persisted_data()
 
 
 def _collect_rs_ids(obj: Any, parent_key: Optional[str] = None, out: Optional[List[str]] = None) -> List[str]:
