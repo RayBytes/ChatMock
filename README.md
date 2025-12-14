@@ -287,7 +287,29 @@ All parameters: `python chatmock.py serve --help`
 - **`PORT`** - Server port (default: 8000)
 - **`USE_GUNICORN`** - Enable Gunicorn for production (default: 1)
 - **`GUNICORN_WORKERS`** - Number of worker processes (default: CPU × 2 + 1)
-- **`VERBOSE`** - Enable verbose request/response logging
+- **`VERBOSE`** or **`CHATGPT_LOCAL_VERBOSE`** - Enable verbose request/response logging
+- **`DEBUG_LOG`** or **`CHATGPT_LOCAL_DEBUG`** - Enable compact debug logging
+- **`API_KEY`** or **`CHATGPT_LOCAL_API_KEY`** - Require API key for all `/v1/*` endpoints
+
+### API Key Authentication
+
+Protect your ChatMock instance with API key authentication:
+
+```bash
+# Via environment variable
+API_KEY=your-secret-key python chatmock.py serve
+
+# Or via CLI argument
+python chatmock.py serve --api-key your-secret-key
+```
+
+Clients must include the key in requests:
+```bash
+curl http://127.0.0.1:8000/v1/models \
+  -H "Authorization: Bearer your-secret-key"
+```
+
+**Note:** Health endpoints (`/`, `/health`) and WebUI (`/webui/*`, `/api/*`) remain unprotected.
 
 ### Thinking Controls
 

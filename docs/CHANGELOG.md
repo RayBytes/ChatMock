@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.7] - 2025-01-XX
+
+### Added
+- **API Key Authentication**: Protect your ChatMock instance with API key authentication
+  - Configure via `--api-key` CLI argument or `API_KEY` / `CHATGPT_LOCAL_API_KEY` environment variable
+  - Standard Bearer token authentication on all `/v1/*` endpoints
+  - WebUI and health endpoints remain unprotected for convenience
+- **Session Persistence**: Responses API sessions now persist across server restarts
+  - Sessions saved to JSON files in `CHATGPT_LOCAL_HOME` directory
+  - Automatic loading on startup
+- **Improved Input Handling**: Better compatibility with Cursor IDE and Responses API clients
+  - Support for `input` as list (Responses API format) in `/v1/chat/completions`
+  - Support for `previous_response_id` and `conversation_id` for context continuation
+  - Clear `EMPTY_INPUT` error code for debugging
+
+### Fixed
+- **ENV Variables**: `VERBOSE` and `DEBUG_LOG` environment variables now work correctly
+  - Both short (`VERBOSE`, `DEBUG_LOG`) and prefixed (`CHATGPT_LOCAL_VERBOSE`, `CHATGPT_LOCAL_DEBUG`) forms supported
+- **Debug Logging**: Enhanced payload debugging when `DEBUG_LOG` is enabled
+
+## [1.4.6] - 2025-01-XX
+
 ### Added
 - Support for GPT-5.1 models
 - Support for GPT-5.1-Codex-Max model with xhigh reasoning effort
