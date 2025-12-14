@@ -1,5 +1,16 @@
 # ChatMock - Project Overview
 
+## CRITICAL: Git Rules
+
+**ABSOLUTE PROHIBITION**: NEVER push, commit, or create PRs to the upstream repository (RayBytes/ChatMock). All changes must go to the user's fork (thebtf/chatmock) only.
+
+- `origin` = thebtf/chatmock (USER'S FORK) - OK to push here
+- `upstream` / `RayBytes` = RayBytes/ChatMock (UPSTREAM) - NEVER push here
+
+When creating PRs, always use `--repo thebtf/chatmock` to ensure the PR is created in the correct repository.
+
+---
+
 ## Project Description
 
 ChatMock is an open-source tool that provides OpenAI and Ollama compatible API access powered by your ChatGPT Plus/Pro account. It allows developers to use GPT-5, GPT-5.1, GPT-5-Codex, and other advanced models through their authenticated ChatGPT account without requiring a separate OpenAI API key.

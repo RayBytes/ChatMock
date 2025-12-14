@@ -299,85 +299,37 @@ def api_stats():
 @webui_bp.route("/api/models")
 @require_webui_auth
 def api_models():
-    """Get list of available models"""
+    """Get list of available models from central config"""
+    from .config import AVAILABLE_MODELS
+
     expose_reasoning = current_app.config.get("EXPOSE_REASONING_MODELS", False)
     expose_experimental = current_app.config.get("EXPOSE_EXPERIMENTAL_MODELS", False)
 
-    # Define model information based on routes_openai.py structure
-    # Note: Set "experimental": True for models that are in testing/preview
-    model_info = {
-        "gpt-5": {
-            "name": "GPT-5",
-            "description": "Latest flagship model from OpenAI with advanced reasoning capabilities",
-            "capabilities": ["reasoning", "function_calling", "vision", "web_search"],
-            "efforts": ["high", "medium", "low", "minimal"],
-        },
-        "gpt-5.1": {
-            "name": "GPT-5.1",
-            "description": "Enhanced version of GPT-5 with improved capabilities",
-            "capabilities": ["reasoning", "function_calling", "vision", "web_search"],
-            "efforts": ["high", "medium", "low", "minimal"],
-        },
-        "gpt-5-codex": {
-            "name": "GPT-5 Codex",
-            "description": "Specialized model optimized for coding tasks",
-            "capabilities": ["reasoning", "function_calling", "coding"],
-            "efforts": ["high", "medium", "low"],
-        },
-        "gpt-5.1-codex": {
-            "name": "GPT-5.1 Codex",
-            "description": "Enhanced coding model with improved capabilities",
-            "capabilities": ["reasoning", "function_calling", "coding"],
-            "efforts": ["high", "medium", "low"],
-        },
-        "gpt-5.1-codex-mini": {
-            "name": "GPT-5.1 Codex Mini",
-            "description": "Lightweight enhanced coding model for faster responses",
-            "capabilities": ["coding", "function_calling"],
-            "efforts": [],
-        },
-        "codex-mini": {
-            "name": "Codex Mini",
-            "description": "Lightweight variant for faster coding responses",
-            "capabilities": ["coding", "function_calling"],
-            "efforts": [],
-        },
-        # Future experimental models can be added here with "experimental": True
-        # Example:
-        # "gpt-6-preview": {
-        #     "name": "GPT-6 Preview",
-        #     "description": "Next generation model (experimental preview)",
-        #     "capabilities": ["reasoning", "function_calling", "vision", "web_search"],
-        #     "efforts": ["high", "medium", "low", "minimal"],
-        #     "experimental": True,
-        # },
-    }
-
     models_list = []
-    for model_id, info in model_info.items():
+    for model in AVAILABLE_MODELS:
         # Skip experimental models unless explicitly enabled
-        if info.get("experimental", False) and not expose_experimental:
+        if model.get("experimental", False) and not expose_experimental:
             continue
 
         models_list.append({
-            "id": model_id,
-            "name": info["name"],
-            "description": info["description"],
-            "capabilities": info["capabilities"],
+            "id": model["id"],
+            "name": model["name"],
+            "description": model["description"],
+            "capabilities": model["capabilities"],
         })
 
         # Add reasoning variants if enabled
-        if expose_reasoning and info["efforts"]:
-            for effort in info["efforts"]:
+        if expose_reasoning and model.get("efforts"):
+            for effort in model["efforts"]:
                 models_list.append({
-                    "id": f"{model_id}-{effort}",
-                    "name": f"{info['name']} ({effort.title()} Reasoning)",
-                    "description": f"{info['description']} - {effort} reasoning effort",
-                    "capabilities": info["capabilities"],
+                    "id": f"{model['id']}-{effort}",
+                    "name": f"{model['name']} ({effort.title()} Reasoning)",
+                    "description": f"{model['description']} - {effort} reasoning effort",
+                    "capabilities": model["capabilities"],
                 })
 
     # Check if there are any experimental models defined
-    has_experimental = any(info.get("experimental", False) for info in model_info.values())
+    has_experimental = any(m.get("experimental", False) for m in AVAILABLE_MODELS)
 
     return jsonify({"models": models_list, "has_experimental_models": has_experimental})
 
