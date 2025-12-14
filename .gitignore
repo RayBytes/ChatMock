@@ -23,3 +23,23 @@ dist/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# IDE and editor configs
+.vscode/
+.vs/
+.cursor/
+*.swp
+*.swo
+*~
+
+# AI/Agent tool configs
+.roo/
+.claude/
+.mcp.json
+.codex/
+.serena/
+.agent/
+.agent_profiles/
+.mcp-debug-tools/
+.qdrant_sets.json
+.netcoredbg_hist
