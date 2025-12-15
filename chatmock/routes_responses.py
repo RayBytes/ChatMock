@@ -32,6 +32,7 @@ except ImportError:
     ProtocolError = Exception  # type: ignore
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
+from .debug import dump_request, dump_tools_debug
 from .http import build_cors_headers
 from .limits import record_rate_limits_from_response
 from .reasoning import build_reasoning_param, extract_reasoning_from_model_name
@@ -766,6 +767,9 @@ def responses_create() -> Response:
     if isinstance(rtc, str) and rtc in ("auto", "none"):
         tool_choice = rtc
 
+    # Debug: dump tools conversion
+    dump_tools_debug("responses", payload.get("tools"), tools_responses)
+
     # Handle instructions
     no_base = bool(current_app.config.get("RESPONSES_NO_BASE_INSTRUCTIONS"))
     base_inst = _instructions_for_model(model)
@@ -842,26 +846,20 @@ def responses_create() -> Response:
     if debug:
         print(f"[responses] sending {len(input_items)} input items to upstream")
 
-    # Dump full payload to JSON file when verbose is enabled
-    if verbose:
-        try:
-            log_dir = _get_persistence_dir()
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log_file = log_dir / "responses_last_request.json"
-            dump_payload = {
-                "model": model,
-                "input": input_items,
-                "instructions": instructions,
-                "tools": tools_responses,
-                "tool_choice": tool_choice,
-                "reasoning": reasoning_param,
-                "extra_fields": extra_fields,
-            }
-            with open(log_file, "w", encoding="utf-8") as f:
-                json.dump(dump_payload, f, indent=2, ensure_ascii=False)
-            print(f"[responses] payload dumped to {log_file}")
-        except Exception as e:
-            print(f"[responses] failed to dump payload: {e}")
+    # Dump full payload to JSON file when DEBUG_LOG is enabled
+    dump_request(
+        "responses",
+        incoming=payload,
+        outgoing={
+            "model": model,
+            "input": input_items,
+            "instructions": instructions[:200] + "..." if isinstance(instructions, str) and len(instructions) > 200 else instructions,
+            "tools": tools_responses,
+            "tool_choice": tool_choice,
+            "reasoning": reasoning_param,
+            "extra_fields": extra_fields,
+        },
+    )
 
     # Make upstream request
     upstream, error_resp = start_upstream_request(

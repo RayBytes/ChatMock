@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
+from .debug import dump_request, dump_tools_debug
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .reasoning import (
@@ -134,8 +135,12 @@ def chat_completions() -> Response:
     stream_options = payload.get("stream_options") if isinstance(payload.get("stream_options"), dict) else {}
     include_usage = bool(stream_options.get("include_usage", False))
 
-    tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
+    raw_tools = payload.get("tools")
+    tools_responses = convert_tools_chat_to_responses(raw_tools)
     tool_choice = payload.get("tool_choice", "auto")
+
+    # Debug: dump tools conversion for debugging MCP tools passthrough
+    dump_tools_debug("chat_completions", raw_tools, tools_responses)
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
@@ -247,6 +252,20 @@ def chat_completions() -> Response:
         reasoning_summary,
         reasoning_overrides,
         allowed_efforts=allowed_efforts_for_model(model),
+    )
+
+    # Debug: dump full request before sending upstream
+    dump_request(
+        "chat_completions",
+        incoming=payload,
+        outgoing={
+            "model": model,
+            "input_items_count": len(input_items),
+            "tools_count": len(tools_responses) if tools_responses else 0,
+            "tool_choice": tool_choice,
+            "reasoning": reasoning_param,
+        },
+        extra={"requested_model": requested_model},
     )
 
     upstream, error_resp = start_upstream_request(
