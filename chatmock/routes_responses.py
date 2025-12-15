@@ -563,6 +563,27 @@ def responses_create() -> Response:
     if debug:
         print(f"[responses] sending {len(input_items)} input items to upstream")
 
+    # Dump full payload to JSON file when verbose is enabled
+    if verbose:
+        try:
+            log_dir = _get_persistence_dir()
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_file = log_dir / "responses_last_request.json"
+            dump_payload = {
+                "model": model,
+                "input": input_items,
+                "instructions": instructions,
+                "tools": tools_responses,
+                "tool_choice": tool_choice,
+                "reasoning": reasoning_param,
+                "extra_fields": extra_fields,
+            }
+            with open(log_file, "w", encoding="utf-8") as f:
+                json.dump(dump_payload, f, indent=2, ensure_ascii=False)
+            print(f"[responses] payload dumped to {log_file}")
+        except Exception as e:
+            print(f"[responses] failed to dump payload: {e}")
+
     # Make upstream request
     upstream, error_resp = start_upstream_request(
         model,
