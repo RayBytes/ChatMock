@@ -568,6 +568,33 @@ def _normalize_content_for_upstream(items: List[Dict[str, Any]], debug: bool = F
     return result
 
 
+# Known official prompt prefixes - if client sends these, don't prepend our own
+_OFFICIAL_PROMPT_PREFIXES = (
+    "You are GPT-5",
+    "You are GPT-4",
+    "You are a coding agent running in the Codex CLI",
+    "You are an AI assistant",
+    # Add more as needed
+)
+
+
+def _has_official_instructions(instructions: str | None) -> bool:
+    """Check if instructions already contain an official Codex CLI prompt.
+
+    If client sends official instructions, we don't need to prepend our own
+    (saves context tokens).
+    """
+    if not isinstance(instructions, str) or not instructions.strip():
+        return False
+
+    text = instructions.strip()
+    for prefix in _OFFICIAL_PROMPT_PREFIXES:
+        if text.startswith(prefix):
+            return True
+
+    return False
+
+
 def _instructions_for_model(model: str) -> str:
     """Get base instructions for a model."""
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
@@ -744,8 +771,14 @@ def responses_create() -> Response:
     base_inst = _instructions_for_model(model)
     user_inst = payload.get("instructions") if isinstance(payload.get("instructions"), str) else None
 
-    if no_base:
+    # Check if client already sends official instructions (saves context tokens)
+    client_has_official = _has_official_instructions(user_inst)
+
+    if no_base or client_has_official:
+        # Use client's instructions directly (or fallback)
         instructions = user_inst.strip() if isinstance(user_inst, str) and user_inst.strip() else "You are a helpful assistant."
+        if debug and client_has_official:
+            print(f"[responses] client has official instructions, skipping base prompt")
     else:
         instructions = base_inst
         if isinstance(user_inst, str) and user_inst.strip():
