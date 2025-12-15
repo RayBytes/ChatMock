@@ -289,6 +289,21 @@ def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[st
             if "content" in item:
                 item["content"] = []
 
+        # reasoning items: content must be empty array (reasoning goes in summary)
+        elif item_type == "reasoning":
+            # Move content to summary if summary is empty
+            if isinstance(content, list) and content:
+                summary = item.get("summary", [])
+                if not summary:
+                    # Extract text from reasoning_text items
+                    texts = []
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "reasoning_text":
+                            texts.append(part.get("text", ""))
+                    if texts:
+                        item["summary"] = [{"type": "summary_text", "text": "".join(texts)}]
+            item["content"] = []
+
         # function_call_output items: should use 'output', not 'content'
         elif item_type == "function_call_output":
             # If has content but no output, move content to output
