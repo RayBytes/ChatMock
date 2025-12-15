@@ -498,10 +498,15 @@ def sse_translate_chat(
                     call_id = evt.get("item_id") or "ws_call"
                     if verbose and vlog:
                         try:
-                            vlog(f"CM_TOOLS {kind} id={call_id} -> tool_calls(web_search)")
+                            vlog(f"CM_TOOLS {kind} id={call_id} evt_keys={list(evt.keys())} -> tool_calls(web_search)")
                         except Exception:
                             pass
                     item = evt.get('item') if isinstance(evt.get('item'), dict) else {}
+                    if verbose and vlog:
+                        try:
+                            vlog(f"CM_TOOLS item={json.dumps(item, ensure_ascii=False)[:200]}")
+                        except Exception:
+                            pass
                     params_dict = ws_state.setdefault(call_id, {}) if isinstance(ws_state.get(call_id), dict) else {}
                     def _merge_from(src):
                         if not isinstance(src, dict):
@@ -529,6 +534,11 @@ def sse_translate_chat(
                             if src.get(mk) is not None and 'max_results' not in params_dict: params_dict['max_results'] = src.get(mk)
                     _merge_from(item)
                     _merge_from(evt if isinstance(evt, dict) else None)
+                    if verbose and vlog:
+                        try:
+                            vlog(f"CM_TOOLS after merge params_dict={params_dict}")
+                        except Exception:
+                            pass
                     params = params_dict if params_dict else None
                     if isinstance(params, dict):
                         try:
@@ -536,7 +546,17 @@ def sse_translate_chat(
                         except Exception:
                             pass
                     eff_params = ws_state.get(call_id, params if isinstance(params, (dict, list, str)) else {})
+                    if verbose and vlog:
+                        try:
+                            vlog(f"CM_TOOLS eff_params={eff_params}")
+                        except Exception:
+                            pass
                     args_str = _serialize_tool_args(eff_params)
+                    if verbose and vlog:
+                        try:
+                            vlog(f"CM_TOOLS args_str={args_str}")
+                        except Exception:
+                            pass
                     if call_id not in ws_index:
                         ws_index[call_id] = ws_next_index
                         ws_next_index += 1
@@ -602,6 +622,11 @@ def sse_translate_chat(
                 yield f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
             elif kind == "response.output_item.done":
                 item = evt.get("item") or {}
+                if verbose and vlog and item.get("type") == "web_search_call":
+                    try:
+                        vlog(f"CM_TOOLS response.output_item.done web_search_call item={json.dumps(item, ensure_ascii=False)[:300]}")
+                    except Exception:
+                        pass
                 if isinstance(item, dict) and (item.get("type") == "function_call" or item.get("type") == "web_search_call"):
                     call_id = item.get("call_id") or item.get("id") or ""
                     name = item.get("name") or ("web_search" if item.get("type") == "web_search_call" else "")
@@ -626,6 +651,11 @@ def sse_translate_chat(
                         args = _serialize_tool_args(eff_args)
                     except Exception:
                         args = "{}"
+                    if verbose and vlog:
+                        try:
+                            vlog(f"CM_TOOLS response.output_item.done raw_args={raw_args} eff_args={eff_args} args={args}")
+                        except Exception:
+                            pass
                     if item.get("type") == "web_search_call" and verbose and vlog:
                         try:
                             vlog(f"CM_TOOLS response.output_item.done web_search_call id={call_id} has_args={bool(args)}")
