@@ -45,6 +45,128 @@ except ImportError:
 
 responses_bp = Blueprint("responses", __name__)
 
+# Tool name length limit (ChatGPT API requirement)
+_TOOL_NAME_LIMIT = 64
+
+
+def _shorten_tool_name(name: str) -> str:
+    """Shorten tool name to fit within 64 character limit.
+
+    MCP tools often have long names like 'mcp__server-name__tool_name'.
+    We preserve the mcp__ prefix and last segment when possible.
+    """
+    if len(name) <= _TOOL_NAME_LIMIT:
+        return name
+
+    # For MCP tools, try to keep prefix and last segment
+    if name.startswith("mcp__"):
+        # Find last __ separator
+        idx = name.rfind("__")
+        if idx > 4:  # More than just "mcp__"
+            candidate = "mcp__" + name[idx + 2:]
+            if len(candidate) <= _TOOL_NAME_LIMIT:
+                return candidate
+
+    # Fallback: truncate
+    return name[:_TOOL_NAME_LIMIT]
+
+
+def _build_tool_name_map(tools: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Build a map of original tool names to shortened unique names.
+
+    Ensures uniqueness by adding ~1, ~2 suffixes if needed.
+    """
+    if not tools:
+        return {}
+
+    # Collect original names
+    names = []
+    for t in tools:
+        name = None
+        if t.get("type") == "function":
+            fn = t.get("function") or t
+            name = fn.get("name")
+        elif "name" in t:
+            name = t.get("name")
+        if name:
+            names.append(name)
+
+    if not names:
+        return {}
+
+    # Build shortened names with uniqueness
+    used: set = set()
+    result: Dict[str, str] = {}
+
+    for original in names:
+        short = _shorten_tool_name(original)
+
+        # If shortened name conflicts, add suffix
+        if short in used:
+            suffix = 1
+            while f"{short[:_TOOL_NAME_LIMIT - 3]}~{suffix}" in used:
+                suffix += 1
+            short = f"{short[:_TOOL_NAME_LIMIT - 3]}~{suffix}"
+
+        used.add(short)
+        if short != original:
+            result[original] = short
+
+    return result
+
+
+def _apply_tool_name_shortening(tools: List[Dict[str, Any]], name_map: Dict[str, str]) -> List[Dict[str, Any]]:
+    """Apply tool name shortening to a list of tools."""
+    if not name_map:
+        return tools
+
+    result = []
+    for t in tools:
+        t = dict(t)  # shallow copy
+
+        if t.get("type") == "function" and isinstance(t.get("function"), dict):
+            fn = dict(t["function"])
+            name = fn.get("name")
+            if name and name in name_map:
+                fn["name"] = name_map[name]
+                t["function"] = fn
+        elif "name" in t:
+            name = t.get("name")
+            if name and name in name_map:
+                t["name"] = name_map[name]
+
+        result.append(t)
+
+    return result
+
+
+def _apply_tool_name_shortening_to_input(items: List[Dict[str, Any]], name_map: Dict[str, str]) -> List[Dict[str, Any]]:
+    """Apply tool name shortening to function_call items in input.
+
+    function_call items have a 'name' field that references the tool.
+    """
+    if not name_map:
+        return items
+
+    result = []
+    for item in items:
+        if not isinstance(item, dict):
+            result.append(item)
+            continue
+
+        item_type = item.get("type")
+
+        # function_call items have 'name' field
+        if item_type == "function_call":
+            name = item.get("name")
+            if name and name in name_map:
+                item = dict(item)
+                item["name"] = name_map[name]
+
+        result.append(item)
+
+    return result
+
 # Simple in-memory store for Response objects (FIFO, size-limited)
 _STORE_LOCK = threading.Lock()
 _STORE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
@@ -643,8 +765,43 @@ def responses_create() -> Response:
         if k in payload and payload.get(k) is not None:
             extra_fields[k] = payload.get(k)
 
+    # Handle response_format → text.format conversion (for structured outputs)
+    response_format = payload.get("response_format")
+    if isinstance(response_format, dict):
+        rf_type = response_format.get("type")
+        text_format: Dict[str, Any] = {}
+
+        if rf_type == "text":
+            text_format["type"] = "text"
+        elif rf_type == "json_schema":
+            text_format["type"] = "json_schema"
+            json_schema = response_format.get("json_schema", {})
+            if isinstance(json_schema, dict):
+                if "name" in json_schema:
+                    text_format["name"] = json_schema["name"]
+                if "strict" in json_schema:
+                    text_format["strict"] = json_schema["strict"]
+                if "schema" in json_schema:
+                    text_format["schema"] = json_schema["schema"]
+        elif rf_type == "json_object":
+            text_format["type"] = "json_object"
+
+        if text_format:
+            extra_fields["text"] = {"format": text_format}
+            if debug:
+                print(f"[responses] mapped response_format to text.format: {rf_type}")
+
     # Store flag for local use (not forwarded upstream)
     store_locally = bool(payload.get("store", False))
+
+    # Shorten tool names if needed (64 char limit)
+    tool_name_map = _build_tool_name_map(tools_responses)
+    if tool_name_map:
+        tools_responses = _apply_tool_name_shortening(tools_responses, tool_name_map)
+        # Also shorten tool names referenced in input items (function_call items)
+        input_items = _apply_tool_name_shortening_to_input(input_items, tool_name_map)
+        if debug:
+            print(f"[responses] shortened {len(tool_name_map)} tool names")
 
     # Normalize content fields for upstream compatibility
     input_items = _normalize_content_for_upstream(input_items, debug=debug)

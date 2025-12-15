@@ -127,7 +127,7 @@ def start_upstream_request(
         "reasoning",
     }
     # Note: Some parameters may work with ChatGPT backend even if not in official OpenAI docs
-    _allowed = {"temperature", "top_p", "seed", "max_output_tokens", "metadata", "stop", "truncation"}
+    _allowed = {"temperature", "top_p", "seed", "max_output_tokens", "metadata", "stop", "truncation", "text"}
     if isinstance(extra_fields, dict):
         for k, v in extra_fields.items():
             if v is None:
