@@ -268,8 +268,10 @@ def _flatten_content_array(content: List[Any]) -> str:
 def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Normalize content fields for ChatGPT upstream compatibility.
 
-    ChatGPT upstream has stricter requirements than OpenAI API.
-    VERY AGGRESSIVE: Flatten ALL content arrays to strings for ALL roles.
+    Different item types have different content requirements:
+    - function_call: content must be [] or absent
+    - function_call_output: uses 'output' field, not 'content'
+    - message (user/assistant): content as array of input_text/output_text items
     """
     result: List[Dict[str, Any]] = []
 
@@ -278,11 +280,77 @@ def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[st
             continue
 
         item = dict(item)  # shallow copy
+        item_type = item.get("type")
+        role = item.get("role")
         content = item.get("content")
 
-        # Flatten ALL content arrays to string - ChatGPT is very strict
-        if isinstance(content, list):
-            item["content"] = _flatten_content_array(content)
+        # function_call items: content must be empty array or absent
+        if item_type == "function_call":
+            if "content" in item:
+                item["content"] = []
+
+        # function_call_output items: should use 'output', not 'content'
+        elif item_type == "function_call_output":
+            # If has content but no output, move content to output
+            if "content" in item and "output" not in item:
+                if isinstance(content, list):
+                    item["output"] = _flatten_content_array(content)
+                elif isinstance(content, str):
+                    item["output"] = content
+                del item["content"]
+            elif "content" in item:
+                del item["content"]
+
+        # tool role (Chat Completions style): convert to function_call_output style
+        elif role == "tool":
+            if "type" not in item:
+                item["type"] = "function_call_output"
+            # Convert content to output
+            if "content" in item and "output" not in item:
+                if isinstance(content, list):
+                    item["output"] = _flatten_content_array(content)
+                elif isinstance(content, str):
+                    item["output"] = content
+                del item["content"]
+            elif "content" in item:
+                del item["content"]
+
+        # message items with role: normalize content array
+        elif role in ("user", "assistant", "system"):
+            if isinstance(content, list):
+                # Ensure content items have valid types
+                normalized = []
+                for part in content:
+                    if isinstance(part, dict):
+                        ptype = part.get("type", "")
+                        # Convert chat-style types to responses-style
+                        if ptype == "text":
+                            if role == "assistant":
+                                normalized.append({"type": "output_text", "text": part.get("text", "")})
+                            else:
+                                normalized.append({"type": "input_text", "text": part.get("text", "")})
+                        elif ptype in ("input_text", "output_text", "input_image", "refusal", "summary_text"):
+                            normalized.append(part)
+                        elif "text" in part:
+                            # Unknown type but has text - convert
+                            if role == "assistant":
+                                normalized.append({"type": "output_text", "text": part.get("text", "")})
+                            else:
+                                normalized.append({"type": "input_text", "text": part.get("text", "")})
+                        else:
+                            normalized.append(part)
+                    elif isinstance(part, str):
+                        if role == "assistant":
+                            normalized.append({"type": "output_text", "text": part})
+                        else:
+                            normalized.append({"type": "input_text", "text": part})
+                item["content"] = normalized
+            elif isinstance(content, str) and content:
+                # String content - wrap in array
+                if role == "assistant":
+                    item["content"] = [{"type": "output_text", "text": content}]
+                else:
+                    item["content"] = [{"type": "input_text", "text": content}]
 
         result.append(item)
 
