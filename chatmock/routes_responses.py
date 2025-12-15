@@ -245,84 +245,44 @@ def _sanitize_input_remove_refs(items: List[Dict[str, Any]]) -> List[Dict[str, A
     return result
 
 
+def _flatten_content_array(content: List[Any]) -> str:
+    """Flatten a content array to a single string."""
+    text_parts = []
+    for part in content:
+        if isinstance(part, dict):
+            # Try various text fields
+            for key in ("text", "content", "output", "result"):
+                if key in part and isinstance(part[key], str):
+                    text_parts.append(part[key])
+                    break
+            else:
+                # No text field found, try to stringify
+                ptype = part.get("type", "")
+                if ptype in ("text", "input_text", "output_text"):
+                    text_parts.append(str(part.get("text", "")))
+        elif isinstance(part, str):
+            text_parts.append(part)
+    return "\n".join(text_parts) if text_parts else ""
+
+
 def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Normalize content fields for ChatGPT upstream compatibility.
 
-    ChatGPT upstream has stricter requirements than OpenAI API:
-    - Tool/function results should have content as string, not array
-    - Some message types don't accept content arrays
-    - Multipart content arrays need to be flattened for certain roles
+    ChatGPT upstream has stricter requirements than OpenAI API.
+    VERY AGGRESSIVE: Flatten ALL content arrays to strings for ALL roles.
     """
     result: List[Dict[str, Any]] = []
 
-    for item in items:
+    for idx, item in enumerate(items):
         if not isinstance(item, dict):
             continue
 
         item = dict(item)  # shallow copy
-        role = item.get("role")
         content = item.get("content")
-        item_type = item.get("type")
 
-        # For tool/function results, content must be a string
-        if role == "tool" or item_type in ("function_call_output", "tool_result"):
-            if isinstance(content, list):
-                # Flatten array content to string
-                text_parts = []
-                for part in content:
-                    if isinstance(part, dict):
-                        if part.get("type") in ("text", "input_text", "output_text"):
-                            text_parts.append(str(part.get("text", "")))
-                        elif "text" in part:
-                            text_parts.append(str(part.get("text", "")))
-                    elif isinstance(part, str):
-                        text_parts.append(part)
-                item["content"] = "\n".join(text_parts) if text_parts else ""
-
-        # For assistant messages with tool_calls, content should be null/empty or string
-        elif role == "assistant":
-            if isinstance(content, list):
-                # Check if it's purely text content - if so, flatten to string
-                all_text = True
-                text_parts = []
-                for part in content:
-                    if isinstance(part, dict):
-                        ptype = part.get("type", "")
-                        if ptype in ("text", "input_text", "output_text"):
-                            text_parts.append(str(part.get("text", "")))
-                        elif ptype in ("tool_use", "function_call"):
-                            all_text = False
-                            break
-                        else:
-                            all_text = False
-                            break
-                    elif isinstance(part, str):
-                        text_parts.append(part)
-                    else:
-                        all_text = False
-                        break
-
-                if all_text and text_parts:
-                    item["content"] = "\n".join(text_parts)
-                elif all_text and not text_parts:
-                    item["content"] = ""
-                # else: keep as array (might have tool calls)
-
-        # For user messages, keep array format but ensure it's valid
-        elif role == "user":
-            if isinstance(content, list):
-                normalized_parts = []
-                for part in content:
-                    if isinstance(part, dict):
-                        normalized_parts.append(part)
-                    elif isinstance(part, str):
-                        normalized_parts.append({"type": "input_text", "text": part})
-                if normalized_parts:
-                    item["content"] = normalized_parts
-                else:
-                    item["content"] = ""
-            elif content is None:
-                item["content"] = ""
+        # Flatten ALL content arrays to string - ChatGPT is very strict
+        if isinstance(content, list):
+            item["content"] = _flatten_content_array(content)
 
         result.append(item)
 
