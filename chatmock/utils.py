@@ -509,8 +509,18 @@ def sse_translate_chat(
                         for whole in ('parameters','args','arguments','input'):
                             if isinstance(src.get(whole), dict):
                                 params_dict.update(src.get(whole))
+                            elif isinstance(src.get(whole), str):
+                                try:
+                                    parsed = json.loads(src.get(whole))
+                                    if isinstance(parsed, dict):
+                                        params_dict.update(parsed)
+                                except (json.JSONDecodeError, ValueError, TypeError):
+                                    pass
                         if isinstance(src.get('query'), str): params_dict.setdefault('query', src.get('query'))
                         if isinstance(src.get('q'), str): params_dict.setdefault('query', src.get('q'))
+                        if isinstance(src.get('search_query'), str): params_dict.setdefault('query', src.get('search_query'))
+                        if isinstance(src.get('search_input'), str): params_dict.setdefault('query', src.get('search_input'))
+                        if isinstance(src.get('text'), str): params_dict.setdefault('query', src.get('text'))
                         for rk in ('recency','time_range','days'):
                             if src.get(rk) is not None and rk not in params_dict: params_dict[rk] = src.get(rk)
                         for dk in ('domains','include_domains','include'):
@@ -595,13 +605,23 @@ def sse_translate_chat(
                 if isinstance(item, dict) and (item.get("type") == "function_call" or item.get("type") == "web_search_call"):
                     call_id = item.get("call_id") or item.get("id") or ""
                     name = item.get("name") or ("web_search" if item.get("type") == "web_search_call" else "")
-                    raw_args = item.get("arguments") or item.get("parameters")
+                    raw_args = item.get("arguments") or item.get("parameters") or item.get("input") or item.get("query")
+                    if isinstance(raw_args, str):
+                        try:
+                            parsed_args = json.loads(raw_args)
+                            if isinstance(parsed_args, dict):
+                                raw_args = parsed_args
+                        except (json.JSONDecodeError, ValueError, TypeError):
+                            if item.get("type") == "web_search_call":
+                                raw_args = {"query": raw_args}
                     if isinstance(raw_args, dict):
                         try:
                             ws_state.setdefault(call_id, {}).update(raw_args)
                         except Exception:
                             pass
                     eff_args = ws_state.get(call_id, raw_args if isinstance(raw_args, (dict, list, str)) else {})
+                    if item.get("type") == "web_search_call" and (not eff_args or (isinstance(eff_args, dict) and not eff_args.get('query'))):
+                        eff_args = ws_state.get(call_id, {}) or {}
                     try:
                         args = _serialize_tool_args(eff_args)
                     except Exception:
