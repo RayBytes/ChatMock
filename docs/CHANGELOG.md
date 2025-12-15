@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.4.7] - 2025-01-XX
+## [1.4.8] - 2025-12-15
+
+### Added
+- **Smart Input Normalization**: Properly handle different Responses API item types
+  - Reasoning items: content moved to summary, preserving reasoning text
+  - Function calls: content cleared as required by upstream
+  - Function outputs: content converted to output field
+  - Messages: content types normalized (input_text/output_text)
+- **Tool Name Shortening**: Auto-shorten MCP tool names exceeding 64 char limit
+  - `mcp__thinking-patterns__visual_reasoning` → `mcp__visual_reasoning`
+  - Unique suffixes (~1, ~2) if needed
+- **Structured Outputs**: `response_format` → `text.format` mapping
+  - Supports json_schema, json_object, text types
+- **Official Instructions Detection**: Skip base prompt if client sends official Codex CLI prompt
+  - Saves ~2-3K context tokens
+- **JSON Payload Dump**: With `VERBOSE=true`, saves full request to `responses_last_request.json`
+- **Normalization Stats Logging**: `[normalize] reasoning:2 moved to summary`
+
+### Fixed
+- **Reasoning Items Error**: Fixed "array too long" error for reasoning items
+  - ChatGPT upstream requires content: [] for reasoning type
+- **Content Array Handling**: Proper normalization by item type, not just role
+
+## [1.4.7] - 2025-12-14
 
 ### Added
 - **API Key Authentication**: Protect your ChatMock instance with API key authentication
