@@ -265,15 +265,56 @@ def _flatten_content_array(content: List[Any]) -> str:
     return "\n".join(text_parts) if text_parts else ""
 
 
-def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+class _NormalizationStats:
+    """Track normalization changes for logging."""
+    def __init__(self):
+        self.reasoning_content_moved = 0
+        self.reasoning_content_cleared = 0
+        self.function_call_cleared = 0
+        self.function_output_converted = 0
+        self.tool_role_converted = 0
+        self.message_content_normalized = 0
+
+    def has_changes(self) -> bool:
+        return any([
+            self.reasoning_content_moved,
+            self.reasoning_content_cleared,
+            self.function_call_cleared,
+            self.function_output_converted,
+            self.tool_role_converted,
+            self.message_content_normalized,
+        ])
+
+    def summary(self) -> str:
+        parts = []
+        if self.reasoning_content_moved:
+            parts.append(f"reasoning:{self.reasoning_content_moved} moved to summary")
+        if self.reasoning_content_cleared:
+            parts.append(f"reasoning:{self.reasoning_content_cleared} cleared")
+        if self.function_call_cleared:
+            parts.append(f"function_call:{self.function_call_cleared} cleared")
+        if self.function_output_converted:
+            parts.append(f"function_output:{self.function_output_converted} converted")
+        if self.tool_role_converted:
+            parts.append(f"tool_role:{self.tool_role_converted} converted")
+        if self.message_content_normalized:
+            parts.append(f"messages:{self.message_content_normalized} normalized")
+        return ", ".join(parts) if parts else "no changes"
+
+
+def _normalize_content_for_upstream(items: List[Dict[str, Any]], debug: bool = False) -> List[Dict[str, Any]]:
     """Normalize content fields for ChatGPT upstream compatibility.
 
-    Different item types have different content requirements:
-    - function_call: content must be [] or absent
-    - function_call_output: uses 'output' field, not 'content'
-    - message (user/assistant): content as array of input_text/output_text items
+    Smart normalization that preserves data where possible:
+    - reasoning: move content to summary (preserves reasoning text), clear content
+    - function_call: content must be []
+    - function_call_output: content -> output field
+    - messages: normalize content types (input_text/output_text)
+
+    Returns normalized items. Logs changes when debug=True.
     """
     result: List[Dict[str, Any]] = []
+    stats = _NormalizationStats()
 
     for idx, item in enumerate(items):
         if not isinstance(item, dict):
@@ -286,22 +327,40 @@ def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[st
 
         # function_call items: content must be empty array or absent
         if item_type == "function_call":
-            if "content" in item:
+            if "content" in item and item["content"]:
                 item["content"] = []
+                stats.function_call_cleared += 1
 
-        # reasoning items: content must be empty array (reasoning goes in summary)
+        # reasoning items: preserve reasoning by moving to summary
         elif item_type == "reasoning":
-            # Move content to summary if summary is empty
-            if isinstance(content, list) and content:
-                summary = item.get("summary", [])
-                if not summary:
-                    # Extract text from reasoning_text items
-                    texts = []
-                    for part in content:
-                        if isinstance(part, dict) and part.get("type") == "reasoning_text":
+            content_had_data = isinstance(content, list) and len(content) > 0
+
+            if content_had_data:
+                # Check if we have encrypted_content (preferred for multi-turn)
+                has_encrypted = bool(item.get("encrypted_content"))
+
+                # Extract text from reasoning_text items
+                texts = []
+                for part in content:
+                    if isinstance(part, dict):
+                        if part.get("type") == "reasoning_text":
                             texts.append(part.get("text", ""))
-                    if texts:
-                        item["summary"] = [{"type": "summary_text", "text": "".join(texts)}]
+                        elif "text" in part:
+                            texts.append(str(part.get("text", "")))
+
+                # Move to summary if we have text and summary is empty/missing
+                summary = item.get("summary", [])
+                if texts and not summary:
+                    combined_text = "".join(texts)
+                    item["summary"] = [{"type": "summary_text", "text": combined_text}]
+                    stats.reasoning_content_moved += 1
+                    if debug:
+                        preview = combined_text[:50] + "..." if len(combined_text) > 50 else combined_text
+                        print(f"[normalize] item[{idx}] reasoning: moved {len(texts)} parts to summary: {preview!r}")
+                else:
+                    stats.reasoning_content_cleared += 1
+
+            # Always clear content for reasoning (upstream requirement)
             item["content"] = []
 
         # function_call_output items: should use 'output', not 'content'
@@ -313,8 +372,10 @@ def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[st
                 elif isinstance(content, str):
                     item["output"] = content
                 del item["content"]
+                stats.function_output_converted += 1
             elif "content" in item:
                 del item["content"]
+                stats.function_output_converted += 1
 
         # tool role (Chat Completions style): convert to function_call_output style
         elif role == "tool":
@@ -327,11 +388,14 @@ def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[st
                 elif isinstance(content, str):
                     item["output"] = content
                 del item["content"]
+                stats.tool_role_converted += 1
             elif "content" in item:
                 del item["content"]
+                stats.tool_role_converted += 1
 
         # message items with role: normalize content array
         elif role in ("user", "assistant", "system"):
+            needs_normalization = False
             if isinstance(content, list):
                 # Ensure content items have valid types
                 normalized = []
@@ -344,6 +408,7 @@ def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[st
                                 normalized.append({"type": "output_text", "text": part.get("text", "")})
                             else:
                                 normalized.append({"type": "input_text", "text": part.get("text", "")})
+                            needs_normalization = True
                         elif ptype in ("input_text", "output_text", "input_image", "refusal", "summary_text"):
                             normalized.append(part)
                         elif "text" in part:
@@ -352,6 +417,7 @@ def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[st
                                 normalized.append({"type": "output_text", "text": part.get("text", "")})
                             else:
                                 normalized.append({"type": "input_text", "text": part.get("text", "")})
+                            needs_normalization = True
                         else:
                             normalized.append(part)
                     elif isinstance(part, str):
@@ -359,15 +425,23 @@ def _normalize_content_for_upstream(items: List[Dict[str, Any]]) -> List[Dict[st
                             normalized.append({"type": "output_text", "text": part})
                         else:
                             normalized.append({"type": "input_text", "text": part})
+                        needs_normalization = True
                 item["content"] = normalized
+                if needs_normalization:
+                    stats.message_content_normalized += 1
             elif isinstance(content, str) and content:
                 # String content - wrap in array
                 if role == "assistant":
                     item["content"] = [{"type": "output_text", "text": content}]
                 else:
                     item["content"] = [{"type": "input_text", "text": content}]
+                stats.message_content_normalized += 1
 
         result.append(item)
+
+    # Log normalization summary
+    if debug and stats.has_changes():
+        print(f"[normalize] {stats.summary()}")
 
     return result
 
@@ -573,7 +647,7 @@ def responses_create() -> Response:
     store_locally = bool(payload.get("store", False))
 
     # Normalize content fields for upstream compatibility
-    input_items = _normalize_content_for_upstream(input_items)
+    input_items = _normalize_content_for_upstream(input_items, debug=debug)
 
     if debug:
         print(f"[responses] sending {len(input_items)} input items to upstream")
