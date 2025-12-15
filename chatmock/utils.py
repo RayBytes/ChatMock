@@ -511,21 +511,51 @@ def sse_translate_chat(
                     def _merge_from(src):
                         if not isinstance(src, dict):
                             return
-                        for whole in ('parameters','args','arguments','input'):
-                            if isinstance(src.get(whole), dict):
-                                params_dict.update(src.get(whole))
-                            elif isinstance(src.get(whole), str):
+                        # Level 1: Direct parameter containers
+                        for whole in ('parameters','args','arguments','input','action'):
+                            val = src.get(whole)
+                            if isinstance(val, dict):
+                                params_dict.update(val)
+                            elif isinstance(val, str):
                                 try:
-                                    parsed = json.loads(src.get(whole))
+                                    parsed = json.loads(val)
                                     if isinstance(parsed, dict):
                                         params_dict.update(parsed)
                                 except (json.JSONDecodeError, ValueError, TypeError):
                                     pass
-                        if isinstance(src.get('query'), str): params_dict.setdefault('query', src.get('query'))
-                        if isinstance(src.get('q'), str): params_dict.setdefault('query', src.get('q'))
-                        if isinstance(src.get('search_query'), str): params_dict.setdefault('query', src.get('search_query'))
-                        if isinstance(src.get('search_input'), str): params_dict.setdefault('query', src.get('search_input'))
-                        if isinstance(src.get('text'), str): params_dict.setdefault('query', src.get('text'))
+                        # Level 2: Nested structures like action.parameters
+                        for container_key in ('action', 'call', 'invoke', 'request'):
+                            container = src.get(container_key)
+                            if isinstance(container, dict):
+                                for param_key in ('parameters','args','arguments','input'):
+                                    val = container.get(param_key)
+                                    if isinstance(val, dict):
+                                        params_dict.update(val)
+                                    elif isinstance(val, str):
+                                        try:
+                                            parsed = json.loads(val)
+                                            if isinstance(parsed, dict):
+                                                params_dict.update(parsed)
+                                        except (json.JSONDecodeError, ValueError, TypeError):
+                                            pass
+                        # Query field extraction with fallbacks
+                        if isinstance(src.get('query'), str): 
+                            params_dict.setdefault('query', src.get('query'))
+                        if isinstance(src.get('q'), str): 
+                            params_dict.setdefault('query', src.get('q'))
+                        if isinstance(src.get('search_query'), str): 
+                            params_dict.setdefault('query', src.get('search_query'))
+                        if isinstance(src.get('search_input'), str): 
+                            params_dict.setdefault('query', src.get('search_input'))
+                        if isinstance(src.get('text'), str) and not params_dict.get('query'): 
+                            params_dict['query'] = src.get('text')
+                        # Check nested action for query
+                        if isinstance(src.get('action'), dict):
+                            action = src.get('action')
+                            for qfield in ('query', 'q', 'search_query', 'search_input', 'text'):
+                                if isinstance(action.get(qfield), str):
+                                    params_dict.setdefault('query', action.get(qfield))
+                        # Other parameters
                         for rk in ('recency','time_range','days'):
                             if src.get(rk) is not None and rk not in params_dict: params_dict[rk] = src.get(rk)
                         for dk in ('domains','include_domains','include'):
@@ -630,7 +660,15 @@ def sse_translate_chat(
                 if isinstance(item, dict) and (item.get("type") == "function_call" or item.get("type") == "web_search_call"):
                     call_id = item.get("call_id") or item.get("id") or ""
                     name = item.get("name") or ("web_search" if item.get("type") == "web_search_call" else "")
-                    raw_args = item.get("arguments") or item.get("parameters") or item.get("input") or item.get("query")
+                    # Try to extract raw_args from multiple possible locations
+                    raw_args = None
+                    for key in ('arguments', 'parameters', 'input', 'action', 'query', 'q'):
+                        if key in item:
+                            raw_args = item.get(key)
+                            break
+                    if raw_args is None:
+                        raw_args = {}
+                    # Parse JSON strings
                     if isinstance(raw_args, str):
                         try:
                             parsed_args = json.loads(raw_args)
@@ -639,6 +677,20 @@ def sse_translate_chat(
                         except (json.JSONDecodeError, ValueError, TypeError):
                             if item.get("type") == "web_search_call":
                                 raw_args = {"query": raw_args}
+                    # For web_search_call, also check if action.parameters has the query
+                    if item.get("type") == "web_search_call" and isinstance(item.get("action"), dict):
+                        action = item.get("action")
+                        if isinstance(action.get("parameters"), dict):
+                            if not isinstance(raw_args, dict):
+                                raw_args = {}
+                            raw_args.update(action.get("parameters"))
+                        # Check for query in action fields
+                        for qkey in ('query', 'q', 'search_query', 'search_input'):
+                            if qkey in action and not (isinstance(raw_args, dict) and raw_args.get('query')):
+                                if isinstance(raw_args, dict):
+                                    raw_args.setdefault('query', action.get(qkey))
+                                else:
+                                    raw_args = {"query": action.get(qkey)}
                     if isinstance(raw_args, dict):
                         try:
                             ws_state.setdefault(call_id, {}).update(raw_args)
