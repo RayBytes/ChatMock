@@ -207,6 +207,12 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
 
 
 def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
+    """Convert tools from Chat Completions format to Responses API format.
+
+    Handles both formats:
+    - Nested (Chat Completions): {type: "function", function: {name, description, parameters}}
+    - Flat (Responses API / Cursor): {type: "function", name, description, parameters}
+    """
     out: List[Dict[str, Any]] = []
     if not isinstance(tools, list):
         return out
@@ -215,14 +221,24 @@ def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
             continue
         if t.get("type") != "function":
             continue
-        fn = t.get("function") if isinstance(t.get("function"), dict) else {}
-        name = fn.get("name") if isinstance(fn, dict) else None
+
+        # Try nested format first (Chat Completions API)
+        fn = t.get("function") if isinstance(t.get("function"), dict) else None
+        if fn is not None:
+            name = fn.get("name")
+            desc = fn.get("description")
+            params = fn.get("parameters")
+        else:
+            # Flat format (Responses API / Cursor style)
+            name = t.get("name")
+            desc = t.get("description")
+            params = t.get("parameters")
+
         if not isinstance(name, str) or not name:
             continue
-        desc = fn.get("description") if isinstance(fn, dict) else None
-        params = fn.get("parameters") if isinstance(fn, dict) else None
         if not isinstance(params, dict):
             params = {"type": "object", "properties": {}}
+
         out.append(
             {
                 "type": "function",
