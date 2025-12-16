@@ -254,6 +254,45 @@ def chat_completions() -> Response:
         allowed_efforts=allowed_efforts_for_model(model),
     )
 
+    # Extract passthrough fields (temperature, top_p, etc.)
+    passthrough_keys = ["temperature", "top_p", "seed", "stop", "metadata", "max_output_tokens", "truncation"]
+    extra_fields: Dict[str, Any] = {}
+    for k in passthrough_keys:
+        if k in payload and payload.get(k) is not None:
+            extra_fields[k] = payload.get(k)
+
+    # Handle max_tokens → max_output_tokens mapping (Chat Completions uses max_tokens)
+    if "max_tokens" in payload and payload.get("max_tokens") is not None:
+        extra_fields["max_output_tokens"] = payload.get("max_tokens")
+    if "max_completion_tokens" in payload and payload.get("max_completion_tokens") is not None:
+        extra_fields["max_output_tokens"] = payload.get("max_completion_tokens")
+
+    # Handle response_format → text.format conversion (for structured outputs)
+    response_format = payload.get("response_format")
+    if isinstance(response_format, dict):
+        rf_type = response_format.get("type")
+        text_format: Dict[str, Any] = {}
+
+        if rf_type == "text":
+            text_format["type"] = "text"
+        elif rf_type == "json_schema":
+            text_format["type"] = "json_schema"
+            json_schema = response_format.get("json_schema", {})
+            if isinstance(json_schema, dict):
+                if "name" in json_schema:
+                    text_format["name"] = json_schema["name"]
+                if "strict" in json_schema:
+                    text_format["strict"] = json_schema["strict"]
+                if "schema" in json_schema:
+                    text_format["schema"] = json_schema["schema"]
+        elif rf_type == "json_object":
+            text_format["type"] = "json_object"
+
+        if text_format:
+            extra_fields["text"] = {"format": text_format}
+            if debug:
+                print(f"[chat/completions] mapped response_format to text.format: {rf_type}")
+
     # Debug: dump full request before sending upstream
     dump_request(
         "chat_completions",
@@ -264,6 +303,7 @@ def chat_completions() -> Response:
             "tools_count": len(tools_responses) if tools_responses else 0,
             "tool_choice": tool_choice,
             "reasoning": reasoning_param,
+            "extra_fields": extra_fields,
         },
         extra={"requested_model": requested_model},
     )
@@ -276,6 +316,7 @@ def chat_completions() -> Response:
         tool_choice=tool_choice,
         parallel_tool_calls=parallel_tool_calls,
         reasoning_param=reasoning_param,
+        extra_fields=extra_fields,
     )
     if error_resp is not None:
         response_time = time.time() - start_time
@@ -323,6 +364,7 @@ def chat_completions() -> Response:
                 tool_choice=safe_choice,
                 parallel_tool_calls=parallel_tool_calls,
                 reasoning_param=reasoning_param,
+                extra_fields=extra_fields,
             )
             record_rate_limits_from_response(upstream2)
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
