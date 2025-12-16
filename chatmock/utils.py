@@ -457,6 +457,7 @@ def sse_translate_chat(
     ws_index: dict[str, int] = {}
     ws_next_index: int = 0
     debug_stream = bool(os.getenv("CHATMOCK_DEBUG_STREAM"))
+    _accumulated_text = []  # For debug logging
     
     def _serialize_tool_args(eff_args: Any) -> str:
         """
@@ -676,6 +677,8 @@ def sse_translate_chat(
 
             if kind == "response.output_text.delta":
                 delta = evt.get("delta") or ""
+                if debug_stream:
+                    _accumulated_text.append(delta)
                 if compat == "think-tags" and think_open and not think_closed:
                     close_chunk = {
                         "id": response_id,
@@ -916,6 +919,9 @@ def sse_translate_chat(
             elif kind == "response.completed":
                 if debug_stream:
                     print(f"[STREAM] response.completed received, sent_stop_chunk={sent_stop_chunk}")
+                    if _accumulated_text and not sent_stop_chunk:
+                        text_preview = "".join(_accumulated_text)[:500]
+                        print(f"[STREAM] Model text output (no tools): {text_preview!r}")
                 m = _extract_usage(evt)
                 if m:
                     upstream_usage = m
