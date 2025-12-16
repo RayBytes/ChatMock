@@ -456,6 +456,7 @@ def sse_translate_chat(
     ws_state: dict[str, Any] = {}
     ws_index: dict[str, int] = {}
     ws_next_index: int = 0
+    debug_stream = bool(os.getenv("CHATMOCK_DEBUG_STREAM"))
     
     def _serialize_tool_args(eff_args: Any) -> str:
         """
@@ -795,6 +796,8 @@ def sse_translate_chat(
                             "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
                         }
                         yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
+                        if debug_stream:
+                            print(f"[STREAM] Sent finish_reason=tool_calls for {name}")
                         sent_stop_chunk = True  # Prevent sending "stop" after "tool_calls"
             elif kind == "response.reasoning_summary_part.added":
                 if compat in ("think-tags", "o3"):
@@ -903,12 +906,16 @@ def sse_translate_chat(
                     "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                 }
                 yield f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
+                if debug_stream:
+                    print(f"[STREAM] Sent finish_reason=stop (output_text.done)")
                 sent_stop_chunk = True
             elif kind == "response.failed":
                 err = evt.get("response", {}).get("error", {}).get("message", "response.failed")
                 chunk = {"error": {"message": err}}
                 yield f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
             elif kind == "response.completed":
+                if debug_stream:
+                    print(f"[STREAM] response.completed received, sent_stop_chunk={sent_stop_chunk}")
                 m = _extract_usage(evt)
                 if m:
                     upstream_usage = m
@@ -932,7 +939,11 @@ def sse_translate_chat(
                         "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                     }
                     yield f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
+                    if debug_stream:
+                        print(f"[STREAM] Sent finish_reason=stop (response.completed, no prior stop)")
                     sent_stop_chunk = True
+                elif debug_stream:
+                    print(f"[STREAM] Skipped stop (already sent_stop_chunk=True)")
 
                 if include_usage and upstream_usage:
                     try:
