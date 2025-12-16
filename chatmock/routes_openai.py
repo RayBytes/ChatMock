@@ -255,7 +255,10 @@ def chat_completions() -> Response:
     )
 
     # Extract passthrough fields (temperature, top_p, etc.)
-    passthrough_keys = ["temperature", "top_p", "seed", "stop", "metadata", "max_output_tokens", "truncation"]
+    passthrough_keys = [
+        "temperature", "top_p", "seed", "stop", "metadata", "max_output_tokens", "truncation",
+        "frequency_penalty", "presence_penalty", "user", "service_tier", "logprobs", "top_logprobs",
+    ]
     extra_fields: Dict[str, Any] = {}
     for k in passthrough_keys:
         if k in payload and payload.get(k) is not None:
