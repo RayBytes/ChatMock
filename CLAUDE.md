@@ -11,6 +11,26 @@ When creating PRs, always use `--repo thebtf/chatmock` to ensure the PR is creat
 
 ---
 
+## Workflow Rules
+
+### Release Process
+- **NEVER create releases automatically** - wait for explicit user command ("делай релиз", "create release", etc.)
+- Commits and pushes are OK without asking
+- Always push to `origin` (user's fork) after commits
+
+### Debugging ChatMock
+Key issues discovered during Cursor integration debugging:
+
+1. **Mixed format input** (v1.4.10): Cursor sends messages to `/v1/chat/completions` with mixed format - some items have `role` (Chat format), some have `type` (Responses API format like `function_call`, `function_call_output`). The `convert_chat_messages_to_responses_input()` function must pass through Responses API format items.
+
+2. **Double finish_reason** (v1.4.11): After sending `finish_reason: "tool_calls"`, must set `sent_stop_chunk = True` to prevent sending another `finish_reason: "stop"` on `response.completed`. Otherwise clients stop the agent loop prematurely.
+
+3. **Unsupported parameters**: ChatGPT internal API doesn't support `metadata` and `user` parameters - they cause 400 errors with `{"detail": "Unsupported parameter: X"}`.
+
+4. **Debug files location**: `A:\chatmock\data\debug_*.json` (set via `CHATGPT_LOCAL_HOME`)
+
+---
+
 ## Project Description
 
 ChatMock is an open-source tool that provides OpenAI and Ollama compatible API access powered by your ChatGPT Plus/Pro account. It allows developers to use GPT-5, GPT-5.1, GPT-5-Codex, and other advanced models through their authenticated ChatGPT account without requiring a separate OpenAI API key.
