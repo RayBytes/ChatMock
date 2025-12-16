@@ -255,10 +255,10 @@ def chat_completions() -> Response:
     )
 
     # Extract passthrough fields (temperature, top_p, etc.)
-    # Note: metadata is NOT supported by ChatGPT internal API
+    # NOT supported by ChatGPT internal API: metadata, user
     passthrough_keys = [
         "temperature", "top_p", "seed", "stop", "max_output_tokens", "truncation",
-        "frequency_penalty", "presence_penalty", "user", "service_tier", "logprobs", "top_logprobs",
+        "frequency_penalty", "presence_penalty", "service_tier", "logprobs", "top_logprobs",
     ]
     extra_fields: Dict[str, Any] = {}
     for k in passthrough_keys:

@@ -127,10 +127,10 @@ def start_upstream_request(
         "reasoning",
     }
     # Note: Some parameters may work with ChatGPT backend even if not in official OpenAI docs
-    # metadata is NOT supported by ChatGPT internal API (returns "Unsupported parameter: metadata")
+    # NOT supported by ChatGPT internal API: metadata, user
     _allowed = {
         "temperature", "top_p", "seed", "max_output_tokens", "stop", "truncation", "text",
-        "frequency_penalty", "presence_penalty", "user", "service_tier", "logprobs", "top_logprobs",
+        "frequency_penalty", "presence_penalty", "service_tier", "logprobs", "top_logprobs",
     }
     if isinstance(extra_fields, dict):
         for k, v in extra_fields.items():
