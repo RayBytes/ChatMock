@@ -48,6 +48,35 @@ BASE_INSTRUCTIONS = read_base_instructions()
 GPT5_CODEX_INSTRUCTIONS = read_gpt5_codex_instructions(BASE_INSTRUCTIONS)
 
 
+# Known official prompt prefixes - if client sends these, don't prepend our own
+OFFICIAL_PROMPT_PREFIXES = (
+    "You are GPT-5",
+    "You are GPT-4",
+    "You are a coding agent running in the Codex CLI",
+    "You are an AI assistant",
+    "You are an AI coding agent",  # Cursor
+    "You are Claude",  # Claude Code
+    # Add more as needed
+)
+
+
+def has_official_instructions(instructions: str | None) -> bool:
+    """Check if instructions already contain an official prompt.
+
+    If client sends official instructions, we don't need to prepend our own
+    (saves context tokens).
+    """
+    if not isinstance(instructions, str) or not instructions.strip():
+        return False
+
+    text = instructions.strip()
+    for prefix in OFFICIAL_PROMPT_PREFIXES:
+        if text.startswith(prefix):
+            return True
+
+    return False
+
+
 # Central model definitions - single source of truth
 # Each model: (id, name, description, capabilities, efforts, experimental)
 AVAILABLE_MODELS = [

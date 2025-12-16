@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
-from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
+from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS, has_official_instructions
 from .debug import dump_request, dump_tools_debug
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
@@ -140,22 +140,31 @@ def chat_completions() -> Response:
             _log_json("OUT POST /v1/chat/completions", err)
         return jsonify(err), 400
 
-    # Log system prompt from client (before conversion to user message)
+    # Handle system prompt from client
+    # If client sends official instructions (e.g., Cursor, Claude Code), use them directly
+    # Otherwise, convert to user message and use ChatMock's base instructions
     client_system_prompt = None
+    client_has_official = False
     log_prompts = os.environ.get("DEBUG_LOG_PROMPTS", "").lower() in ("1", "true", "yes")
+    no_base = bool(current_app.config.get("RESPONSES_NO_BASE_INSTRUCTIONS"))
     if isinstance(messages, list):
         sys_idx = next((i for i, m in enumerate(messages) if isinstance(m, dict) and m.get("role") == "system"), None)
         if isinstance(sys_idx, int):
             sys_msg = messages.pop(sys_idx)
             content = sys_msg.get("content") if isinstance(sys_msg, dict) else ""
             client_system_prompt = content
+            client_has_official = has_official_instructions(content)
             if debug:
                 # Log first 500 chars of system prompt to see what Cursor sends
                 preview = content[:500] if isinstance(content, str) else str(content)[:500]
                 print(f"[chat/completions] CLIENT SYSTEM PROMPT ({len(content) if isinstance(content, str) else '?'} chars):\n{preview}...")
+                if client_has_official:
+                    print(f"[chat/completions] Client has official instructions - will use as instructions")
             if log_prompts and isinstance(content, str) and content:
                 _log_prompt_to_file("debug_cursor_system_prompt.txt", content, "Client System Prompt (from Cursor)")
-            messages.insert(0, {"role": "user", "content": content})
+            # Only convert to user message if NOT using as instructions
+            if not (no_base or client_has_official):
+                messages.insert(0, {"role": "user", "content": content})
     is_stream = bool(payload.get("stream"))
     stream_options = payload.get("stream_options") if isinstance(payload.get("stream_options"), dict) else {}
     include_usage = bool(stream_options.get("include_usage", False))
@@ -337,15 +346,24 @@ def chat_completions() -> Response:
         extra={"requested_model": requested_model},
     )
 
-    # Log which instructions are being used
-    final_instructions = _instructions_for_model(model)
+    # Determine which instructions to use
+    if no_base or client_has_official:
+        # Use client's instructions directly (or fallback)
+        final_instructions = client_system_prompt.strip() if isinstance(client_system_prompt, str) and client_system_prompt.strip() else "You are a helpful assistant."
+        if debug:
+            print(f"[chat/completions] Using CLIENT instructions ({len(final_instructions)} chars)")
+    else:
+        final_instructions = _instructions_for_model(model)
+        if debug:
+            print(f"[chat/completions] Using CHATMOCK instructions ({len(final_instructions)} chars)")
+            if client_system_prompt:
+                print(f"[chat/completions] Client system prompt ({len(client_system_prompt)} chars) was converted to user message")
+
     if debug:
         inst_preview = final_instructions[:300] if isinstance(final_instructions, str) else str(final_instructions)[:300]
-        print(f"[chat/completions] FINAL INSTRUCTIONS ({len(final_instructions) if isinstance(final_instructions, str) else '?'} chars):\n{inst_preview}...")
-        if client_system_prompt:
-            print(f"[chat/completions] WARNING: Client system prompt ({len(client_system_prompt)} chars) was converted to user message, NOT used as instructions!")
+        print(f"[chat/completions] FINAL INSTRUCTIONS preview:\n{inst_preview}...")
     if log_prompts and isinstance(final_instructions, str) and final_instructions:
-        _log_prompt_to_file("debug_chatmock_instructions.txt", final_instructions, "ChatMock Instructions (sent to ChatGPT)")
+        _log_prompt_to_file("debug_chatmock_instructions.txt", final_instructions, "Final Instructions (sent to ChatGPT)")
 
     upstream, error_resp = start_upstream_request(
         model,
