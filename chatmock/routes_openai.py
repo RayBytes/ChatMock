@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, Dict, List
 
@@ -67,6 +68,20 @@ def _instructions_for_model(model: str) -> str:
     return base
 
 
+def _log_prompt_to_file(filename: str, content: str, label: str = "") -> None:
+    """Write prompt to file for detailed analysis. Enable with LOG_PROMPTS=1."""
+    try:
+        log_dir = os.environ.get("CHATMOCK_LOG_DIR", ".")
+        filepath = os.path.join(log_dir, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            if label:
+                f.write(f"=== {label} ===\n\n")
+            f.write(content)
+        print(f"[chat/completions] Wrote {len(content)} chars to {filepath}")
+    except Exception as e:
+        print(f"[chat/completions] Failed to write prompt log: {e}")
+
+
 @openai_bp.route("/v1/chat/completions", methods=["POST"])
 def chat_completions() -> Response:
     from .routes_webui import record_request
@@ -125,11 +140,21 @@ def chat_completions() -> Response:
             _log_json("OUT POST /v1/chat/completions", err)
         return jsonify(err), 400
 
+    # Log system prompt from client (before conversion to user message)
+    client_system_prompt = None
+    log_prompts = os.environ.get("DEBUG_LOG_PROMPTS", "").lower() in ("1", "true", "yes")
     if isinstance(messages, list):
         sys_idx = next((i for i, m in enumerate(messages) if isinstance(m, dict) and m.get("role") == "system"), None)
         if isinstance(sys_idx, int):
             sys_msg = messages.pop(sys_idx)
             content = sys_msg.get("content") if isinstance(sys_msg, dict) else ""
+            client_system_prompt = content
+            if debug:
+                # Log first 500 chars of system prompt to see what Cursor sends
+                preview = content[:500] if isinstance(content, str) else str(content)[:500]
+                print(f"[chat/completions] CLIENT SYSTEM PROMPT ({len(content) if isinstance(content, str) else '?'} chars):\n{preview}...")
+            if log_prompts and isinstance(content, str) and content:
+                _log_prompt_to_file("debug_cursor_system_prompt.txt", content, "Client System Prompt (from Cursor)")
             messages.insert(0, {"role": "user", "content": content})
     is_stream = bool(payload.get("stream"))
     stream_options = payload.get("stream_options") if isinstance(payload.get("stream_options"), dict) else {}
@@ -312,10 +337,20 @@ def chat_completions() -> Response:
         extra={"requested_model": requested_model},
     )
 
+    # Log which instructions are being used
+    final_instructions = _instructions_for_model(model)
+    if debug:
+        inst_preview = final_instructions[:300] if isinstance(final_instructions, str) else str(final_instructions)[:300]
+        print(f"[chat/completions] FINAL INSTRUCTIONS ({len(final_instructions) if isinstance(final_instructions, str) else '?'} chars):\n{inst_preview}...")
+        if client_system_prompt:
+            print(f"[chat/completions] WARNING: Client system prompt ({len(client_system_prompt)} chars) was converted to user message, NOT used as instructions!")
+    if log_prompts and isinstance(final_instructions, str) and final_instructions:
+        _log_prompt_to_file("debug_chatmock_instructions.txt", final_instructions, "ChatMock Instructions (sent to ChatGPT)")
+
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
-        instructions=_instructions_for_model(model),
+        instructions=final_instructions,
         tools=tools_responses,
         tool_choice=tool_choice,
         parallel_tool_calls=parallel_tool_calls,
