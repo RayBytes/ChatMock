@@ -117,7 +117,35 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
     input_items: List[Dict[str, Any]] = []
     seen_function_call_ids: set[str] = set()
     debug_tools = bool(os.getenv("CHATMOCK_DEBUG_TOOLS"))
+
+    # Known Responses API item types that should be passed through directly
+    # Cursor sends mixed format: Chat messages (with role) + Responses API items (with type)
+    _responses_api_types = {"function_call", "function_call_output", "message", "item_reference"}
+
     for message in messages:
+        # Passthrough for items already in Responses API format (type field, no role or role inside)
+        msg_type = message.get("type")
+        if isinstance(msg_type, str) and msg_type in _responses_api_types:
+            # Track function_call IDs for later matching
+            if msg_type == "function_call":
+                call_id = message.get("call_id")
+                if isinstance(call_id, str):
+                    seen_function_call_ids.add(call_id)
+            # For function_call_output, only include if we've seen the matching function_call
+            elif msg_type == "function_call_output":
+                call_id = message.get("call_id")
+                if isinstance(call_id, str) and call_id not in seen_function_call_ids:
+                    if debug_tools:
+                        try:
+                            eprint(
+                                f"[CHATMOCK_DEBUG_TOOLS] passthrough: function_call_output without matching function_call: call_id={call_id!r}"
+                            )
+                        except Exception:
+                            pass
+                    continue
+            input_items.append(message)
+            continue
+
         role = message.get("role")
         if role == "system":
             continue
