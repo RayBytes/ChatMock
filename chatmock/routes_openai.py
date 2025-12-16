@@ -255,8 +255,9 @@ def chat_completions() -> Response:
     )
 
     # Extract passthrough fields (temperature, top_p, etc.)
+    # Note: metadata is NOT supported by ChatGPT internal API
     passthrough_keys = [
-        "temperature", "top_p", "seed", "stop", "metadata", "max_output_tokens", "truncation",
+        "temperature", "top_p", "seed", "stop", "max_output_tokens", "truncation",
         "frequency_penalty", "presence_penalty", "user", "service_tier", "logprobs", "top_logprobs",
     ]
     extra_fields: Dict[str, Any] = {}
@@ -362,7 +363,12 @@ def chat_completions() -> Response:
         except Exception as e:
             err_body = {"raw": f"Error reading response: {e}"}
         # Always log upstream error for debugging
-        upstream_err_msg = (err_body.get("error", {}) or {}).get("message") or err_body.get("raw", "Unknown error")
+        # ChatGPT API returns {"detail": "..."} format, not {"error": {"message": "..."}}
+        upstream_err_msg = (
+            err_body.get("detail")  # ChatGPT format
+            or (err_body.get("error", {}) or {}).get("message")  # OpenAI format
+            or err_body.get("raw", "Unknown error")
+        )
         print(f"[chat/completions] Upstream error ({upstream.status_code}): {upstream_err_msg}")
         if debug:
             _log_json("[chat/completions] Full upstream error", err_body)
@@ -391,7 +397,11 @@ def chat_completions() -> Response:
                         raw_text2 = upstream2.text
                         if raw_text2:
                             err_body2 = json.loads(raw_text2)
-                            retry_err_msg = (err_body2.get("error", {}) or {}).get("message") or raw_text2[:200]
+                            retry_err_msg = (
+                                err_body2.get("detail")  # ChatGPT format
+                                or (err_body2.get("error", {}) or {}).get("message")  # OpenAI format
+                                or raw_text2[:200]
+                            )
                         else:
                             retry_err_msg = f"Empty response, status={upstream2.status_code}"
                         print(f"[chat/completions] Retry also failed ({upstream2.status_code}): {retry_err_msg}")

@@ -795,9 +795,9 @@ def responses_create() -> Response:
     reasoning_param = build_reasoning_param(reasoning_effort, reasoning_summary, reasoning_overrides)
 
     # Passthrough fields (NOT store or previous_response_id - those are local only)
-    # Note: Some parameters may work with ChatGPT backend even if not in official OpenAI docs
+    # Note: metadata is NOT supported by ChatGPT internal API
     passthrough_keys = [
-        "temperature", "top_p", "seed", "stop", "metadata", "max_output_tokens", "truncation",
+        "temperature", "top_p", "seed", "stop", "max_output_tokens", "truncation",
         "frequency_penalty", "presence_penalty", "user", "service_tier", "logprobs", "top_logprobs",
     ]
     extra_fields: Dict[str, Any] = {}
