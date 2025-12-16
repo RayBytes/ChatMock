@@ -354,6 +354,11 @@ def chat_completions() -> Response:
             err_body = json.loads(raw.decode("utf-8", errors="ignore")) if raw else {"raw": upstream.text}
         except Exception:
             err_body = {"raw": upstream.text}
+        # Always log upstream error for debugging
+        upstream_err_msg = (err_body.get("error", {}) or {}).get("message", "Unknown error")
+        print(f"[chat/completions] Upstream error ({upstream.status_code}): {upstream_err_msg}")
+        if debug:
+            _log_json("[chat/completions] Full upstream error", err_body)
         if had_responses_tools:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
@@ -373,9 +378,18 @@ def chat_completions() -> Response:
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
                 upstream = upstream2
             else:
+                # Retry also failed - log the second error
+                if upstream2 is not None:
+                    try:
+                        raw2 = upstream2.content
+                        err_body2 = json.loads(raw2.decode("utf-8", errors="ignore")) if raw2 else {}
+                        retry_err_msg = (err_body2.get("error", {}) or {}).get("message", "Unknown")
+                        print(f"[chat/completions] Retry also failed ({upstream2.status_code}): {retry_err_msg}")
+                    except Exception:
+                        pass
                 err = {
                     "error": {
-                        "message": (err_body.get("error", {}) or {}).get("message", "Upstream error"),
+                        "message": upstream_err_msg,
                         "code": "RESPONSES_TOOLS_REJECTED",
                     }
                 }
