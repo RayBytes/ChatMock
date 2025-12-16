@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS, has_official_instructions
-from .debug import dump_request, dump_tools_debug
+from .debug import dump_prompt, dump_request, dump_tools_debug
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .reasoning import (
@@ -66,20 +66,6 @@ def _instructions_for_model(model: str) -> str:
         if isinstance(codex, str) and codex.strip():
             return codex
     return base
-
-
-def _log_prompt_to_file(filename: str, content: str, label: str = "") -> None:
-    """Write prompt to file for detailed analysis. Enable with LOG_PROMPTS=1."""
-    try:
-        log_dir = os.environ.get("CHATMOCK_LOG_DIR", ".")
-        filepath = os.path.join(log_dir, filename)
-        with open(filepath, "w", encoding="utf-8") as f:
-            if label:
-                f.write(f"=== {label} ===\n\n")
-            f.write(content)
-        print(f"[chat/completions] Wrote {len(content)} chars to {filepath}")
-    except Exception as e:
-        print(f"[chat/completions] Failed to write prompt log: {e}")
 
 
 @openai_bp.route("/v1/chat/completions", methods=["POST"])
@@ -161,7 +147,7 @@ def chat_completions() -> Response:
                 if client_has_official:
                     print(f"[chat/completions] Client has official instructions - will use as instructions")
             if log_prompts and isinstance(content, str) and content:
-                _log_prompt_to_file("debug_cursor_system_prompt.txt", content, "Client System Prompt (from Cursor)")
+                dump_prompt("client_system", content, prefix="cursor")
             # Only convert to user message if NOT using as instructions
             if not (no_base or client_has_official):
                 messages.insert(0, {"role": "user", "content": content})
@@ -363,7 +349,7 @@ def chat_completions() -> Response:
         inst_preview = final_instructions[:300] if isinstance(final_instructions, str) else str(final_instructions)[:300]
         print(f"[chat/completions] FINAL INSTRUCTIONS preview:\n{inst_preview}...")
     if log_prompts and isinstance(final_instructions, str) and final_instructions:
-        _log_prompt_to_file("debug_chatmock_instructions.txt", final_instructions, "Final Instructions (sent to ChatGPT)")
+        dump_prompt("final_instructions", final_instructions, prefix="chatmock")
 
     upstream, error_resp = start_upstream_request(
         model,

@@ -82,6 +82,53 @@ def dump_request(
         return None
 
 
+def dump_prompt(
+    label: str,
+    content: str,
+    *,
+    prefix: str = "prompt",
+) -> Path | None:
+    """Dump prompt/instructions to text file for debugging.
+
+    Enabled via DEBUG_LOG_PROMPTS=1 (separate from DEBUG_LOG).
+
+    Args:
+        label: Description of the prompt (e.g., "cursor_system", "chatmock_instructions")
+        content: The prompt content
+        prefix: File prefix (default: "prompt")
+
+    Returns:
+        Path to the dump file, or None if disabled
+    """
+    env_val = os.getenv("DEBUG_LOG_PROMPTS", "").lower()
+    if env_val not in ("1", "true", "yes", "on"):
+        return None
+
+    try:
+        data_dir = _get_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Include timestamp to distinguish multiple chats
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        safe_label = label.replace("/", "_").replace("\\", "_").replace(" ", "_").strip("_")
+        filename = f"debug_{prefix}_{safe_label}_{ts}.txt"
+
+        filepath = data_dir / filename
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(f"=== {label} ===\n")
+            f.write(f"Timestamp: {datetime.utcnow().isoformat()}Z\n\n")
+            f.write(content)
+
+        print(f"[debug] Wrote {len(content)} chars to {filepath}")
+        return filepath
+    except Exception as e:
+        try:
+            print(f"[debug] Failed to dump prompt: {e}")
+        except Exception:
+            pass
+        return None
+
+
 def dump_tools_debug(
     endpoint: str,
     raw_tools: Any,
