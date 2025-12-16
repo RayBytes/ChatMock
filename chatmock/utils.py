@@ -669,6 +669,7 @@ def sse_translate_chat(
                             ],
                         }
                         yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
+                        sent_stop_chunk = True  # Prevent sending "stop" after "tool_calls"
                 except Exception:
                     pass
 
@@ -794,6 +795,7 @@ def sse_translate_chat(
                             "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
                         }
                         yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
+                        sent_stop_chunk = True  # Prevent sending "stop" after "tool_calls"
             elif kind == "response.reasoning_summary_part.added":
                 if compat in ("think-tags", "o3"):
                     if saw_any_summary:
