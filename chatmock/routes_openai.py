@@ -349,13 +349,20 @@ def chat_completions() -> Response:
 
     created = int(time.time())
     if upstream.status_code >= 400:
+        # For streaming responses, read the full content
         try:
-            raw = upstream.content
-            err_body = json.loads(raw.decode("utf-8", errors="ignore")) if raw else {"raw": upstream.text}
-        except Exception:
-            err_body = {"raw": upstream.text}
+            # Try .text first (works better for error responses)
+            raw_text = upstream.text
+            if raw_text:
+                err_body = json.loads(raw_text)
+            else:
+                err_body = {"raw": f"Empty response, status={upstream.status_code}"}
+        except json.JSONDecodeError:
+            err_body = {"raw": raw_text[:500] if raw_text else "No content"}
+        except Exception as e:
+            err_body = {"raw": f"Error reading response: {e}"}
         # Always log upstream error for debugging
-        upstream_err_msg = (err_body.get("error", {}) or {}).get("message", "Unknown error")
+        upstream_err_msg = (err_body.get("error", {}) or {}).get("message") or err_body.get("raw", "Unknown error")
         print(f"[chat/completions] Upstream error ({upstream.status_code}): {upstream_err_msg}")
         if debug:
             _log_json("[chat/completions] Full upstream error", err_body)
@@ -381,12 +388,15 @@ def chat_completions() -> Response:
                 # Retry also failed - log the second error
                 if upstream2 is not None:
                     try:
-                        raw2 = upstream2.content
-                        err_body2 = json.loads(raw2.decode("utf-8", errors="ignore")) if raw2 else {}
-                        retry_err_msg = (err_body2.get("error", {}) or {}).get("message", "Unknown")
+                        raw_text2 = upstream2.text
+                        if raw_text2:
+                            err_body2 = json.loads(raw_text2)
+                            retry_err_msg = (err_body2.get("error", {}) or {}).get("message") or raw_text2[:200]
+                        else:
+                            retry_err_msg = f"Empty response, status={upstream2.status_code}"
                         print(f"[chat/completions] Retry also failed ({upstream2.status_code}): {retry_err_msg}")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[chat/completions] Retry failed ({upstream2.status_code}), error parsing: {e}")
                 err = {
                     "error": {
                         "message": upstream_err_msg,
