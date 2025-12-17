@@ -441,58 +441,79 @@ def chat_completions() -> Response:
                     if no_tools_status < 400:
                         # No tools works! Find the bad tool by binary search
                         print("[debug_bisect] No tools WORKS! Binary searching for bad tool...")
-
-                        # Binary search to find problematic tool
-                        bad_tools = []
-                        remaining_tools = list(tools_responses)
-
-                        while remaining_tools:
-                            mid = len(remaining_tools) // 2
-                            if mid == 0:
-                                mid = 1
-
-                            # Test first half
-                            first_half = remaining_tools[:mid]
-                            print(f"[debug_bisect] Testing first {len(first_half)} tools...")
-                            status, err = _test_with_tools(first_half)
-
-                            if status >= 400:
-                                # Problem in first half
-                                if len(first_half) == 1:
-                                    bad_tool = first_half[0]
-                                    print(f"[debug_bisect] FOUND BAD TOOL: {bad_tool.get('name', 'unknown')}")
-                                    bad_tools.append(bad_tool)
-                                    remaining_tools = remaining_tools[1:]
-                                else:
-                                    remaining_tools = first_half
-                            else:
-                                # First half OK, problem might be in second half or combination
-                                remaining_tools = remaining_tools[mid:]
-
-                            if len(remaining_tools) == 0:
-                                break
-
-                        if bad_tools:
-                            print(f"\n[debug_bisect] === BAD TOOLS FOUND: {len(bad_tools)} ===")
-                            for bt in bad_tools:
-                                print(f"[debug_bisect]   - {bt.get('name', 'unknown')}")
-
-                            # Write report
-                            from .debug import _get_data_dir
-                            data_dir = _get_data_dir()
-                            ts = time.strftime("%Y%m%d_%H%M%S")
-                            report = {
-                                "timestamp": ts,
-                                "total_tools": len(tools_responses),
-                                "bad_tools": [t.get("name") for t in bad_tools],
-                                "bad_tools_full": bad_tools,
-                            }
-                            report_file = data_dir / f"debug_tools_bisect_{ts}.json"
-                            with open(report_file, "w") as f:
-                                json.dump(report, f, indent=2)
-                            print(f"[debug_bisect] Report: {report_file}")
                     else:
-                        print("[debug_bisect] Even NO tools fails - problem in input_items!")
+                        # Even no tools fails - try with BASE_INSTRUCTIONS
+                        print("[debug_bisect] Even NO tools fails - trying BASE_INSTRUCTIONS...")
+                        base_status, base_err = _test_with_tools([])
+                        # Temporarily patch to use BASE_INSTRUCTIONS
+                        def _test_base_instructions():
+                            test_upstream, test_err = start_upstream_request(
+                                model,
+                                input_items,
+                                instructions=BASE_INSTRUCTIONS,
+                                tools=[],
+                                tool_choice=tool_choice,
+                                parallel_tool_calls=parallel_tool_calls,
+                                reasoning_param=reasoning_param,
+                                extra_fields=extra_fields,
+                            )
+                            if test_err is not None:
+                                return (500, "error_resp")
+                            if test_upstream is None:
+                                return (500, "no response")
+                            if test_upstream.status_code >= 400:
+                                try:
+                                    raw = test_upstream.text
+                                    err = json.loads(raw) if raw else {}
+                                    msg = err.get("detail") or err.get("error", {}).get("message", raw[:200])
+                                    return (test_upstream.status_code, msg)
+                                except Exception as e:
+                                    return (test_upstream.status_code, str(e))
+                            return (test_upstream.status_code, "")
+
+                        base_inst_status, base_inst_err = _test_base_instructions()
+                        print(f"[debug_bisect] BASE_INSTRUCTIONS test: status={base_inst_status}, error={base_inst_err[:100] if base_inst_err else 'none'}")
+
+                        if base_inst_status < 400:
+                            print("[debug_bisect] BASE_INSTRUCTIONS WORKS! Problem is instruction format/content!")
+                            print(f"[debug_bisect] BASE_INSTRUCTIONS preview: {BASE_INSTRUCTIONS[:200]}...")
+                        else:
+                            print("[debug_bisect] BASE_INSTRUCTIONS also fails - problem in input_items format!")
+                            # Try with empty input to confirm
+                            def _test_empty_input():
+                                test_upstream, test_err = start_upstream_request(
+                                    model,
+                                    [],  # Empty input
+                                    instructions=BASE_INSTRUCTIONS,
+                                    tools=[],
+                                    tool_choice=tool_choice,
+                                    parallel_tool_calls=parallel_tool_calls,
+                                    reasoning_param=reasoning_param,
+                                    extra_fields=extra_fields,
+                                )
+                                if test_err is not None:
+                                    return (500, "error_resp")
+                                if test_upstream is None:
+                                    return (500, "no response")
+                                if test_upstream.status_code >= 400:
+                                    try:
+                                        raw = test_upstream.text
+                                        err = json.loads(raw) if raw else {}
+                                        msg = err.get("detail") or err.get("error", {}).get("message", raw[:200])
+                                        return (test_upstream.status_code, msg)
+                                    except Exception as e:
+                                        return (test_upstream.status_code, str(e))
+                                return (test_upstream.status_code, "")
+
+                            empty_input_status, empty_input_err = _test_empty_input()
+                            print(f"[debug_bisect] Empty input test: status={empty_input_status}, error={empty_input_err[:100] if empty_input_err else 'none'}")
+
+                            if empty_input_status < 400:
+                                print("[debug_bisect] Empty input WORKS! Problem is in input_items content!")
+                                # Log first few input items for debugging
+                                print(f"[debug_bisect] First input item: {json.dumps(input_items[0] if input_items else {})[:500]}")
+                            else:
+                                print("[debug_bisect] Even empty input fails - problem in other params (model, reasoning, etc.)")
             else:
                 print("[debug_bisect] Empty works but minimal doesn't - very strange!")
         else:
