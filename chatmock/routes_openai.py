@@ -354,12 +354,12 @@ Prefer these IDE tools for standard operations as they are optimized for this en
 The following context is from the IDE:
 ---
 """
-            client_as_user = {
+            client_as_developer = {
                 "type": "message",
-                "role": "user",
+                "role": "developer",
                 "content": [{"type": "input_text", "text": f"{tool_priority_context}{client_system_prompt.strip()}"}]
             }
-            input_items = [client_as_user] + input_items
+            input_items = [client_as_developer] + input_items
             if debug:
                 print(f"[chat/completions] GPT-5.2: Using BASE_INSTRUCTIONS + client prompt with tool priority ({len(client_system_prompt)} chars)")
         else:
@@ -592,13 +592,13 @@ The following context is from the IDE:
                                         # FALLBACK: Use BASE_INSTRUCTIONS and convert client prompt to user message
                                         final_instructions = BASE_INSTRUCTIONS
                                         if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
-                                            # Prepend client system prompt as first user message in input_items
-                                            client_as_user = {
+                                            # Prepend client system prompt as first developer message in input_items
+                                            client_as_developer = {
                                                 "type": "message",
-                                                "role": "user",
+                                                "role": "developer",
                                                 "content": [{"type": "input_text", "text": f"[System Context]\n{client_system_prompt.strip()}"}]
                                             }
-                                            input_items = [client_as_user] + input_items
+                                            input_items = [client_as_developer] + input_items
                                             print(f"[debug_bisect] FALLBACK: Using BASE_INSTRUCTIONS + client prompt as user message ({len(client_system_prompt)} chars)")
                                         else:
                                             print(f"[debug_bisect] FALLBACK: Using BASE_INSTRUCTIONS only (no client prompt)")
