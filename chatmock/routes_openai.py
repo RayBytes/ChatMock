@@ -477,6 +477,49 @@ def chat_completions() -> Response:
                         if base_inst_status < 400:
                             print("[debug_bisect] BASE_INSTRUCTIONS WORKS! Problem is instruction format/content!")
                             print(f"[debug_bisect] BASE_INSTRUCTIONS preview: {BASE_INSTRUCTIONS[:200]}...")
+
+                            # Try replacing just the first line of client instructions
+                            print("[debug_bisect] Trying to replace first line of client prompt with BASE first line...")
+                            base_first_line = BASE_INSTRUCTIONS.split('\n')[0]
+                            client_lines = final_instructions.split('\n')
+                            if client_lines:
+                                client_lines[0] = base_first_line
+                                hybrid_instructions = '\n'.join(client_lines)
+
+                                def _test_hybrid():
+                                    test_upstream, test_err = start_upstream_request(
+                                        model,
+                                        input_items,
+                                        instructions=hybrid_instructions,
+                                        tools=tools_responses,
+                                        tool_choice=tool_choice,
+                                        parallel_tool_calls=parallel_tool_calls,
+                                        reasoning_param=reasoning_param,
+                                        extra_fields=extra_fields,
+                                    )
+                                    if test_err is not None:
+                                        return (500, "error_resp")
+                                    if test_upstream is None:
+                                        return (500, "no response")
+                                    if test_upstream.status_code >= 400:
+                                        try:
+                                            raw = test_upstream.text
+                                            err = json.loads(raw) if raw else {}
+                                            msg = err.get("detail") or err.get("error", {}).get("message", raw[:200])
+                                            return (test_upstream.status_code, msg)
+                                        except Exception as e:
+                                            return (test_upstream.status_code, str(e))
+                                    return (test_upstream.status_code, "")
+
+                                hybrid_status, hybrid_err = _test_hybrid()
+                                print(f"[debug_bisect] Hybrid (BASE first line + client rest): status={hybrid_status}, error={hybrid_err[:100] if hybrid_err else 'none'}")
+
+                                if hybrid_status < 400:
+                                    print("[debug_bisect] HYBRID WORKS! Just need to replace first line!")
+                                    print(f"[debug_bisect] Using hybrid instructions ({len(hybrid_instructions)} chars)")
+                                    final_instructions = hybrid_instructions
+                                else:
+                                    print("[debug_bisect] Hybrid failed - need more than first line replacement")
                         else:
                             print("[debug_bisect] BASE_INSTRUCTIONS also fails - problem in input_items format!")
                             # Try with empty input to confirm
