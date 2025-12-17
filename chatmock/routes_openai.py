@@ -388,14 +388,34 @@ def chat_completions() -> Response:
                     return (test_upstream.status_code, str(e))
             return (test_upstream.status_code, "")
 
-        working_inst, report_path = debug_instructions_bisect(
-            final_instructions,
-            _test_instructions,
-            model=model,
-        )
-        if working_inst is not None:
-            print(f"[chat/completions] DEBUG BISECT: Using working instructions ({len(working_inst)} chars)")
-            final_instructions = working_inst
+        # First, test with minimal instructions to see if problem is elsewhere
+        print("[debug_bisect] Testing with minimal instructions first...")
+        minimal_test = "You are a helpful assistant."
+        min_status, min_err = _test_instructions(minimal_test)
+        print(f"[debug_bisect] Minimal instructions test: status={min_status}, error={min_err[:100] if min_err else 'none'}")
+
+        if min_status >= 400:
+            # Even minimal instructions fail - problem is NOT in instructions content
+            # Try with empty instructions
+            print("[debug_bisect] Minimal failed! Trying empty instructions...")
+            empty_status, empty_err = _test_instructions("")
+            print(f"[debug_bisect] Empty instructions test: status={empty_status}, error={empty_err[:100] if empty_err else 'none'}")
+
+            if empty_status >= 400:
+                print("[debug_bisect] CONCLUSION: Problem is NOT in instructions - check tools/input format!")
+                # Don't run bisect, it won't help
+            else:
+                print("[debug_bisect] Empty works but minimal doesn't - very strange!")
+        else:
+            print("[debug_bisect] Minimal instructions WORK - running bisect to find problematic block...")
+            working_inst, report_path = debug_instructions_bisect(
+                final_instructions,
+                _test_instructions,
+                model=model,
+            )
+            if working_inst is not None:
+                print(f"[chat/completions] DEBUG BISECT: Using working instructions ({len(working_inst)} chars)")
+                final_instructions = working_inst
     # =========================================================================
     # END DEBUG INSTRUCTIONS BISECT
     # =========================================================================
