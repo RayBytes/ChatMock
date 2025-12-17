@@ -7,7 +7,13 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
-from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS, has_official_instructions
+from .config import (
+    BASE_INSTRUCTIONS,
+    GPT5_CODEX_INSTRUCTIONS,
+    PROJECT_DOC_SEPARATOR,
+    get_instructions_for_model,
+    has_official_instructions,
+)
 from .debug import dump_prompt, dump_request, dump_tools_debug, debug_instructions_bisect
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
@@ -334,37 +340,30 @@ def chat_completions() -> Response:
 
     # Determine which instructions to use
     # GPT-5.2 and similar models have strict instruction validation - they only accept
-    # whitelisted instruction formats (like BASE_INSTRUCTIONS from Codex CLI).
-    # For these models, we MUST use BASE_INSTRUCTIONS and convert client prompt to user message.
+    # whitelisted instruction formats. We use model-specific prompts from official Codex.
+    # Client system prompt is CONCATENATED to instructions (like Codex does with AGENTS.md).
     model_needs_base_instructions = model.startswith("gpt-5.2")
 
     if model_needs_base_instructions:
-        # GPT-5.2: Always use BASE_INSTRUCTIONS, convert client prompt to user message
-        # with explicit tool priority guidance to prevent model from preferring MCP tools
-        final_instructions = BASE_INSTRUCTIONS
+        # GPT-5.2: Use model-specific instructions, concatenate client prompt (like Codex does)
+        model_base = get_instructions_for_model(model)
         if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
-            # Build enhanced context with environment clarification
-            # This helps the model understand it's running in Cursor IDE, not Codex CLI terminal
-            tool_priority_context = """ENVIRONMENT: IDE (Cursor)
-==========================
+            # Concatenate: model instructions + separator + IDE context + client prompt
+            # This matches how official Codex handles AGENTS.md files
+            ide_context = """ENVIRONMENT: IDE (Cursor)
 You are running inside Cursor IDE, not the standalone Codex CLI terminal.
 The IDE provides built-in tools (Read, Edit, Write, Bash, Grep, Glob, etc.) for file and code operations.
 Prefer these IDE tools for standard operations as they are optimized for this environment.
 
-The following context is from the IDE:
----
+IDE Instructions:
 """
-            client_as_developer = {
-                "type": "message",
-                "role": "developer",
-                "content": [{"type": "input_text", "text": f"{tool_priority_context}{client_system_prompt.strip()}"}]
-            }
-            input_items = [client_as_developer] + input_items
+            final_instructions = model_base + PROJECT_DOC_SEPARATOR + ide_context + client_system_prompt.strip()
             if debug:
-                print(f"[chat/completions] GPT-5.2: Using BASE_INSTRUCTIONS + client prompt with tool priority ({len(client_system_prompt)} chars)")
+                print(f"[chat/completions] GPT-5.2: Using {len(model_base)} char model instructions + {len(client_system_prompt)} char client prompt (concatenated)")
         else:
+            final_instructions = model_base
             if debug:
-                print(f"[chat/completions] GPT-5.2: Using BASE_INSTRUCTIONS only")
+                print(f"[chat/completions] GPT-5.2: Using model-specific instructions ({len(model_base)} chars)")
     elif no_base or client_has_official:
         # Use client's instructions directly (or fallback)
         final_instructions = client_system_prompt.strip() if isinstance(client_system_prompt, str) and client_system_prompt.strip() else "You are a helpful assistant."
@@ -588,20 +587,15 @@ The following context is from the IDE:
                                         print(f"[debug_bisect] PREFIXED WORKS! Using ({len(prefixed_instructions)} chars)")
                                         final_instructions = prefixed_instructions
                                     else:
-                                        print("[debug_bisect] Prefixed also failed - using BASE only and converting client to user message")
-                                        # FALLBACK: Use BASE_INSTRUCTIONS and convert client prompt to user message
-                                        final_instructions = BASE_INSTRUCTIONS
+                                        print("[debug_bisect] Prefixed also failed - using BASE only with concatenation")
+                                        # FALLBACK: Use model instructions with concatenated client prompt
+                                        model_base = get_instructions_for_model(model)
                                         if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
-                                            # Prepend client system prompt as first developer message in input_items
-                                            client_as_developer = {
-                                                "type": "message",
-                                                "role": "developer",
-                                                "content": [{"type": "input_text", "text": f"[System Context]\n{client_system_prompt.strip()}"}]
-                                            }
-                                            input_items = [client_as_developer] + input_items
-                                            print(f"[debug_bisect] FALLBACK: Using BASE_INSTRUCTIONS + client prompt as user message ({len(client_system_prompt)} chars)")
+                                            final_instructions = model_base + PROJECT_DOC_SEPARATOR + client_system_prompt.strip()
+                                            print(f"[debug_bisect] FALLBACK: Using model instructions + client prompt concatenated ({len(final_instructions)} chars)")
                                         else:
-                                            print(f"[debug_bisect] FALLBACK: Using BASE_INSTRUCTIONS only (no client prompt)")
+                                            final_instructions = model_base
+                                            print(f"[debug_bisect] FALLBACK: Using model instructions only ({len(model_base)} chars)")
                         else:
                             print("[debug_bisect] BASE_INSTRUCTIONS also fails - problem in input_items format!")
                             # Try with empty input to confirm

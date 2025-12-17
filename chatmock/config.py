@@ -39,13 +39,45 @@ def read_base_instructions() -> str:
     return content
 
 
-def read_gpt5_codex_instructions(fallback: str) -> str:
-    content = _read_prompt_text("prompt_gpt5_codex.md")
+def _read_prompt_with_fallback(filename: str, fallback: str) -> str:
+    content = _read_prompt_text(filename)
     return content if isinstance(content, str) and content.strip() else fallback
 
 
 BASE_INSTRUCTIONS = read_base_instructions()
-GPT5_CODEX_INSTRUCTIONS = read_gpt5_codex_instructions(BASE_INSTRUCTIONS)
+
+# Model-specific instructions (from official Codex repo)
+GPT5_CODEX_INSTRUCTIONS = _read_prompt_with_fallback("gpt_5_codex_prompt.md", BASE_INSTRUCTIONS)
+GPT5_1_INSTRUCTIONS = _read_prompt_with_fallback("gpt_5_1_prompt.md", BASE_INSTRUCTIONS)
+GPT5_2_INSTRUCTIONS = _read_prompt_with_fallback("gpt_5_2_prompt.md", BASE_INSTRUCTIONS)
+GPT5_1_CODEX_MAX_INSTRUCTIONS = _read_prompt_with_fallback("gpt_5_1_codex_max_prompt.md", GPT5_CODEX_INSTRUCTIONS)
+
+# Separator for concatenating project docs / IDE context to instructions
+PROJECT_DOC_SEPARATOR = "\n\n--- project-doc ---\n\n"
+
+
+def get_instructions_for_model(model: str) -> str:
+    """Get the appropriate base instructions for a given model."""
+    model_lower = model.lower()
+
+    # GPT-5.2 family
+    if "gpt-5.2" in model_lower:
+        return GPT5_2_INSTRUCTIONS
+
+    # GPT-5.1-codex-max
+    if "gpt-5.1-codex-max" in model_lower or "codex-max" in model_lower:
+        return GPT5_1_CODEX_MAX_INSTRUCTIONS
+
+    # GPT-5.1 family (non-codex)
+    if "gpt-5.1" in model_lower and "codex" not in model_lower:
+        return GPT5_1_INSTRUCTIONS
+
+    # Codex models (gpt-5-codex, gpt-5.1-codex, codex-mini)
+    if "codex" in model_lower:
+        return GPT5_CODEX_INSTRUCTIONS
+
+    # Default: BASE_INSTRUCTIONS
+    return BASE_INSTRUCTIONS
 
 
 # Known official prompt prefixes - if client sends these, don't prepend our own
