@@ -749,7 +749,11 @@ def sse_translate_chat(
                             ws_next_index += 1
                         _idx = ws_index.get(call_id, 0)
                         if isinstance(call_id, str) and isinstance(name, str) and isinstance(args, str):
-                            delta_chunk = {
+                            # Stream tool call in OpenAI format: first chunk with id/name, then arguments in pieces
+                            # This matches how OpenAI streams tool calls and may help Cursor track changes
+
+                            # First chunk: tool call header (id, type, name, empty arguments)
+                            header_chunk = {
                                 "id": response_id,
                                 "object": "chat.completion.chunk",
                                 "created": created,
@@ -763,7 +767,7 @@ def sse_translate_chat(
                                                     "index": _idx,
                                                     "id": call_id,
                                                     "type": "function",
-                                                    "function": {"name": name, "arguments": args},
+                                                    "function": {"name": name, "arguments": ""},
                                                 }
                                             ]
                                         },
@@ -771,8 +775,35 @@ def sse_translate_chat(
                                     }
                                 ],
                             }
-                            yield f"data: {json.dumps(delta_chunk)}\n\n".encode("utf-8")
+                            yield f"data: {json.dumps(header_chunk)}\n\n".encode("utf-8")
 
+                            # Stream arguments in chunks (OpenAI typically sends ~50-100 chars per chunk)
+                            chunk_size = 100
+                            for i in range(0, len(args), chunk_size):
+                                args_piece = args[i:i + chunk_size]
+                                args_chunk = {
+                                    "id": response_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created,
+                                    "model": model,
+                                    "choices": [
+                                        {
+                                            "index": 0,
+                                            "delta": {
+                                                "tool_calls": [
+                                                    {
+                                                        "index": _idx,
+                                                        "function": {"arguments": args_piece},
+                                                    }
+                                                ]
+                                            },
+                                            "finish_reason": None,
+                                        }
+                                    ],
+                                }
+                                yield f"data: {json.dumps(args_chunk)}\n\n".encode("utf-8")
+
+                            # Finish chunk with tool_calls reason
                             finish_chunk = {
                                 "id": response_id,
                                 "object": "chat.completion.chunk",
