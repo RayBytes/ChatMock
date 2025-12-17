@@ -725,6 +725,14 @@ def sse_translate_chat(
                 if item_type in ("function_call", "web_search_call", "custom_tool_call"):
                     call_id = item.get("call_id") or item.get("id") or ""
                     name = item.get("name") or ("web_search" if item_type == "web_search_call" else "")
+                    # Debug: log raw item from ChatGPT to see exact response format
+                    try:
+                        import json as _json
+                        raw_item_preview = _json.dumps(item, ensure_ascii=False)[:800]
+                        print(f"[CHATMOCK] response.output_item.done: item_type={item_type!r} name={name!r}")
+                        print(f"[CHATMOCK] RAW ITEM FROM CHATGPT: {raw_item_preview}")
+                    except Exception:
+                        pass
 
                     # Handle custom_tool_call: has raw 'input' string instead of JSON 'arguments'
                     # Per Responses API spec: https://platform.openai.com/docs/guides/tools#custom-tools
