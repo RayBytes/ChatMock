@@ -345,21 +345,14 @@ def chat_completions() -> Response:
     model_needs_base_instructions = model.startswith("gpt-5.2")
 
     if model_needs_base_instructions:
-        # GPT-5.2: Use model-specific instructions, concatenate client prompt (like Codex does)
+        # GPT-5.2: Use model-specific instructions, concatenate client prompt (like Codex does with AGENTS.md)
         model_base = get_instructions_for_model(model)
         if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
-            # Concatenate: model instructions + separator + IDE context + client prompt
-            # This matches how official Codex handles AGENTS.md files
-            ide_context = """ENVIRONMENT: IDE (Cursor)
-You are running inside Cursor IDE, not the standalone Codex CLI terminal.
-The IDE provides built-in tools (Read, Edit, Write, Bash, Grep, Glob, etc.) for file and code operations.
-Prefer these IDE tools for standard operations as they are optimized for this environment.
-
-IDE Instructions:
-"""
-            final_instructions = model_base + IDE_CONTEXT_SEPARATOR + ide_context + client_system_prompt.strip()
+            # Simple concatenation: model instructions + separator + client instructions
+            # The client's system prompt should describe its own environment
+            final_instructions = model_base + IDE_CONTEXT_SEPARATOR + client_system_prompt.strip()
             if debug:
-                print(f"[chat/completions] GPT-5.2: Using {len(model_base)} char model instructions + {len(client_system_prompt)} char client prompt (concatenated)")
+                print(f"[chat/completions] GPT-5.2: Concatenated {len(model_base)} char model instructions + {len(client_system_prompt)} char client prompt")
         else:
             final_instructions = model_base
             if debug:
