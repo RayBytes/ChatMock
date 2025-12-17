@@ -237,9 +237,10 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
 def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
     """Convert tools from Chat Completions format to Responses API format.
 
-    Handles both formats:
+    Handles multiple formats:
     - Nested (Chat Completions): {type: "function", function: {name, description, parameters}}
     - Flat (Responses API / Cursor): {type: "function", name, description, parameters}
+    - Custom (Cursor grammar-based): {type: "custom", name, description, format: {...}}
     """
     out: List[Dict[str, Any]] = []
     if not isinstance(tools, list):
@@ -247,7 +248,19 @@ def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
     for t in tools:
         if not isinstance(t, dict):
             continue
-        if t.get("type") != "function":
+
+        tool_type = t.get("type")
+
+        # Handle custom tools (e.g., apply_patch with Lark grammar)
+        # Pass through as-is - GPT-5.2/Responses API should understand them
+        if tool_type == "custom":
+            name = t.get("name")
+            if isinstance(name, str) and name:
+                # Pass through the entire custom tool definition
+                out.append(t)
+            continue
+
+        if tool_type != "function":
             continue
 
         # Try nested format first (Chat Completions API)
