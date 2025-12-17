@@ -252,12 +252,29 @@ def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
         tool_type = t.get("type")
 
         # Handle custom tools (e.g., apply_patch with Lark grammar)
-        # Pass through as-is - GPT-5.2/Responses API should understand them
+        # Convert to function format since GPT-5.2 only understands type: "function"
         if tool_type == "custom":
             name = t.get("name")
+            desc = t.get("description", "")
             if isinstance(name, str) and name:
-                # Pass through the entire custom tool definition
-                out.append(t)
+                # Convert custom tool to function with single string parameter
+                # The description already contains format instructions (V4A diff, Lark grammar, etc.)
+                out.append({
+                    "type": "function",
+                    "name": name,
+                    "description": desc,
+                    "strict": False,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "The content/input for this tool as specified in the tool description"
+                            }
+                        },
+                        "required": ["content"]
+                    }
+                })
             continue
 
         if tool_type != "function":
