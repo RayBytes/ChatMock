@@ -64,6 +64,92 @@ def _wrap_stream_logging(label: str, iterator, enabled: bool):
     return _gen()
 
 
+def _wrap_stream_file_logging(iterator):
+    """Wrap streaming iterator to collect and dump response to file.
+
+    Enabled via DEBUG_LOG=true environment variable.
+    Captures: text content, tool calls, finish reasons.
+    """
+    debug_enabled = any(
+        os.getenv(v, "").lower() in ("1", "true", "yes", "on")
+        for v in ("DEBUG_LOG", "CHATGPT_LOCAL_DEBUG", "CHATGPT_LOCAL_DEBUG_LOG")
+    )
+    if not debug_enabled:
+        return iterator
+
+    def _gen():
+        accumulated_text = []
+        tool_calls = []
+        finish_reasons = []
+
+        for chunk in iterator:
+            # Parse chunk to extract data
+            try:
+                text = (
+                    chunk.decode("utf-8", errors="replace")
+                    if isinstance(chunk, (bytes, bytearray))
+                    else str(chunk)
+                )
+                if text.startswith("data: ") and text.strip() != "data: [DONE]":
+                    data_str = text[6:].strip()
+                    if data_str:
+                        evt = json.loads(data_str)
+                        choices = evt.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            # Capture text content
+                            if "content" in delta and delta["content"]:
+                                accumulated_text.append(delta["content"])
+                            # Capture tool calls
+                            if "tool_calls" in delta:
+                                for tc in delta["tool_calls"]:
+                                    tc_id = tc.get("id", "")
+                                    tc_func = tc.get("function", {})
+                                    tc_name = tc_func.get("name", "")
+                                    tc_args = tc_func.get("arguments", "")
+                                    if tc_id and tc_name:
+                                        # Find existing or add new
+                                        existing = next((t for t in tool_calls if t["id"] == tc_id), None)
+                                        if existing:
+                                            existing["arguments"] += tc_args
+                                        else:
+                                            tool_calls.append({
+                                                "id": tc_id,
+                                                "name": tc_name,
+                                                "arguments": tc_args
+                                            })
+                                    elif tc_args:  # Delta without id - append to last
+                                        if tool_calls:
+                                            tool_calls[-1]["arguments"] += tc_args
+                            # Capture finish reason
+                            fr = choices[0].get("finish_reason")
+                            if fr:
+                                finish_reasons.append(fr)
+            except Exception:
+                pass
+            yield chunk
+
+        # After stream ends, dump to file
+        try:
+            full_text = "".join(accumulated_text)
+            dump_upstream(
+                "chat_completions",
+                {
+                    "full_text": full_text[:2000] + "..." if len(full_text) > 2000 else full_text,
+                    "full_text_length": len(full_text),
+                    "tool_calls": tool_calls,
+                    "tool_calls_count": len(tool_calls),
+                    "finish_reasons": finish_reasons,
+                    "stream": True,
+                },
+                label="upstream_response",
+            )
+        except Exception:
+            pass
+
+    return _gen()
+
+
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
     if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex"):
@@ -816,6 +902,7 @@ def chat_completions() -> Response:
             include_usage=include_usage,
         )
         stream_iter = _wrap_stream_logging("STREAM OUT /v1/chat/completions", stream_iter, verbose)
+        stream_iter = _wrap_stream_file_logging(stream_iter)  # File-based debug logging
         resp = Response(
             stream_iter,
             status=upstream.status_code,
