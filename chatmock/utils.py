@@ -801,12 +801,12 @@ def sse_translate_chat(
                         yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
                         if debug_stream:
                             print(f"[STREAM] Sent finish_reason=tool_calls for {name}")
-                            # Log tool call arguments for debugging
-                            try:
-                                args_preview = args[:500] if len(args) > 500 else args
-                                print(f"[STREAM] Tool {name} args: {args_preview}")
-                            except Exception:
-                                pass
+                        # Always log tool call arguments (useful for debugging)
+                        try:
+                            args_preview = args[:500] if len(args) > 500 else args
+                            print(f"[TOOL_CALL] {name}: {args_preview}")
+                        except Exception:
+                            pass
                         sent_stop_chunk = True  # Prevent sending "stop" after "tool_calls"
             elif kind == "response.reasoning_summary_part.added":
                 if compat in ("think-tags", "o3"):
