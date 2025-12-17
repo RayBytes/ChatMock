@@ -340,17 +340,28 @@ def chat_completions() -> Response:
 
     if model_needs_base_instructions:
         # GPT-5.2: Always use BASE_INSTRUCTIONS, convert client prompt to user message
+        # with explicit tool priority guidance to prevent model from preferring MCP tools
         final_instructions = BASE_INSTRUCTIONS
         if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
-            # Prepend client system prompt as first user message in input_items
+            # Build enhanced context with environment clarification
+            # This helps the model understand it's running in Cursor IDE, not Codex CLI terminal
+            tool_priority_context = """ENVIRONMENT: IDE (Cursor)
+==========================
+You are running inside Cursor IDE, not the standalone Codex CLI terminal.
+The IDE provides built-in tools (Read, Edit, Write, Bash, Grep, Glob, etc.) for file and code operations.
+Prefer these IDE tools for standard operations as they are optimized for this environment.
+
+The following context is from the IDE:
+---
+"""
             client_as_user = {
                 "type": "message",
                 "role": "user",
-                "content": [{"type": "input_text", "text": f"[System Context]\n{client_system_prompt.strip()}"}]
+                "content": [{"type": "input_text", "text": f"{tool_priority_context}{client_system_prompt.strip()}"}]
             }
             input_items = [client_as_user] + input_items
             if debug:
-                print(f"[chat/completions] GPT-5.2: Using BASE_INSTRUCTIONS + client prompt as user message ({len(client_system_prompt)} chars)")
+                print(f"[chat/completions] GPT-5.2: Using BASE_INSTRUCTIONS + client prompt with tool priority ({len(client_system_prompt)} chars)")
         else:
             if debug:
                 print(f"[chat/completions] GPT-5.2: Using BASE_INSTRUCTIONS only")
