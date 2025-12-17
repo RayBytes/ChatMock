@@ -152,6 +152,13 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
 
         if role == "tool":
             call_id = message.get("tool_call_id") or message.get("id")
+            # Debug: log tool result processing
+            try:
+                content_preview = str(message.get("content", ""))[:200]
+                print(f"[TOOL_RESULT] Processing role=tool: call_id={call_id!r} content={content_preview!r}")
+                print(f"[TOOL_RESULT] seen_function_call_ids={seen_function_call_ids}")
+            except Exception:
+                pass
             if isinstance(call_id, str) and call_id:
                 content = message.get("content", "")
                 if isinstance(content, list):
@@ -164,6 +171,11 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
                     content = "\n".join(texts)
                 if isinstance(content, str):
                     if call_id not in seen_function_call_ids:
+                        # Debug: log skipped tool result
+                        try:
+                            print(f"[TOOL_RESULT] SKIPPED! call_id={call_id!r} not in seen_function_call_ids")
+                        except Exception:
+                            pass
                         if debug_tools:
                             try:
                                 eprint(
@@ -174,6 +186,11 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
                         # Не отправляем function_call_output без соответствующего function_call.
                         # Это предотвращает 400 от Responses: "No tool call found for function call output".
                         continue
+                    # Debug: log accepted tool result
+                    try:
+                        print(f"[TOOL_RESULT] ACCEPTED: call_id={call_id!r} -> function_call_output")
+                    except Exception:
+                        pass
                     input_items.append(
                         {
                             "type": "function_call_output",
