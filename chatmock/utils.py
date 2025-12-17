@@ -756,6 +756,10 @@ def sse_translate_chat(
                         except (json.JSONDecodeError, ValueError, TypeError):
                             if item.get("type") == "web_search_call":
                                 raw_args = {"query": raw_args}
+                    # For custom tools converted to function (e.g., apply_patch),
+                    # extract the "content" field and pass as raw string to Cursor
+                    if name == "apply_patch" and isinstance(raw_args, dict) and "content" in raw_args:
+                        raw_args = raw_args["content"]
                     # For web_search_call, also check if action.parameters has the query
                     if item.get("type") == "web_search_call" and isinstance(item.get("action"), dict):
                         action = item.get("action")
@@ -778,10 +782,14 @@ def sse_translate_chat(
                     eff_args = ws_state.get(call_id, raw_args if isinstance(raw_args, (dict, list, str)) else {})
                     if item.get("type") == "web_search_call" and (not eff_args or (isinstance(eff_args, dict) and not eff_args.get('query'))):
                         eff_args = ws_state.get(call_id, {}) or {}
-                    try:
-                        args = _serialize_tool_args(eff_args)
-                    except Exception:
-                        args = "{}"
+                    # For apply_patch (custom tool), pass raw string directly without JSON wrapping
+                    if name == "apply_patch" and isinstance(eff_args, str):
+                        args = eff_args
+                    else:
+                        try:
+                            args = _serialize_tool_args(eff_args)
+                        except Exception:
+                            args = "{}"
                     if verbose and vlog:
                         try:
                             vlog(f"CM_TOOLS response.output_item.done raw_args={raw_args} eff_args={eff_args} args={args}")
