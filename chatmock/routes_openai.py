@@ -519,7 +519,44 @@ def chat_completions() -> Response:
                                     print(f"[debug_bisect] Using hybrid instructions ({len(hybrid_instructions)} chars)")
                                     final_instructions = hybrid_instructions
                                 else:
-                                    print("[debug_bisect] Hybrid failed - need more than first line replacement")
+                                    print("[debug_bisect] Hybrid (first line) failed - trying BASE as prefix...")
+
+                                    # Try prepending full BASE_INSTRUCTIONS
+                                    prefixed_instructions = BASE_INSTRUCTIONS + "\n\n---\n\n" + final_instructions
+
+                                    def _test_prefixed():
+                                        test_upstream, test_err = start_upstream_request(
+                                            model,
+                                            input_items,
+                                            instructions=prefixed_instructions,
+                                            tools=tools_responses,
+                                            tool_choice=tool_choice,
+                                            parallel_tool_calls=parallel_tool_calls,
+                                            reasoning_param=reasoning_param,
+                                            extra_fields=extra_fields,
+                                        )
+                                        if test_err is not None:
+                                            return (500, "error_resp")
+                                        if test_upstream is None:
+                                            return (500, "no response")
+                                        if test_upstream.status_code >= 400:
+                                            try:
+                                                raw = test_upstream.text
+                                                err = json.loads(raw) if raw else {}
+                                                msg = err.get("detail") or err.get("error", {}).get("message", raw[:200])
+                                                return (test_upstream.status_code, msg)
+                                            except Exception as e:
+                                                return (test_upstream.status_code, str(e))
+                                        return (test_upstream.status_code, "")
+
+                                    prefixed_status, prefixed_err = _test_prefixed()
+                                    print(f"[debug_bisect] Prefixed (BASE + client): status={prefixed_status}, error={prefixed_err[:100] if prefixed_err else 'none'}")
+
+                                    if prefixed_status < 400:
+                                        print(f"[debug_bisect] PREFIXED WORKS! Using ({len(prefixed_instructions)} chars)")
+                                        final_instructions = prefixed_instructions
+                                    else:
+                                        print("[debug_bisect] Prefixed also failed - must use BASE only and convert client to user message")
                         else:
                             print("[debug_bisect] BASE_INSTRUCTIONS also fails - problem in input_items format!")
                             # Try with empty input to confirm
