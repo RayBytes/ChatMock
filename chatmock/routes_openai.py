@@ -556,7 +556,20 @@ def chat_completions() -> Response:
                                         print(f"[debug_bisect] PREFIXED WORKS! Using ({len(prefixed_instructions)} chars)")
                                         final_instructions = prefixed_instructions
                                     else:
-                                        print("[debug_bisect] Prefixed also failed - must use BASE only and convert client to user message")
+                                        print("[debug_bisect] Prefixed also failed - using BASE only and converting client to user message")
+                                        # FALLBACK: Use BASE_INSTRUCTIONS and convert client prompt to user message
+                                        final_instructions = BASE_INSTRUCTIONS
+                                        if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
+                                            # Prepend client system prompt as first user message in input_items
+                                            client_as_user = {
+                                                "type": "message",
+                                                "role": "user",
+                                                "content": [{"type": "input_text", "text": f"[System Context]\n{client_system_prompt.strip()}"}]
+                                            }
+                                            input_items = [client_as_user] + input_items
+                                            print(f"[debug_bisect] FALLBACK: Using BASE_INSTRUCTIONS + client prompt as user message ({len(client_system_prompt)} chars)")
+                                        else:
+                                            print(f"[debug_bisect] FALLBACK: Using BASE_INSTRUCTIONS only (no client prompt)")
                         else:
                             print("[debug_bisect] BASE_INSTRUCTIONS also fails - problem in input_items format!")
                             # Try with empty input to confirm
