@@ -109,6 +109,54 @@ def dump_request(
         return None
 
 
+def dump_upstream(
+    endpoint: str,
+    upstream_payload: Dict[str, Any],
+    *,
+    label: str = "upstream",
+) -> Path | None:
+    """Dump upstream payload (what we send to ChatGPT) to JSON file.
+
+    Enabled via DEBUG_LOG=true environment variable.
+
+    Args:
+        endpoint: API endpoint name
+        upstream_payload: Full payload being sent to ChatGPT
+        label: Optional label for the file
+
+    Returns:
+        Path to the dump file, or None if disabled
+    """
+    if not _is_debug_enabled():
+        return None
+
+    try:
+        data_dir = _get_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_endpoint = endpoint.replace("/", "_").replace("\\", "_").strip("_")
+        filename = f"debug_{safe_endpoint}_{label}.json"
+
+        dump = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "endpoint": endpoint,
+            "label": label,
+            "payload": upstream_payload,
+        }
+
+        filepath = data_dir / filename
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(dump, f, indent=2, ensure_ascii=False)
+
+        return filepath
+    except Exception as e:
+        try:
+            print(f"[debug] Failed to dump upstream: {e}")
+        except Exception:
+            pass
+        return None
+
+
 def dump_prompt(
     label: str,
     content: str,

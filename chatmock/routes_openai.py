@@ -13,7 +13,7 @@ from .config import (
     get_instructions_for_model,
     has_official_instructions,
 )
-from .debug import dump_prompt, dump_request, dump_tools_debug, debug_instructions_bisect
+from .debug import dump_prompt, dump_request, dump_tools_debug, debug_instructions_bisect, dump_upstream
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .reasoning import (
@@ -649,6 +649,22 @@ def chat_completions() -> Response:
     # END DEBUG INSTRUCTIONS BISECT
     # =========================================================================
 
+    # Debug: dump full upstream payload before sending
+    dump_upstream(
+        "chat_completions",
+        {
+            "model": model,
+            "instructions": final_instructions[:500] + "..." if len(final_instructions or "") > 500 else final_instructions,
+            "input_items": input_items,
+            "tools_count": len(tools_responses) if tools_responses else 0,
+            "tool_choice": tool_choice,
+            "parallel_tool_calls": parallel_tool_calls,
+            "reasoning": reasoning_param,
+            "extra_fields": extra_fields,
+        },
+        label="upstream_request",
+    )
+
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
@@ -891,6 +907,20 @@ def chat_completions() -> Response:
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)
         return resp
+
+    # Debug: dump upstream response (what ChatGPT returned)
+    dump_upstream(
+        "chat_completions",
+        {
+            "full_text": full_text[:500] + "..." if len(full_text or "") > 500 else full_text,
+            "tool_calls": tool_calls,
+            "tool_calls_count": len(tool_calls) if tool_calls else 0,
+            "reasoning_summary": reasoning_summary_text[:200] + "..." if len(reasoning_summary_text or "") > 200 else reasoning_summary_text,
+            "response_id": response_id,
+            "usage": usage_obj,
+        },
+        label="upstream_response",
+    )
 
     message: Dict[str, Any] = {"role": "assistant", "content": full_text if full_text else None}
     if tool_calls:
