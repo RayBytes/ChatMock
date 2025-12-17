@@ -52,8 +52,8 @@ GPT5_1_INSTRUCTIONS = _read_prompt_with_fallback("gpt_5_1_prompt.md", BASE_INSTR
 GPT5_2_INSTRUCTIONS = _read_prompt_with_fallback("gpt_5_2_prompt.md", BASE_INSTRUCTIONS)
 GPT5_1_CODEX_MAX_INSTRUCTIONS = _read_prompt_with_fallback("gpt_5_1_codex_max_prompt.md", GPT5_CODEX_INSTRUCTIONS)
 
-# Separator for concatenating project docs / IDE context to instructions
-PROJECT_DOC_SEPARATOR = "\n\n--- project-doc ---\n\n"
+# Separator for concatenating IDE context to instructions (like Codex uses for AGENTS.md)
+IDE_CONTEXT_SEPARATOR = "\n\n--- ide-context ---\n\n"
 
 
 def get_instructions_for_model(model: str) -> str:

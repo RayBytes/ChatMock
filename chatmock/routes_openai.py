@@ -10,7 +10,7 @@ from flask import Blueprint, Response, current_app, jsonify, make_response, requ
 from .config import (
     BASE_INSTRUCTIONS,
     GPT5_CODEX_INSTRUCTIONS,
-    PROJECT_DOC_SEPARATOR,
+    IDE_CONTEXT_SEPARATOR,
     get_instructions_for_model,
     has_official_instructions,
 )
@@ -357,7 +357,7 @@ Prefer these IDE tools for standard operations as they are optimized for this en
 
 IDE Instructions:
 """
-            final_instructions = model_base + PROJECT_DOC_SEPARATOR + ide_context + client_system_prompt.strip()
+            final_instructions = model_base + IDE_CONTEXT_SEPARATOR + ide_context + client_system_prompt.strip()
             if debug:
                 print(f"[chat/completions] GPT-5.2: Using {len(model_base)} char model instructions + {len(client_system_prompt)} char client prompt (concatenated)")
         else:
@@ -591,7 +591,7 @@ IDE Instructions:
                                         # FALLBACK: Use model instructions with concatenated client prompt
                                         model_base = get_instructions_for_model(model)
                                         if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
-                                            final_instructions = model_base + PROJECT_DOC_SEPARATOR + client_system_prompt.strip()
+                                            final_instructions = model_base + IDE_CONTEXT_SEPARATOR + client_system_prompt.strip()
                                             print(f"[debug_bisect] FALLBACK: Using model instructions + client prompt concatenated ({len(final_instructions)} chars)")
                                         else:
                                             final_instructions = model_base
