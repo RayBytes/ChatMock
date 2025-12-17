@@ -474,15 +474,17 @@ def sse_translate_chat(
     debug_stream = bool(os.getenv("CHATMOCK_DEBUG_STREAM"))
     _accumulated_text = []  # For debug logging
     
-    def _serialize_tool_args(eff_args: Any) -> str:
+    def _serialize_tool_args(eff_args: Any, *, wrap_raw_strings: bool = True) -> str:
         """
         Serialize tool call arguments with proper JSON handling.
-        
+
         Args:
             eff_args: Arguments to serialize (dict, list, str, or other)
-            
+            wrap_raw_strings: If False, return raw strings as-is (for custom tools)
+                             If True, wrap non-JSON strings in {"query": ...} (for web_search)
+
         Returns:
-            JSON string representation of the arguments
+            JSON string representation of the arguments, or raw string for custom tools
         """
         if isinstance(eff_args, (dict, list)):
             return json.dumps(eff_args)
@@ -490,11 +492,13 @@ def sse_translate_chat(
             try:
                 parsed = json.loads(eff_args)
                 if isinstance(parsed, (dict, list)):
-                    return json.dumps(parsed) 
+                    return json.dumps(parsed)
                 else:
-                    return json.dumps({"query": eff_args})  
+                    # Valid JSON but not dict/list - return raw if not wrapping
+                    return eff_args if not wrap_raw_strings else json.dumps({"query": eff_args})
             except (json.JSONDecodeError, ValueError):
-                return json.dumps({"query": eff_args})
+                # Not valid JSON - return raw for custom tools, wrap for web_search
+                return eff_args if not wrap_raw_strings else json.dumps({"query": eff_args})
         else:
             return "{}"
     
@@ -829,8 +833,10 @@ def sse_translate_chat(
                     if item_type == "web_search_call" and (not eff_args or (isinstance(eff_args, dict) and not eff_args.get('query'))):
                         eff_args = ws_state.get(call_id, {}) or {}
                     # Serialize arguments to JSON
+                    # For web_search_call: wrap raw strings in {"query": ...}
+                    # For function_call: pass raw strings as-is (may be custom tool with grammar)
                     try:
-                        args = _serialize_tool_args(eff_args)
+                        args = _serialize_tool_args(eff_args, wrap_raw_strings=(item_type == "web_search_call"))
                     except Exception:
                         args = "{}"
                     if verbose and vlog:
