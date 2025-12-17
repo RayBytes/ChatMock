@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
+
 from flask import Flask, jsonify, request
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
+from .debug import cleanup_debug_files
 from .http import build_cors_headers
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
@@ -26,6 +29,12 @@ def create_app(
     api_key: str | None = None,
 ) -> Flask:
     app = Flask(__name__)
+
+    # Cleanup old debug files if any debug mode is enabled
+    debug_bisect = os.getenv("DEBUG_INSTRUCTIONS_BISECT", "").lower() in ("1", "true", "yes", "on")
+    debug_prompts = os.getenv("DEBUG_LOG_PROMPTS", "").lower() in ("1", "true", "yes", "on")
+    if debug_log or debug_bisect or debug_prompts:
+        cleanup_debug_files()
 
     app.config.update(
         VERBOSE=bool(verbose),

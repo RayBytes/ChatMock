@@ -21,6 +21,33 @@ def _get_data_dir() -> Path:
     return Path(get_home_dir())
 
 
+def cleanup_debug_files() -> int:
+    """Remove all debug_* files from data directory.
+
+    Called on startup when debug mode is enabled.
+    Returns number of files deleted.
+    """
+    try:
+        data_dir = _get_data_dir()
+        if not data_dir.exists():
+            return 0
+
+        count = 0
+        for f in data_dir.glob("debug_*"):
+            try:
+                f.unlink()
+                count += 1
+            except Exception:
+                pass
+
+        if count > 0:
+            print(f"[debug] Cleaned up {count} old debug files")
+        return count
+    except Exception as e:
+        print(f"[debug] Failed to cleanup: {e}")
+        return 0
+
+
 def _is_debug_enabled() -> bool:
     """Check if debug logging is enabled."""
     for var in ("DEBUG_LOG", "CHATGPT_LOCAL_DEBUG", "CHATGPT_LOCAL_DEBUG_LOG"):
