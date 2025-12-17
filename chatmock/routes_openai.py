@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS, has_official_instructions
-from .debug import dump_prompt, dump_request, dump_tools_debug
+from .debug import dump_prompt, dump_request, dump_tools_debug, debug_instructions_bisect
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .reasoning import (
@@ -350,6 +350,55 @@ def chat_completions() -> Response:
         print(f"[chat/completions] FINAL INSTRUCTIONS preview:\n{inst_preview}...")
     if log_prompts and isinstance(final_instructions, str) and final_instructions:
         dump_prompt("final_instructions", final_instructions, prefix="chatmock")
+
+    # =========================================================================
+    # DEBUG INSTRUCTIONS BISECT
+    # Enable via DEBUG_INSTRUCTIONS_BISECT=1 to find which tagged block causes
+    # "Instructions are not valid" error. Sends iterative requests, removing
+    # one block at a time until upstream accepts.
+    # =========================================================================
+    if os.getenv("DEBUG_INSTRUCTIONS_BISECT", "").lower() in ("1", "true", "yes", "on"):
+        def _test_instructions(test_inst: str) -> tuple:
+            """Send test request and return (status_code, error_message)."""
+            test_upstream, test_err = start_upstream_request(
+                model,
+                input_items,
+                instructions=test_inst,
+                tools=tools_responses,
+                tool_choice=tool_choice,
+                parallel_tool_calls=parallel_tool_calls,
+                reasoning_param=reasoning_param,
+                extra_fields=extra_fields,
+            )
+            if test_err is not None:
+                try:
+                    body = test_err.get_data(as_text=True)
+                    return (test_err.status_code or 500, body)
+                except Exception:
+                    return (500, "Unknown error")
+            if test_upstream is None:
+                return (500, "No upstream response")
+            if test_upstream.status_code >= 400:
+                try:
+                    raw = test_upstream.text
+                    err = json.loads(raw) if raw else {}
+                    msg = err.get("detail") or err.get("error", {}).get("message", raw[:200])
+                    return (test_upstream.status_code, msg)
+                except Exception as e:
+                    return (test_upstream.status_code, str(e))
+            return (test_upstream.status_code, "")
+
+        working_inst, report_path = debug_instructions_bisect(
+            final_instructions,
+            _test_instructions,
+            model=model,
+        )
+        if working_inst is not None:
+            print(f"[chat/completions] DEBUG BISECT: Using working instructions ({len(working_inst)} chars)")
+            final_instructions = working_inst
+    # =========================================================================
+    # END DEBUG INSTRUCTIONS BISECT
+    # =========================================================================
 
     upstream, error_resp = start_upstream_request(
         model,
