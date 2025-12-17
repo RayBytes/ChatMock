@@ -10,7 +10,6 @@ from flask import Blueprint, Response, current_app, jsonify, make_response, requ
 from .config import (
     BASE_INSTRUCTIONS,
     GPT5_CODEX_INSTRUCTIONS,
-    IDE_CONTEXT_SEPARATOR,
     get_instructions_for_model,
     has_official_instructions,
 )
@@ -341,22 +340,26 @@ def chat_completions() -> Response:
     # Determine which instructions to use
     # GPT-5.2 and similar models have strict instruction validation - they only accept
     # whitelisted instruction formats. We use model-specific prompts from official Codex.
-    # Client system prompt is CONCATENATED to instructions (like Codex does with AGENTS.md).
+    # Client system prompt goes as a separate developer message (like official Codex does).
     model_needs_base_instructions = model.startswith("gpt-5.2")
 
     if model_needs_base_instructions:
-        # GPT-5.2: Use model-specific instructions, concatenate client prompt (like Codex does with AGENTS.md)
-        model_base = get_instructions_for_model(model)
+        # GPT-5.2: Use model-specific instructions in 'instructions' field (validated by API)
+        # Client system prompt goes as a separate developer message (like official Codex does)
+        final_instructions = get_instructions_for_model(model)
         if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
-            # Simple concatenation: model instructions + separator + client instructions
-            # The client's system prompt should describe its own environment
-            final_instructions = model_base + IDE_CONTEXT_SEPARATOR + client_system_prompt.strip()
+            # Send client prompt as developer message (higher authority than user messages)
+            client_as_developer = {
+                "type": "message",
+                "role": "developer",
+                "content": [{"type": "input_text", "text": client_system_prompt.strip()}]
+            }
+            input_items = [client_as_developer] + input_items
             if debug:
-                print(f"[chat/completions] GPT-5.2: Concatenated {len(model_base)} char model instructions + {len(client_system_prompt)} char client prompt")
+                print(f"[chat/completions] GPT-5.2: Using {len(final_instructions)} char model instructions + {len(client_system_prompt)} char client prompt as developer message")
         else:
-            final_instructions = model_base
             if debug:
-                print(f"[chat/completions] GPT-5.2: Using model-specific instructions ({len(model_base)} chars)")
+                print(f"[chat/completions] GPT-5.2: Using model-specific instructions ({len(final_instructions)} chars)")
     elif no_base or client_has_official:
         # Use client's instructions directly (or fallback)
         final_instructions = client_system_prompt.strip() if isinstance(client_system_prompt, str) and client_system_prompt.strip() else "You are a helpful assistant."
@@ -580,15 +583,19 @@ def chat_completions() -> Response:
                                         print(f"[debug_bisect] PREFIXED WORKS! Using ({len(prefixed_instructions)} chars)")
                                         final_instructions = prefixed_instructions
                                     else:
-                                        print("[debug_bisect] Prefixed also failed - using BASE only with concatenation")
-                                        # FALLBACK: Use model instructions with concatenated client prompt
-                                        model_base = get_instructions_for_model(model)
+                                        print("[debug_bisect] Prefixed also failed - using model instructions + developer message")
+                                        # FALLBACK: Use model instructions, client prompt as developer message
+                                        final_instructions = get_instructions_for_model(model)
                                         if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
-                                            final_instructions = model_base + IDE_CONTEXT_SEPARATOR + client_system_prompt.strip()
-                                            print(f"[debug_bisect] FALLBACK: Using model instructions + client prompt concatenated ({len(final_instructions)} chars)")
+                                            client_as_developer = {
+                                                "type": "message",
+                                                "role": "developer",
+                                                "content": [{"type": "input_text", "text": client_system_prompt.strip()}]
+                                            }
+                                            input_items = [client_as_developer] + input_items
+                                            print(f"[debug_bisect] FALLBACK: Using model instructions + client prompt as developer message")
                                         else:
-                                            final_instructions = model_base
-                                            print(f"[debug_bisect] FALLBACK: Using model instructions only ({len(model_base)} chars)")
+                                            print(f"[debug_bisect] FALLBACK: Using model instructions only ({len(final_instructions)} chars)")
                         else:
                             print("[debug_bisect] BASE_INSTRUCTIONS also fails - problem in input_items format!")
                             # Try with empty input to confirm
@@ -710,7 +717,7 @@ def chat_completions() -> Response:
             upstream2, err2 = start_upstream_request(
                 model,
                 input_items,
-                instructions=BASE_INSTRUCTIONS,
+                instructions=final_instructions,  # Use same instructions as first attempt
                 tools=base_tools_only,
                 tool_choice=safe_choice,
                 parallel_tool_calls=parallel_tool_calls,
