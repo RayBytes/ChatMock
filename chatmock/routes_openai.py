@@ -333,7 +333,28 @@ def chat_completions() -> Response:
     )
 
     # Determine which instructions to use
-    if no_base or client_has_official:
+    # GPT-5.2 and similar models have strict instruction validation - they only accept
+    # whitelisted instruction formats (like BASE_INSTRUCTIONS from Codex CLI).
+    # For these models, we MUST use BASE_INSTRUCTIONS and convert client prompt to user message.
+    model_needs_base_instructions = model.startswith("gpt-5.2")
+
+    if model_needs_base_instructions:
+        # GPT-5.2: Always use BASE_INSTRUCTIONS, convert client prompt to user message
+        final_instructions = BASE_INSTRUCTIONS
+        if client_system_prompt and isinstance(client_system_prompt, str) and client_system_prompt.strip():
+            # Prepend client system prompt as first user message in input_items
+            client_as_user = {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": f"[System Context]\n{client_system_prompt.strip()}"}]
+            }
+            input_items = [client_as_user] + input_items
+            if debug:
+                print(f"[chat/completions] GPT-5.2: Using BASE_INSTRUCTIONS + client prompt as user message ({len(client_system_prompt)} chars)")
+        else:
+            if debug:
+                print(f"[chat/completions] GPT-5.2: Using BASE_INSTRUCTIONS only")
+    elif no_base or client_has_official:
         # Use client's instructions directly (or fallback)
         final_instructions = client_system_prompt.strip() if isinstance(client_system_prompt, str) and client_system_prompt.strip() else "You are a helpful assistant."
         if debug:
