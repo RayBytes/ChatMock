@@ -252,29 +252,14 @@ def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
         tool_type = t.get("type")
 
         # Handle custom tools (e.g., apply_patch with Lark grammar)
-        # Convert to function format since GPT-5.2 only understands type: "function"
+        # Pass through as-is since Responses API natively supports type: "custom"
+        # These return custom_tool_call items with raw 'input' string (not JSON arguments)
+        # See: https://platform.openai.com/docs/guides/tools#custom-tools
         if tool_type == "custom":
             name = t.get("name")
-            desc = t.get("description", "")
             if isinstance(name, str) and name:
-                # Convert custom tool to function with single string parameter
-                # The description already contains format instructions (V4A diff, Lark grammar, etc.)
-                out.append({
-                    "type": "function",
-                    "name": name,
-                    "description": desc,
-                    "strict": False,
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "content": {
-                                "type": "string",
-                                "description": "The content/input for this tool as specified in the tool description"
-                            }
-                        },
-                        "required": ["content"]
-                    }
-                })
+                # Pass through the entire custom tool definition unchanged
+                out.append(t)
             continue
 
         if tool_type != "function":
@@ -736,9 +721,66 @@ def sse_translate_chat(
                         vlog(f"CM_TOOLS response.output_item.done web_search_call item={json.dumps(item, ensure_ascii=False)[:300]}")
                     except Exception:
                         pass
-                if isinstance(item, dict) and (item.get("type") == "function_call" or item.get("type") == "web_search_call"):
+                item_type = item.get("type") if isinstance(item, dict) else None
+                if item_type in ("function_call", "web_search_call", "custom_tool_call"):
                     call_id = item.get("call_id") or item.get("id") or ""
-                    name = item.get("name") or ("web_search" if item.get("type") == "web_search_call" else "")
+                    name = item.get("name") or ("web_search" if item_type == "web_search_call" else "")
+
+                    # Handle custom_tool_call: has raw 'input' string instead of JSON 'arguments'
+                    # Per Responses API spec: https://platform.openai.com/docs/guides/tools#custom-tools
+                    if item_type == "custom_tool_call":
+                        raw_input = item.get("input") or ""
+                        # Pass raw input directly as arguments (no JSON wrapping)
+                        args = raw_input if isinstance(raw_input, str) else ""
+                        if call_id not in ws_index:
+                            ws_index[call_id] = ws_next_index
+                            ws_next_index += 1
+                        _idx = ws_index.get(call_id, 0)
+                        if isinstance(call_id, str) and isinstance(name, str) and isinstance(args, str):
+                            delta_chunk = {
+                                "id": response_id,
+                                "object": "chat.completion.chunk",
+                                "created": created,
+                                "model": model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {
+                                            "tool_calls": [
+                                                {
+                                                    "index": _idx,
+                                                    "id": call_id,
+                                                    "type": "function",
+                                                    "function": {"name": name, "arguments": args},
+                                                }
+                                            ]
+                                        },
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                            yield f"data: {json.dumps(delta_chunk)}\n\n".encode("utf-8")
+
+                            finish_chunk = {
+                                "id": response_id,
+                                "object": "chat.completion.chunk",
+                                "created": created,
+                                "model": model,
+                                "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+                            }
+                            yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
+                            if debug_stream:
+                                print(f"[STREAM] Sent finish_reason=tool_calls for custom_tool_call {name}")
+                            # Log tool call for debugging
+                            try:
+                                args_preview = args[:500] if len(args) > 500 else args
+                                print(f"[TOOL_CALL] {name} (custom): {args_preview}")
+                            except Exception:
+                                pass
+                            sent_stop_chunk = True
+                        continue  # Skip the function_call/web_search_call handling below
+
+                    # Handle function_call and web_search_call
                     # Try to extract raw_args from multiple possible locations
                     raw_args = None
                     for key in ('arguments', 'parameters', 'input', 'action', 'query', 'q'):
@@ -754,14 +796,10 @@ def sse_translate_chat(
                             if isinstance(parsed_args, dict):
                                 raw_args = parsed_args
                         except (json.JSONDecodeError, ValueError, TypeError):
-                            if item.get("type") == "web_search_call":
+                            if item_type == "web_search_call":
                                 raw_args = {"query": raw_args}
-                    # For custom tools converted to function (e.g., apply_patch),
-                    # extract the "content" field and pass as raw string to Cursor
-                    if name == "apply_patch" and isinstance(raw_args, dict) and "content" in raw_args:
-                        raw_args = raw_args["content"]
                     # For web_search_call, also check if action.parameters has the query
-                    if item.get("type") == "web_search_call" and isinstance(item.get("action"), dict):
+                    if item_type == "web_search_call" and isinstance(item.get("action"), dict):
                         action = item.get("action")
                         if isinstance(action.get("parameters"), dict):
                             if not isinstance(raw_args, dict):
@@ -780,22 +818,19 @@ def sse_translate_chat(
                         except Exception:
                             pass
                     eff_args = ws_state.get(call_id, raw_args if isinstance(raw_args, (dict, list, str)) else {})
-                    if item.get("type") == "web_search_call" and (not eff_args or (isinstance(eff_args, dict) and not eff_args.get('query'))):
+                    if item_type == "web_search_call" and (not eff_args or (isinstance(eff_args, dict) and not eff_args.get('query'))):
                         eff_args = ws_state.get(call_id, {}) or {}
-                    # For apply_patch (custom tool), pass raw string directly without JSON wrapping
-                    if name == "apply_patch" and isinstance(eff_args, str):
-                        args = eff_args
-                    else:
-                        try:
-                            args = _serialize_tool_args(eff_args)
-                        except Exception:
-                            args = "{}"
+                    # Serialize arguments to JSON
+                    try:
+                        args = _serialize_tool_args(eff_args)
+                    except Exception:
+                        args = "{}"
                     if verbose and vlog:
                         try:
                             vlog(f"CM_TOOLS response.output_item.done raw_args={raw_args} eff_args={eff_args} args={args}")
                         except Exception:
                             pass
-                    if item.get("type") == "web_search_call" and verbose and vlog:
+                    if item_type == "web_search_call" and verbose and vlog:
                         try:
                             vlog(f"CM_TOOLS response.output_item.done web_search_call id={call_id} has_args={bool(args)}")
                         except Exception:

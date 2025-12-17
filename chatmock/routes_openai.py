@@ -962,18 +962,34 @@ def chat_completions() -> Response:
                 reasoning_full_text += evt.get("delta") or ""
             elif kind == "response.output_item.done":
                 item = evt.get("item") or {}
-                if isinstance(item, dict) and item.get("type") == "function_call":
-                    call_id = item.get("call_id") or item.get("id") or ""
-                    name = item.get("name") or ""
-                    args = item.get("arguments") or ""
-                    if isinstance(call_id, str) and isinstance(name, str) and isinstance(args, str):
-                        tool_calls.append(
-                            {
-                                "id": call_id,
-                                "type": "function",
-                                "function": {"name": name, "arguments": args},
-                            }
-                        )
+                if isinstance(item, dict):
+                    item_type = item.get("type")
+                    if item_type == "function_call":
+                        call_id = item.get("call_id") or item.get("id") or ""
+                        name = item.get("name") or ""
+                        args = item.get("arguments") or ""
+                        if isinstance(call_id, str) and isinstance(name, str) and isinstance(args, str):
+                            tool_calls.append(
+                                {
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {"name": name, "arguments": args},
+                                }
+                            )
+                    elif item_type == "custom_tool_call":
+                        # Custom tool calls have raw 'input' string instead of JSON 'arguments'
+                        # Convert to Chat Completions format with raw input as arguments
+                        call_id = item.get("call_id") or item.get("id") or ""
+                        name = item.get("name") or ""
+                        raw_input = item.get("input") or ""
+                        if isinstance(call_id, str) and isinstance(name, str) and isinstance(raw_input, str):
+                            tool_calls.append(
+                                {
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {"name": name, "arguments": raw_input},
+                                }
+                            )
             elif kind == "response.failed":
                 error_message = evt.get("response", {}).get("error", {}).get("message", "response.failed")
             elif kind == "response.completed":
