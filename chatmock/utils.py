@@ -752,7 +752,8 @@ def sse_translate_chat(
                             # Stream tool call in OpenAI format: first chunk with id/name, then arguments in pieces
                             # This matches how OpenAI streams tool calls and may help Cursor track changes
 
-                            # First chunk: tool call header (id, type, name, empty arguments)
+                            # First chunk: tool call header with role (OpenAI format)
+                            # OpenAI's first chunk includes role: "assistant" and content: null
                             header_chunk = {
                                 "id": response_id,
                                 "object": "chat.completion.chunk",
@@ -762,6 +763,8 @@ def sse_translate_chat(
                                     {
                                         "index": 0,
                                         "delta": {
+                                            "role": "assistant",
+                                            "content": None,
                                             "tool_calls": [
                                                 {
                                                     "index": _idx,
@@ -885,6 +888,7 @@ def sse_translate_chat(
                         ws_next_index += 1
                     _idx = ws_index.get(call_id, 0)
                     if isinstance(call_id, str) and isinstance(name, str) and isinstance(args, str):
+                        # Include role: assistant and content: null for OpenAI format compliance
                         delta_chunk = {
                             "id": response_id,
                             "object": "chat.completion.chunk",
@@ -894,6 +898,8 @@ def sse_translate_chat(
                                 {
                                     "index": 0,
                                     "delta": {
+                                        "role": "assistant",
+                                        "content": None,
                                         "tool_calls": [
                                             {
                                                 "index": _idx,
