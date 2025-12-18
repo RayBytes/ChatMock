@@ -122,19 +122,40 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
     # Cursor sends mixed format: Chat messages (with role) + Responses API items (with type)
     _responses_api_types = {"function_call", "function_call_output", "message", "item_reference"}
 
+    # Debug: log all incoming messages to understand what Cursor sends
+    try:
+        print(f"[CONVERT] Processing {len(messages)} messages from Cursor")
+        for i, m in enumerate(messages):
+            role = m.get("role")
+            mtype = m.get("type")
+            call_id = m.get("call_id") or m.get("tool_call_id") or m.get("id")
+            has_tool_calls = "tool_calls" in m
+            preview = str(m)[:200]
+            print(f"[CONVERT] [{i}] role={role!r} type={mtype!r} call_id={call_id!r} has_tool_calls={has_tool_calls}")
+    except Exception as e:
+        print(f"[CONVERT] Error logging messages: {e}")
+
     for message in messages:
         # Passthrough for items already in Responses API format (type field, no role or role inside)
         msg_type = message.get("type")
         if isinstance(msg_type, str) and msg_type in _responses_api_types:
+            # Debug: log all Responses API format items
+            try:
+                print(f"[PASSTHROUGH] type={msg_type!r} call_id={message.get('call_id')!r}")
+            except Exception:
+                pass
             # Track function_call IDs for later matching
             if msg_type == "function_call":
                 call_id = message.get("call_id")
                 if isinstance(call_id, str):
                     seen_function_call_ids.add(call_id)
+                    print(f"[PASSTHROUGH] Added function_call to seen: {call_id!r}")
             # For function_call_output, only include if we've seen the matching function_call
             elif msg_type == "function_call_output":
                 call_id = message.get("call_id")
+                print(f"[PASSTHROUGH] function_call_output: call_id={call_id!r} seen={seen_function_call_ids}")
                 if isinstance(call_id, str) and call_id not in seen_function_call_ids:
+                    print(f"[PASSTHROUGH] SKIPPED function_call_output! call_id={call_id!r} not in seen")
                     if debug_tools:
                         try:
                             eprint(
@@ -143,6 +164,7 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
                         except Exception:
                             pass
                     continue
+                print(f"[PASSTHROUGH] ACCEPTED function_call_output: call_id={call_id!r}")
             input_items.append(message)
             continue
 
