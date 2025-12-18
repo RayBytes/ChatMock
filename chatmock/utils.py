@@ -18,6 +18,19 @@ def eprint(*args, **kwargs) -> None:
     print(*args, file=sys.stderr, **kwargs)
 
 
+def _is_debug_log() -> bool:
+    """Check if compact debug logging is enabled via environment variables.
+
+    This controls [CONVERT], [PASSTHROUGH], [STREAM] etc. logs.
+    Separate from VERBOSE which logs full request/response bodies.
+    """
+    for var in ("DEBUG_LOG", "CHATGPT_LOCAL_DEBUG", "CHATGPT_LOCAL_DEBUG_LOG"):
+        val = os.getenv(var, "").lower()
+        if val in ("1", "true", "yes", "on"):
+            return True
+    return False
+
+
 def get_home_dir() -> str:
     home = os.getenv("CHATGPT_LOCAL_HOME") or os.getenv("CODEX_HOME")
     if not home:
@@ -124,48 +137,45 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
     _responses_api_types = {"function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output", "message", "item_reference"}
 
     # Debug: log all incoming messages to understand what Cursor sends
-    try:
-        print(f"[CONVERT] Processing {len(messages)} messages from Cursor")
-        for i, m in enumerate(messages):
-            role = m.get("role")
-            mtype = m.get("type")
-            call_id = m.get("call_id") or m.get("tool_call_id") or m.get("id")
-            has_tool_calls = "tool_calls" in m
-            preview = str(m)[:200]
-            print(f"[CONVERT] [{i}] role={role!r} type={mtype!r} call_id={call_id!r} has_tool_calls={has_tool_calls}")
-    except Exception as e:
-        print(f"[CONVERT] Error logging messages: {e}")
+    if _is_debug_log():
+        try:
+            print(f"[CONVERT] Processing {len(messages)} messages from Cursor")
+            for i, m in enumerate(messages):
+                role = m.get("role")
+                mtype = m.get("type")
+                call_id = m.get("call_id") or m.get("tool_call_id") or m.get("id")
+                has_tool_calls = "tool_calls" in m
+                print(f"[CONVERT] [{i}] role={role!r} type={mtype!r} call_id={call_id!r} has_tool_calls={has_tool_calls}")
+        except Exception as e:
+            print(f"[CONVERT] Error logging messages: {e}")
 
     for message in messages:
         # Passthrough for items already in Responses API format (type field, no role or role inside)
         msg_type = message.get("type")
         if isinstance(msg_type, str) and msg_type in _responses_api_types:
             # Debug: log all Responses API format items
-            try:
+            if _is_debug_log():
                 print(f"[PASSTHROUGH] type={msg_type!r} call_id={message.get('call_id')!r}")
-            except Exception:
-                pass
             # Track function_call IDs for later matching
             if msg_type == "function_call":
                 call_id = message.get("call_id")
                 if isinstance(call_id, str):
                     seen_function_call_ids.add(call_id)
-                    print(f"[PASSTHROUGH] Added function_call to seen: {call_id!r}")
+                    if _is_debug_log():
+                        print(f"[PASSTHROUGH] Added function_call to seen: {call_id!r}")
             # For function_call_output, only include if we've seen the matching function_call
             elif msg_type == "function_call_output":
                 call_id = message.get("call_id")
-                print(f"[PASSTHROUGH] function_call_output: call_id={call_id!r} seen={seen_function_call_ids}")
+                if _is_debug_log():
+                    print(f"[PASSTHROUGH] function_call_output: call_id={call_id!r} seen={seen_function_call_ids}")
                 if isinstance(call_id, str) and call_id not in seen_function_call_ids:
-                    print(f"[PASSTHROUGH] SKIPPED function_call_output! call_id={call_id!r} not in seen")
+                    if _is_debug_log():
+                        print(f"[PASSTHROUGH] SKIPPED function_call_output! call_id={call_id!r} not in seen")
                     if debug_tools:
-                        try:
-                            eprint(
-                                f"[CHATMOCK_DEBUG_TOOLS] passthrough: function_call_output without matching function_call: call_id={call_id!r}"
-                            )
-                        except Exception:
-                            pass
+                        eprint(f"[CHATMOCK_DEBUG_TOOLS] passthrough: function_call_output without matching function_call: call_id={call_id!r}")
                     continue
-                print(f"[PASSTHROUGH] ACCEPTED function_call_output: call_id={call_id!r}")
+                if _is_debug_log():
+                    print(f"[PASSTHROUGH] ACCEPTED function_call_output: call_id={call_id!r}")
             input_items.append(message)
             continue
 
@@ -176,12 +186,10 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
         if role == "tool":
             call_id = message.get("tool_call_id") or message.get("id")
             # Debug: log tool result processing
-            try:
+            if _is_debug_log():
                 content_preview = str(message.get("content", ""))[:200]
                 print(f"[TOOL_RESULT] Processing role=tool: call_id={call_id!r} content={content_preview!r}")
                 print(f"[TOOL_RESULT] seen_function_call_ids={seen_function_call_ids}")
-            except Exception:
-                pass
             if isinstance(call_id, str) and call_id:
                 content = message.get("content", "")
                 if isinstance(content, list):
@@ -195,25 +203,16 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
                 if isinstance(content, str):
                     if call_id not in seen_function_call_ids:
                         # Debug: log skipped tool result
-                        try:
+                        if _is_debug_log():
                             print(f"[TOOL_RESULT] SKIPPED! call_id={call_id!r} not in seen_function_call_ids")
-                        except Exception:
-                            pass
                         if debug_tools:
-                            try:
-                                eprint(
-                                    f"[CHATMOCK_DEBUG_TOOLS] function_call_output without matching function_call: call_id={call_id!r}"
-                                )
-                            except Exception:
-                                pass
+                            eprint(f"[CHATMOCK_DEBUG_TOOLS] function_call_output without matching function_call: call_id={call_id!r}")
                         # Не отправляем function_call_output без соответствующего function_call.
                         # Это предотвращает 400 от Responses: "No tool call found for function call output".
                         continue
                     # Debug: log accepted tool result
-                    try:
+                    if _is_debug_log():
                         print(f"[TOOL_RESULT] ACCEPTED: call_id={call_id!r} -> function_call_output")
-                    except Exception:
-                        pass
                     input_items.append(
                         {
                             "type": "function_call_output",
@@ -770,13 +769,14 @@ def sse_translate_chat(
                     call_id = item.get("call_id") or item.get("id") or ""
                     name = item.get("name") or ("web_search" if item_type == "web_search_call" else "")
                     # Debug: log raw item from ChatGPT to see exact response format
-                    try:
-                        import json as _json
-                        raw_item_preview = _json.dumps(item, ensure_ascii=False)[:800]
-                        print(f"[CHATMOCK] response.output_item.done: item_type={item_type!r} name={name!r}")
-                        print(f"[CHATMOCK] RAW ITEM FROM CHATGPT: {raw_item_preview}")
-                    except Exception:
-                        pass
+                    if _is_debug_log():
+                        try:
+                            import json as _json
+                            raw_item_preview = _json.dumps(item, ensure_ascii=False)[:800]
+                            print(f"[CHATMOCK] response.output_item.done: item_type={item_type!r} name={name!r}")
+                            print(f"[CHATMOCK] RAW ITEM FROM CHATGPT: {raw_item_preview}")
+                        except Exception:
+                            pass
 
                     # Handle custom_tool_call: has raw 'input' string instead of JSON 'arguments'
                     # Per Responses API spec: https://platform.openai.com/docs/guides/tools#custom-tools
@@ -858,11 +858,9 @@ def sse_translate_chat(
                             if debug_stream:
                                 print(f"[STREAM] Sent finish_reason=tool_calls for custom_tool_call {name}")
                             # Log tool call for debugging
-                            try:
+                            if _is_debug_log():
                                 args_preview = args[:500] if len(args) > 500 else args
                                 print(f"[TOOL_CALL] {name} (custom): {args_preview}")
-                            except Exception:
-                                pass
                             sent_stop_chunk = True
                         continue  # Skip the function_call/web_search_call handling below
 
@@ -965,12 +963,10 @@ def sse_translate_chat(
                         yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
                         if debug_stream:
                             print(f"[STREAM] Sent finish_reason=tool_calls for {name}")
-                        # Always log tool call arguments (useful for debugging)
-                        try:
+                        # Log tool call arguments for debugging
+                        if _is_debug_log():
                             args_preview = args[:500] if len(args) > 500 else args
                             print(f"[TOOL_CALL] {name}: {args_preview}")
-                        except Exception:
-                            pass
                         sent_stop_chunk = True  # Prevent sending "stop" after "tool_calls"
             elif kind == "response.reasoning_summary_part.added":
                 if compat in ("think-tags", "o3"):
