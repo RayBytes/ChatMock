@@ -120,7 +120,8 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
 
     # Known Responses API item types that should be passed through directly
     # Cursor sends mixed format: Chat messages (with role) + Responses API items (with type)
-    _responses_api_types = {"function_call", "function_call_output", "message", "item_reference"}
+    # Note: custom_tool_call/custom_tool_call_output are for custom tools like apply_patch
+    _responses_api_types = {"function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output", "message", "item_reference"}
 
     # Debug: log all incoming messages to understand what Cursor sends
     try:
