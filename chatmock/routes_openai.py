@@ -29,7 +29,6 @@ from .utils import (
     sse_translate_chat,
     sse_translate_text,
 )
-from .agentlog import agent_debug_log
 
 
 openai_bp = Blueprint("openai", __name__)
@@ -191,26 +190,6 @@ def chat_completions() -> Response:
 
     requested_model = payload.get("model")
     model = normalize_model_name(requested_model, debug_model)
-
-    # #region agent log
-    try:
-        agent_debug_log(
-            location="chatmock/routes_openai.py:chat_completions",
-            message="Incoming /v1/chat/completions",
-            hypothesisId="C",
-            runId="pre",
-            data={
-                "requested_model": requested_model if isinstance(requested_model, str) else None,
-                "normalized_model": model,
-                "payload_keys": sorted(list(payload.keys())) if isinstance(payload, dict) else [],
-                "has_temperature": "temperature" in payload,
-                "temperature_type": type(payload.get("temperature")).__name__ if isinstance(payload, dict) and "temperature" in payload else None,
-                "stream": bool(payload.get("stream")) if isinstance(payload, dict) else None,
-            },
-        )
-    except Exception:
-        pass
-    # #endregion
 
     # Debug: log payload keys when DEBUG_LOG is enabled
     debug = bool(current_app.config.get("DEBUG_LOG"))
@@ -396,11 +375,6 @@ def chat_completions() -> Response:
     for k in passthrough_keys:
         if k in payload and payload.get(k) is not None:
             extra_fields[k] = payload.get(k)
-
-    # Compatibility: ChatGPT upstream rejects `temperature` for gpt-5.2.
-    # Use existing debug dump_request() evidence (debug_chat_completions.json) to verify removal.
-    if isinstance(model, str) and model.startswith("gpt-5.2"):
-        extra_fields.pop("temperature", None)
 
     # Handle max_tokens → max_output_tokens mapping (Chat Completions uses max_tokens)
     if "max_tokens" in payload and payload.get("max_tokens") is not None:
@@ -835,22 +809,6 @@ def chat_completions() -> Response:
             or err_body.get("raw", "Unknown error")
         )
         print(f"[chat/completions] Upstream error ({upstream.status_code}): {upstream_err_msg}")
-        # #region agent log
-        agent_debug_log(
-            location="chatmock/routes_openai.py:chat_completions",
-            message="Upstream returned error",
-            hypothesisId="A",
-            runId="pre",
-            data={
-                "status_code": int(upstream.status_code),
-                "upstream_error": str(upstream_err_msg)[:200],
-                "has_temperature": "temperature" in payload,
-                "temperature_type": type(payload.get("temperature")).__name__ if isinstance(payload, dict) and "temperature" in payload else None,
-                "requested_model": requested_model if isinstance(requested_model, str) else None,
-                "normalized_model": model,
-            },
-        )
-        # #endregion
         if debug:
             _log_json("[chat/completions] Full upstream error", err_body)
 
@@ -877,15 +835,6 @@ def chat_completions() -> Response:
             extra_fields2 = dict(extra_fields)
             extra_fields2.pop(unsupported_param, None)
             print(f"[compat] Retrying without unsupported param: {unsupported_param}")
-            # #region agent log
-            agent_debug_log(
-                location="chatmock/routes_openai.py:chat_completions",
-                message="Retrying without unsupported parameter",
-                hypothesisId="B",
-                runId="pre",
-                data={"param": unsupported_param, "model": model},
-            )
-            # #endregion
             upstream_retry, err_retry = start_upstream_request(
                 model,
                 input_items,

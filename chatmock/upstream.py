@@ -12,7 +12,6 @@ from .http import build_cors_headers
 from .session import ensure_session_id
 from flask import request as flask_request
 from .utils import get_effective_chatgpt_auth
-from .agentlog import agent_debug_log
 
 
 def _log_json(prefix: str, payload: Any) -> None:
@@ -133,10 +132,6 @@ def start_upstream_request(
         "temperature", "top_p", "seed", "max_output_tokens", "stop", "truncation", "text",
         "frequency_penalty", "presence_penalty", "service_tier", "logprobs", "top_logprobs",
     }
-    _blocked_for_model: set[str] = set()
-    # Runtime evidence: ChatGPT upstream rejects `temperature` for GPT-5.2.
-    if isinstance(model, str) and model.startswith("gpt-5.2"):
-        _blocked_for_model.add("temperature")
     if isinstance(extra_fields, dict):
         for k, v in extra_fields.items():
             if v is None:
@@ -145,43 +140,7 @@ def start_upstream_request(
                 continue
             if k not in _allowed:
                 continue
-            if k in _blocked_for_model:
-                # Also emit to stdout so remote deployments can capture evidence without files.
-                try:
-                    verbose_flag = bool(current_app.config.get("VERBOSE"))
-                    debug_flag = bool(current_app.config.get("DEBUG_LOG"))
-                except Exception:
-                    verbose_flag = False
-                    debug_flag = False
-                if verbose_flag or debug_flag:
-                    print(f"[compat] Dropping blocked param for model={model}: {k}")
-                # #region agent log
-                agent_debug_log(
-                    location="chatmock/upstream.py:start_upstream_request",
-                    message="Dropped blocked param for model before upstream",
-                    hypothesisId="B",
-                    runId="pre",
-                    data={"model": model, "param": k},
-                )
-                # #endregion
-                continue
             responses_payload[k] = v
-
-    # #region agent log
-    agent_debug_log(
-        location="chatmock/upstream.py:start_upstream_request",
-        message="Prepared upstream payload",
-        hypothesisId="A",
-        runId="pre",
-        data={
-            "model": model,
-            "input_items_count": len(input_items) if isinstance(input_items, list) else -1,
-            "tools_count": len(tools) if isinstance(tools, list) else 0,
-            "extra_fields_keys": sorted(list(extra_fields.keys())) if isinstance(extra_fields, dict) else [],
-            "forwarded_extra_keys": sorted([k for k in responses_payload.keys() if k in _allowed]),
-        },
-    )
-    # #endregion
 
     verbose = False
     debug = False
@@ -218,15 +177,6 @@ def start_upstream_request(
             timeout=600,
         )
     except requests.RequestException as e:
-        # #region agent log
-        agent_debug_log(
-            location="chatmock/upstream.py:start_upstream_request",
-            message="Upstream request exception",
-            hypothesisId="E",
-            runId="pre",
-            data={"error": str(e)[:300], "model": model},
-        )
-        # #endregion
         resp = make_response(jsonify({"error": {"message": f"Upstream ChatGPT request failed: {e}"}}), 502)
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)

@@ -38,7 +38,6 @@ from .limits import record_rate_limits_from_response
 from .reasoning import build_reasoning_param, extract_reasoning_from_model_name
 from .upstream import normalize_model_name, start_upstream_request
 from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_to_responses, get_home_dir
-from .agentlog import agent_debug_log
 
 try:
     from .routes_webui import record_request
@@ -645,26 +644,6 @@ def responses_create() -> Response:
         # Log incoming payload keys for debugging
         print(f"[responses] payload keys: {list(payload.keys())}")
 
-    # #region agent log
-    try:
-        agent_debug_log(
-            location="chatmock/routes_responses.py:responses_create",
-            message="Incoming /v1/responses",
-            hypothesisId="C",
-            runId="pre",
-            data={
-                "requested_model": requested_model if isinstance(requested_model, str) else None,
-                "normalized_model": model,
-                "payload_keys": sorted(list(payload.keys())) if isinstance(payload, dict) else [],
-                "has_temperature": "temperature" in payload,
-                "temperature_type": type(payload.get("temperature")).__name__ if isinstance(payload, dict) and "temperature" in payload else None,
-                "stream": stream_req,
-            },
-        )
-    except Exception:
-        pass
-    # #endregion
-
     # Parse input - accept Responses `input` or Chat-style `messages`/`prompt`
     input_items: Optional[List[Dict[str, Any]]] = None
     raw_input = payload.get("input")
@@ -801,11 +780,6 @@ def responses_create() -> Response:
         if k in payload and payload.get(k) is not None:
             extra_fields[k] = payload.get(k)
 
-    # Compatibility: ChatGPT upstream rejects `temperature` for gpt-5.2.
-    # Keep evidence in existing debug dump_request() output.
-    if isinstance(model, str) and model.startswith("gpt-5.2"):
-        extra_fields.pop("temperature", None)
-
     # Handle response_format → text.format conversion (for structured outputs)
     response_format = payload.get("response_format")
     if isinstance(response_format, dict):
@@ -894,23 +868,6 @@ def responses_create() -> Response:
         # Log error in debug mode
         if debug or verbose:
             print(f"[responses] ERROR {upstream.status_code}: {err_body}")
-        # #region agent log
-        agent_debug_log(
-            location="chatmock/routes_responses.py:responses_create",
-            message="Upstream returned error",
-            hypothesisId="A",
-            runId="pre",
-            data={
-                "status_code": int(upstream.status_code),
-                "error_msg": str(error_msg)[:200],
-                "detail": str(err_body.get("detail"))[:200] if isinstance(err_body, dict) else None,
-                "has_temperature": "temperature" in payload,
-                "temperature_type": type(payload.get("temperature")).__name__ if isinstance(payload, dict) and "temperature" in payload else None,
-                "requested_model": requested_model if isinstance(requested_model, str) else None,
-                "normalized_model": model,
-            },
-        )
-        # #endregion
         # Retry once if upstream rejected an otherwise optional parameter (e.g. temperature).
         unsupported_param = None
         try:
@@ -933,15 +890,6 @@ def responses_create() -> Response:
             extra_fields2 = dict(extra_fields)
             extra_fields2.pop(unsupported_param, None)
             print(f"[compat] /v1/responses retrying without unsupported param: {unsupported_param}")
-            # #region agent log
-            agent_debug_log(
-                location="chatmock/routes_responses.py:responses_create",
-                message="Retrying without unsupported parameter",
-                hypothesisId="B",
-                runId="pre",
-                data={"param": unsupported_param, "model": model},
-            )
-            # #endregion
             upstream_retry, err_retry = start_upstream_request(
                 model,
                 input_items,
