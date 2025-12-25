@@ -12,6 +12,7 @@ from .http import build_cors_headers
 from .session import ensure_session_id
 from flask import request as flask_request
 from .utils import get_effective_chatgpt_auth
+from .agentlog import agent_debug_log
 
 
 def _log_json(prefix: str, payload: Any) -> None:
@@ -142,6 +143,22 @@ def start_upstream_request(
                 continue
             responses_payload[k] = v
 
+    # #region agent log
+    agent_debug_log(
+        location="chatmock/upstream.py:start_upstream_request",
+        message="Prepared upstream payload",
+        hypothesisId="A",
+        runId="pre",
+        data={
+            "model": model,
+            "input_items_count": len(input_items) if isinstance(input_items, list) else -1,
+            "tools_count": len(tools) if isinstance(tools, list) else 0,
+            "extra_fields_keys": sorted(list(extra_fields.keys())) if isinstance(extra_fields, dict) else [],
+            "forwarded_extra_keys": sorted([k for k in responses_payload.keys() if k in _allowed]),
+        },
+    )
+    # #endregion
+
     verbose = False
     debug = False
     try:
@@ -177,6 +194,15 @@ def start_upstream_request(
             timeout=600,
         )
     except requests.RequestException as e:
+        # #region agent log
+        agent_debug_log(
+            location="chatmock/upstream.py:start_upstream_request",
+            message="Upstream request exception",
+            hypothesisId="E",
+            runId="pre",
+            data={"error": str(e)[:300], "model": model},
+        )
+        # #endregion
         resp = make_response(jsonify({"error": {"message": f"Upstream ChatGPT request failed: {e}"}}), 502)
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)

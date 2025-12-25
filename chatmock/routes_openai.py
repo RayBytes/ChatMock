@@ -29,6 +29,7 @@ from .utils import (
     sse_translate_chat,
     sse_translate_text,
 )
+from .agentlog import agent_debug_log
 
 
 openai_bp = Blueprint("openai", __name__)
@@ -190,6 +191,26 @@ def chat_completions() -> Response:
 
     requested_model = payload.get("model")
     model = normalize_model_name(requested_model, debug_model)
+
+    # #region agent log
+    try:
+        agent_debug_log(
+            location="chatmock/routes_openai.py:chat_completions",
+            message="Incoming /v1/chat/completions",
+            hypothesisId="C",
+            runId="pre",
+            data={
+                "requested_model": requested_model if isinstance(requested_model, str) else None,
+                "normalized_model": model,
+                "payload_keys": sorted(list(payload.keys())) if isinstance(payload, dict) else [],
+                "has_temperature": "temperature" in payload,
+                "temperature_type": type(payload.get("temperature")).__name__ if isinstance(payload, dict) and "temperature" in payload else None,
+                "stream": bool(payload.get("stream")) if isinstance(payload, dict) else None,
+            },
+        )
+    except Exception:
+        pass
+    # #endregion
 
     # Debug: log payload keys when DEBUG_LOG is enabled
     debug = bool(current_app.config.get("DEBUG_LOG"))
@@ -809,6 +830,22 @@ def chat_completions() -> Response:
             or err_body.get("raw", "Unknown error")
         )
         print(f"[chat/completions] Upstream error ({upstream.status_code}): {upstream_err_msg}")
+        # #region agent log
+        agent_debug_log(
+            location="chatmock/routes_openai.py:chat_completions",
+            message="Upstream returned error",
+            hypothesisId="A",
+            runId="pre",
+            data={
+                "status_code": int(upstream.status_code),
+                "upstream_error": str(upstream_err_msg)[:200],
+                "has_temperature": "temperature" in payload,
+                "temperature_type": type(payload.get("temperature")).__name__ if isinstance(payload, dict) and "temperature" in payload else None,
+                "requested_model": requested_model if isinstance(requested_model, str) else None,
+                "normalized_model": model,
+            },
+        )
+        # #endregion
         if debug:
             _log_json("[chat/completions] Full upstream error", err_body)
         if had_responses_tools:

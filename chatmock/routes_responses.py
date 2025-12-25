@@ -38,6 +38,7 @@ from .limits import record_rate_limits_from_response
 from .reasoning import build_reasoning_param, extract_reasoning_from_model_name
 from .upstream import normalize_model_name, start_upstream_request
 from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_to_responses, get_home_dir
+from .agentlog import agent_debug_log
 
 try:
     from .routes_webui import record_request
@@ -644,6 +645,26 @@ def responses_create() -> Response:
         # Log incoming payload keys for debugging
         print(f"[responses] payload keys: {list(payload.keys())}")
 
+    # #region agent log
+    try:
+        agent_debug_log(
+            location="chatmock/routes_responses.py:responses_create",
+            message="Incoming /v1/responses",
+            hypothesisId="C",
+            runId="pre",
+            data={
+                "requested_model": requested_model if isinstance(requested_model, str) else None,
+                "normalized_model": model,
+                "payload_keys": sorted(list(payload.keys())) if isinstance(payload, dict) else [],
+                "has_temperature": "temperature" in payload,
+                "temperature_type": type(payload.get("temperature")).__name__ if isinstance(payload, dict) and "temperature" in payload else None,
+                "stream": stream_req,
+            },
+        )
+    except Exception:
+        pass
+    # #endregion
+
     # Parse input - accept Responses `input` or Chat-style `messages`/`prompt`
     input_items: Optional[List[Dict[str, Any]]] = None
     raw_input = payload.get("input")
@@ -864,6 +885,23 @@ def responses_create() -> Response:
         # Log error in debug mode
         if debug or verbose:
             print(f"[responses] ERROR {upstream.status_code}: {err_body}")
+        # #region agent log
+        agent_debug_log(
+            location="chatmock/routes_responses.py:responses_create",
+            message="Upstream returned error",
+            hypothesisId="A",
+            runId="pre",
+            data={
+                "status_code": int(upstream.status_code),
+                "error_msg": str(error_msg)[:200],
+                "detail": str(err_body.get("detail"))[:200] if isinstance(err_body, dict) else None,
+                "has_temperature": "temperature" in payload,
+                "temperature_type": type(payload.get("temperature")).__name__ if isinstance(payload, dict) and "temperature" in payload else None,
+                "requested_model": requested_model if isinstance(requested_model, str) else None,
+                "normalized_model": model,
+            },
+        )
+        # #endregion
         return jsonify({"error": {"message": error_msg}}), upstream.status_code
 
     if stream_req:
