@@ -146,6 +146,15 @@ def start_upstream_request(
             if k not in _allowed:
                 continue
             if k in _blocked_for_model:
+                # Also emit to stdout so remote deployments can capture evidence without files.
+                try:
+                    verbose_flag = bool(current_app.config.get("VERBOSE"))
+                    debug_flag = bool(current_app.config.get("DEBUG_LOG"))
+                except Exception:
+                    verbose_flag = False
+                    debug_flag = False
+                if verbose_flag or debug_flag:
+                    print(f"[compat] Dropping blocked param for model={model}: {k}")
                 # #region agent log
                 agent_debug_log(
                     location="chatmock/upstream.py:start_upstream_request",
