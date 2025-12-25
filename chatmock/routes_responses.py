@@ -801,6 +801,11 @@ def responses_create() -> Response:
         if k in payload and payload.get(k) is not None:
             extra_fields[k] = payload.get(k)
 
+    # Compatibility: ChatGPT upstream rejects `temperature` for gpt-5.2.
+    # Keep evidence in existing debug dump_request() output.
+    if isinstance(model, str) and model.startswith("gpt-5.2"):
+        extra_fields.pop("temperature", None)
+
     # Handle response_format → text.format conversion (for structured outputs)
     response_format = payload.get("response_format")
     if isinstance(response_format, dict):

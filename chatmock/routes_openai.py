@@ -397,6 +397,11 @@ def chat_completions() -> Response:
         if k in payload and payload.get(k) is not None:
             extra_fields[k] = payload.get(k)
 
+    # Compatibility: ChatGPT upstream rejects `temperature` for gpt-5.2.
+    # Use existing debug dump_request() evidence (debug_chat_completions.json) to verify removal.
+    if isinstance(model, str) and model.startswith("gpt-5.2"):
+        extra_fields.pop("temperature", None)
+
     # Handle max_tokens → max_output_tokens mapping (Chat Completions uses max_tokens)
     if "max_tokens" in payload and payload.get("max_tokens") is not None:
         extra_fields["max_output_tokens"] = payload.get("max_tokens")
