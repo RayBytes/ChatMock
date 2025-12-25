@@ -848,7 +848,74 @@ def chat_completions() -> Response:
         # #endregion
         if debug:
             _log_json("[chat/completions] Full upstream error", err_body)
-        if had_responses_tools:
+
+        # Retry once if upstream rejected an otherwise optional parameter (e.g. temperature).
+        # Runtime evidence: gpt-5.2 rejects `temperature` with detail "Unsupported parameter: temperature".
+        unsupported_param = None
+        try:
+            detail = err_body.get("detail") if isinstance(err_body, dict) else None
+            if isinstance(detail, str) and detail.lower().startswith("unsupported parameter:"):
+                unsupported_param = detail.split(":", 1)[1].strip()
+        except Exception:
+            unsupported_param = None
+
+        if (
+            isinstance(unsupported_param, str)
+            and unsupported_param
+            and isinstance(extra_fields, dict)
+            and unsupported_param in extra_fields
+        ):
+            try:
+                upstream.close()
+            except Exception:
+                pass
+            extra_fields2 = dict(extra_fields)
+            extra_fields2.pop(unsupported_param, None)
+            print(f"[compat] Retrying without unsupported param: {unsupported_param}")
+            # #region agent log
+            agent_debug_log(
+                location="chatmock/routes_openai.py:chat_completions",
+                message="Retrying without unsupported parameter",
+                hypothesisId="B",
+                runId="pre",
+                data={"param": unsupported_param, "model": model},
+            )
+            # #endregion
+            upstream_retry, err_retry = start_upstream_request(
+                model,
+                input_items,
+                instructions=final_instructions,
+                tools=tools_responses,
+                tool_choice=tool_choice,
+                parallel_tool_calls=parallel_tool_calls,
+                reasoning_param=reasoning_param,
+                extra_fields=extra_fields2,
+            )
+            if err_retry is None and upstream_retry is not None and upstream_retry.status_code < 400:
+                record_rate_limits_from_response(upstream_retry)
+                upstream = upstream_retry
+                extra_fields = extra_fields2
+            else:
+                # Continue with existing fallback logic, but keep the reduced param set.
+                if upstream_retry is not None:
+                    upstream = upstream_retry
+                extra_fields = extra_fields2
+                # Refresh error view for logging / fallbacks
+                try:
+                    raw_text = upstream.text if upstream is not None else ""
+                    err_body = json.loads(raw_text) if raw_text else {"raw": raw_text[:500] if raw_text else "No content"}
+                except Exception:
+                    pass
+                upstream_err_msg = (
+                    (err_body.get("detail") if isinstance(err_body, dict) else None)
+                    or ((err_body.get("error", {}) or {}).get("message") if isinstance(err_body, dict) else None)
+                    or (err_body.get("raw", "Unknown error") if isinstance(err_body, dict) else "Unknown error")
+                )
+
+        # If retry recovered, continue normal flow (skip further error handling).
+        if upstream is not None and upstream.status_code < 400:
+            pass
+        elif had_responses_tools:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
             base_tools_only = convert_tools_chat_to_responses(payload.get("tools"))

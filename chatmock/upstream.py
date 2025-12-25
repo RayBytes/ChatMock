@@ -133,6 +133,10 @@ def start_upstream_request(
         "temperature", "top_p", "seed", "max_output_tokens", "stop", "truncation", "text",
         "frequency_penalty", "presence_penalty", "service_tier", "logprobs", "top_logprobs",
     }
+    _blocked_for_model: set[str] = set()
+    # Runtime evidence: ChatGPT upstream rejects `temperature` for GPT-5.2.
+    if isinstance(model, str) and model.startswith("gpt-5.2"):
+        _blocked_for_model.add("temperature")
     if isinstance(extra_fields, dict):
         for k, v in extra_fields.items():
             if v is None:
@@ -140,6 +144,17 @@ def start_upstream_request(
             if k in _reserved:
                 continue
             if k not in _allowed:
+                continue
+            if k in _blocked_for_model:
+                # #region agent log
+                agent_debug_log(
+                    location="chatmock/upstream.py:start_upstream_request",
+                    message="Dropped blocked param for model before upstream",
+                    hypothesisId="B",
+                    runId="pre",
+                    data={"model": model, "param": k},
+                )
+                # #endregion
                 continue
             responses_payload[k] = v
 

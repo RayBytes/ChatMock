@@ -881,7 +881,11 @@ def responses_create() -> Response:
             err_body = json.loads(upstream.content.decode("utf-8", errors="ignore")) if upstream.content else {"raw": upstream.text}
         except Exception:
             err_body = {"raw": upstream.text}
-        error_msg = (err_body.get("error", {}) or {}).get("message", "Upstream error")
+        error_msg = (
+            (err_body.get("detail") if isinstance(err_body, dict) else None)
+            or ((err_body.get("error", {}) or {}).get("message") if isinstance(err_body, dict) else None)
+            or "Upstream error"
+        )
         # Log error in debug mode
         if debug or verbose:
             print(f"[responses] ERROR {upstream.status_code}: {err_body}")
@@ -902,7 +906,60 @@ def responses_create() -> Response:
             },
         )
         # #endregion
-        return jsonify({"error": {"message": error_msg}}), upstream.status_code
+        # Retry once if upstream rejected an otherwise optional parameter (e.g. temperature).
+        unsupported_param = None
+        try:
+            detail = err_body.get("detail") if isinstance(err_body, dict) else None
+            if isinstance(detail, str) and detail.lower().startswith("unsupported parameter:"):
+                unsupported_param = detail.split(":", 1)[1].strip()
+        except Exception:
+            unsupported_param = None
+
+        if (
+            isinstance(unsupported_param, str)
+            and unsupported_param
+            and isinstance(extra_fields, dict)
+            and unsupported_param in extra_fields
+        ):
+            try:
+                upstream.close()
+            except Exception:
+                pass
+            extra_fields2 = dict(extra_fields)
+            extra_fields2.pop(unsupported_param, None)
+            print(f"[compat] /v1/responses retrying without unsupported param: {unsupported_param}")
+            # #region agent log
+            agent_debug_log(
+                location="chatmock/routes_responses.py:responses_create",
+                message="Retrying without unsupported parameter",
+                hypothesisId="B",
+                runId="pre",
+                data={"param": unsupported_param, "model": model},
+            )
+            # #endregion
+            upstream_retry, err_retry = start_upstream_request(
+                model,
+                input_items,
+                instructions=instructions,
+                tools=tools_responses,
+                tool_choice=tool_choice,
+                parallel_tool_calls=parallel_tool_calls,
+                reasoning_param=reasoning_param,
+                extra_fields=extra_fields2,
+            )
+            if err_retry is None and upstream_retry is not None and upstream_retry.status_code < 400:
+                record_rate_limits_from_response(upstream_retry)
+                upstream = upstream_retry
+                extra_fields = extra_fields2
+            else:
+                if upstream_retry is not None:
+                    upstream = upstream_retry
+                extra_fields = extra_fields2
+
+        if upstream is not None and upstream.status_code < 400:
+            pass
+        else:
+            return jsonify({"error": {"message": error_msg}}), upstream.status_code
 
     if stream_req:
         # Streaming mode - passthrough SSE events
