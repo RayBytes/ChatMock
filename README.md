@@ -67,6 +67,10 @@ Then, you can simply use the address and port as the baseURL as you require (htt
 
 Read [the docker instrunctions here](https://github.com/RayBytes/ChatMock/blob/main/DOCKER.md)
 
+## Continuous Integration
+
+Every push or pull request to `main` runs the workflow at `.github/workflows/docker-image.yml`, which builds multi-arch (linux/amd64 + linux/arm64) Docker images and (on pushes) publishes them to GitHub's container registry using the built-in `GITHUB_TOKEN`. The image is tagged for the branch, tag, and commit SHA, so you can pull `ghcr.io/<your-org-or-user>/ChatMock:main` (or whatever tag was built) directly after CI completes. If you prefer Docker Hub or another registry, update the `REGISTRY` or `IMAGE_NAME` env vars in the workflow file accordingly.
+
 # Examples
 
 ### Python 
