@@ -59,7 +59,7 @@ def _wrap_stream_logging(label: str, iterator, enabled: bool):
 
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex"):
+    if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex") or model.startswith("gpt-5.2-codex"):
         codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
         if isinstance(codex, str) and codex.strip():
             return codex
@@ -536,6 +536,7 @@ def list_models() -> Response:
         ("gpt-5.1", ["high", "medium", "low"]),
         ("gpt-5.2", ["xhigh", "high", "medium", "low"]),
         ("gpt-5-codex", ["high", "medium", "low"]),
+        ("gpt-5.2-codex", ["xhigh", "high", "medium", "low"]),
         ("gpt-5.1-codex", ["high", "medium", "low"]),
         ("gpt-5.1-codex-max", ["xhigh", "high", "medium", "low"]),
         ("gpt-5.1-codex-mini", []),

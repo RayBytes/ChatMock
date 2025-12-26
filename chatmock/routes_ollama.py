@@ -71,7 +71,7 @@ def ollama_version() -> Response:
 
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex"):
+    if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex") or model.startswith("gpt-5.2-codex"):
         codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
         if isinstance(codex, str) and codex.strip():
             return codex
@@ -98,6 +98,7 @@ def ollama_tags() -> Response:
         "gpt-5.1",
         "gpt-5.2",
         "gpt-5-codex",
+        "gpt-5.2-codex",
         "gpt-5.1-codex",
         "gpt-5.1-codex-max",
         "gpt-5.1-codex-mini",
@@ -120,6 +121,10 @@ def ollama_tags() -> Response:
                 "gpt-5-codex-high",
                 "gpt-5-codex-medium",
                 "gpt-5-codex-low",
+                "gpt-5.2-codex-xhigh",
+                "gpt-5.2-codex-high",
+                "gpt-5.2-codex-medium",
+                "gpt-5.2-codex-low",
                 "gpt-5.1-codex-high",
                 "gpt-5.1-codex-medium",
                 "gpt-5.1-codex-low",
