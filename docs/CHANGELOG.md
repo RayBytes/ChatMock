@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.10] - 2025-12-26
+
+### Fixed
+- **Aider/LiteLLM Compatibility**: Automatically retry requests when the upstream rejects an unsupported parameter (e.g. `temperature`), preventing hard failures like `Unsupported parameter: temperature`.
+
 ## [1.4.8] - 2025-12-15
 
 ### Added
