@@ -220,6 +220,7 @@ GUNICORN_WORKERS=8          # Number of worker processes
 - `gpt-5.1`
 - `gpt-5.2`
 - `gpt-5-codex`
+- `gpt-5.2-codex`
 - `gpt-5.1-codex`
 - `gpt-5.1-codex-max`
 - `gpt-5.1-codex-mini`
@@ -552,6 +553,5 @@ For more help, check the [documentation](./docs/README.md) or [open an issue](ht
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=RayBytes/ChatMock&type=Timeline)](https://www.star-history.com/#RayBytes/ChatMock&Timeline)
-
 
 

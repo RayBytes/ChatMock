@@ -152,7 +152,7 @@ def _wrap_stream_file_logging(iterator):
 
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex"):
+    if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex") or model.startswith("gpt-5.2-codex"):
         codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
         if isinstance(codex, str) and codex.strip():
             return codex

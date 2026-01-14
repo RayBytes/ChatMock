@@ -153,6 +153,14 @@ AVAILABLE_MODELS = [
         "experimental": False,
     },
     {
+        "id": "gpt-5.2-codex",
+        "name": "GPT-5.2 Codex",
+        "description": "Latest enhanced coding model with xhigh reasoning support",
+        "capabilities": ["reasoning", "function_calling", "coding"],
+        "efforts": ["xhigh", "high", "medium", "low"],
+        "experimental": False,
+    },
+    {
         "id": "gpt-5.1-codex-max",
         "name": "GPT-5.1 Codex Max",
         "description": "Maximum capability coding model with xhigh reasoning",
