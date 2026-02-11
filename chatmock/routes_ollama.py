@@ -5,7 +5,15 @@ import datetime
 import time
 from typing import Any, Dict, List
 
-from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
+from flask import (
+    Blueprint,
+    Response,
+    current_app,
+    jsonify,
+    make_response,
+    request,
+    stream_with_context,
+)
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .limits import record_rate_limits_from_response
@@ -17,7 +25,11 @@ from .reasoning import (
 )
 from .transform import convert_ollama_messages, normalize_ollama_tools
 from .upstream import normalize_model_name, start_upstream_request
-from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_to_responses
+from .utils import (
+    convert_chat_messages_to_responses_input,
+    convert_tools_chat_to_responses,
+    derive_copilot_tools_dynamically,
+)
 
 
 ollama_bp = Blueprint("ollama", __name__)
@@ -71,8 +83,15 @@ def ollama_version() -> Response:
 
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if model.startswith("gpt-5-codex") or model.startswith("gpt-5.1-codex") or model.startswith("gpt-5.2-codex"):
-        codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
+    if (
+        model.startswith("gpt-5-codex")
+        or model.startswith("gpt-5.1-codex")
+        or model.startswith("gpt-5.2-codex")
+        or model.startswith("gpt-5.3-codex")
+    ):
+        codex = (
+            current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
+        )
         if isinstance(codex, str) and codex.strip():
             return codex
     return base
@@ -93,17 +112,22 @@ def ollama_tags() -> Response:
     if bool(current_app.config.get("VERBOSE")):
         print("IN GET /api/tags")
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    model_ids = [
-        "gpt-5",
-        "gpt-5.1",
-        "gpt-5.2",
-        "gpt-5-codex",
-        "gpt-5.2-codex",
-        "gpt-5.1-codex",
-        "gpt-5.1-codex-max",
-        "gpt-5.1-codex-mini",
-        "codex-mini",
+    _MODEL_DEFS = [
+        ("gpt-5", 128000, 128000, ["completion", "tools", "vision"]),
+        ("gpt-5.1", 128000, 64000, ["completion", "tools", "vision"]),
+        ("gpt-5.2", 128000, 64000, ["completion", "tools", "vision"]),
+        ("gpt-5.3", 128000, 64000, ["completion", "tools", "vision"]),
+        ("gpt-5-codex", 128000, 128000, ["completion", "tools", "vision"]),
+        ("gpt-5.2-codex", 272000, 128000, ["completion", "tools", "vision"]),
+        ("gpt-5.3-codex", 272000, 128000, ["completion", "tools", "vision"]),
+        ("gpt-5.1-codex", 128000, 128000, ["completion", "tools", "vision"]),
+        ("gpt-5.1-codex-max", 128000, 128000, ["completion", "tools", "vision"]),
+        ("gpt-5.1-codex-mini", 128000, 128000, ["completion", "tools", "vision"]),
+        ("codex-mini", 128000, 128000, ["completion", "tools"]),
     ]
+    model_ids = []
+    for base, _ctx_in, _ctx_out, _caps in _MODEL_DEFS:
+        model_ids.append(base)
     if expose_variants:
         model_ids.extend(
             [
@@ -118,6 +142,10 @@ def ollama_tags() -> Response:
                 "gpt-5.2-high",
                 "gpt-5.2-medium",
                 "gpt-5.2-low",
+                "gpt-5.3-xhigh",
+                "gpt-5.3-high",
+                "gpt-5.3-medium",
+                "gpt-5.3-low",
                 "gpt-5-codex-high",
                 "gpt-5-codex-medium",
                 "gpt-5-codex-low",
@@ -125,6 +153,10 @@ def ollama_tags() -> Response:
                 "gpt-5.2-codex-high",
                 "gpt-5.2-codex-medium",
                 "gpt-5.2-codex-low",
+                "gpt-5.3-codex-xhigh",
+                "gpt-5.3-codex-high",
+                "gpt-5.3-codex-medium",
+                "gpt-5.3-codex-low",
                 "gpt-5.1-codex-high",
                 "gpt-5.1-codex-medium",
                 "gpt-5.1-codex-low",
@@ -134,8 +166,27 @@ def ollama_tags() -> Response:
                 "gpt-5.1-codex-max-low",
             ]
         )
+    # Build lookup for context/capabilities from _MODEL_DEFS
+    _model_info_map = {
+        base: (ctx_in, ctx_out, caps) for base, ctx_in, ctx_out, caps in _MODEL_DEFS
+    }
     models = []
     for model_id in model_ids:
+        # Find matching base model for context/caps lookup
+        info = _model_info_map.get(model_id)
+        if not info:
+            for base, ctx_in, ctx_out, caps in _MODEL_DEFS:
+                if model_id.startswith(base):
+                    info = (ctx_in, ctx_out, caps)
+                    break
+        ctx_in, ctx_out, caps = (
+            info if info else (128000, 128000, ["completion", "tools", "vision"])
+        )
+        # Compute input/output token splits the same way the
+        # Copilot extension does:  maxOutput = min(4096, ctx/2),
+        # maxInput = ctx - maxOutput.
+        max_output = ctx_in // 2 if ctx_in < 4096 else 4096
+        max_input = ctx_in - max_output
         models.append(
             {
                 "name": model_id,
@@ -151,6 +202,21 @@ def ollama_tags() -> Response:
                     "parameter_size": "8.0B",
                     "quantization_level": "Q4_0",
                 },
+                "capabilities": caps,
+                "model_info": {
+                    "general.architecture": "llama",
+                    "llama.context_length": ctx_in,
+                },
+                # -----------------------------------------------------------
+                # Extra fields read by the VS Code Copilot extension's
+                # Ollama provider (Out → WQ path).  Without these the
+                # Language-Models panel shows empty Context Size /
+                # Capabilities columns.
+                # -----------------------------------------------------------
+                "maxInputTokens": max_input,
+                "maxOutputTokens": max_output,
+                "toolCalling": "tools" in caps,
+                "vision": "vision" in caps,
             }
         )
     payload = {"models": models}
@@ -172,7 +238,9 @@ def ollama_show() -> Response:
         except Exception:
             pass
     try:
-        payload = json.loads(raw_body) if raw_body else (request.get_json(silent=True) or {})
+        payload = (
+            json.loads(raw_body) if raw_body else (request.get_json(silent=True) or {})
+        )
     except Exception:
         payload = request.get_json(silent=True) or {}
     model = payload.get("model")
@@ -181,9 +249,32 @@ def ollama_show() -> Response:
         if verbose:
             _log_json("OUT POST /api/show", err)
         return jsonify(err), 400
+
+    # Model-specific context sizes
+    _SHOW_DEFS = {
+        "gpt-5": (128000, ["completion", "tools", "vision", "thinking"]),
+        "gpt-5.1": (128000, ["completion", "tools", "vision", "thinking"]),
+        "gpt-5.2": (128000, ["completion", "tools", "vision", "thinking"]),
+        "gpt-5.3": (128000, ["completion", "tools", "vision", "thinking"]),
+        "gpt-5-codex": (128000, ["completion", "tools", "vision", "thinking"]),
+        "gpt-5.2-codex": (272000, ["completion", "tools", "vision", "thinking"]),
+        "gpt-5.3-codex": (272000, ["completion", "tools", "vision", "thinking"]),
+        "gpt-5.1-codex": (128000, ["completion", "tools", "vision", "thinking"]),
+        "gpt-5.1-codex-max": (128000, ["completion", "tools", "vision", "thinking"]),
+        "gpt-5.1-codex-mini": (128000, ["completion", "tools", "vision", "thinking"]),
+        "codex-mini": (128000, ["completion", "tools"]),
+    }
+    ctx_len = 128000
+    caps = ["completion", "tools", "vision", "thinking"]
+    for base, (cl, c) in _SHOW_DEFS.items():
+        if model.strip().lower().startswith(base):
+            ctx_len = cl
+            caps = c
+            break
+
     v1_show_response = {
-        "modelfile": "# Modelfile generated by \"ollama show\"\n# To build a new Modelfile based on this one, replace the FROM line with:\n# FROM llava:latest\n\nFROM /models/blobs/sha256:placeholder\nTEMPLATE \"\"\"{{ .System }}\nUSER: {{ .Prompt }}\nASSISTANT: \"\"\"\nPARAMETER num_ctx 100000\nPARAMETER stop \"</s>\"\nPARAMETER stop \"USER:\"\nPARAMETER stop \"ASSISTANT:\"",
-        "parameters": "num_keep 24\nstop \"<|start_header_id|>\"\nstop \"<|end_header_id|>\"\nstop \"<|eot_id|>\"",
+        "modelfile": '# Modelfile generated by "ollama show"\n# To build a new Modelfile based on this one, replace the FROM line with:\n# FROM llava:latest\n\nFROM /models/blobs/sha256:placeholder\nTEMPLATE """{{ .System }}\nUSER: {{ .Prompt }}\nASSISTANT: """\nPARAMETER num_ctx 100000\nPARAMETER stop "</s>"\nPARAMETER stop "USER:"\nPARAMETER stop "ASSISTANT:"',
+        "parameters": 'num_keep 24\nstop "<|start_header_id|>"\nstop "<|end_header_id|>"\nstop "<|eot_id|>"',
         "template": "{{ if .System }}<|start_header_id|>system<|end_header_id|>\n\n{{ .System }}<|eot_id|>{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id|>\n\n{{ .Prompt }}<|eot_id|>{{ end }}<|start_header_id|>assistant<|end_header_id|>\n\n{{ .Response }}<|eot_id|>",
         "details": {
             "parent_model": "",
@@ -196,9 +287,9 @@ def ollama_show() -> Response:
         "model_info": {
             "general.architecture": "llama",
             "general.file_type": 2,
-            "llama.context_length": 2000000,
+            "llama.context_length": ctx_len,
         },
-        "capabilities": ["completion", "vision", "tools", "thinking"],
+        "capabilities": caps,
     }
     if verbose:
         _log_json("OUT POST /api/show", v1_show_response)
@@ -229,14 +320,32 @@ def ollama_chat() -> Response:
     model = payload.get("model")
     raw_messages = payload.get("messages")
     messages = convert_ollama_messages(
-        raw_messages, payload.get("images") if isinstance(payload.get("images"), list) else None
+        raw_messages,
+        payload.get("images") if isinstance(payload.get("images"), list) else None,
     )
+    # Extract the client's system message (if any) for use as the
+    # Responses API ``instructions`` parameter.  When a client such as
+    # VS Code Copilot sends its own system prompt it already describes
+    # the available tools and constraints.  Injecting the default
+    # Codex-CLI instructions on top conflicts and causes the model to
+    # output raw text simulating tool calls instead of real ones.
+    client_system_instructions: str | None = None
     if isinstance(messages, list):
-        sys_idx = next((i for i, m in enumerate(messages) if isinstance(m, dict) and m.get("role") == "system"), None)
+        sys_idx = next(
+            (
+                i
+                for i, m in enumerate(messages)
+                if isinstance(m, dict) and m.get("role") == "system"
+            ),
+            None,
+        )
         if isinstance(sys_idx, int):
             sys_msg = messages.pop(sys_idx)
             content = sys_msg.get("content") if isinstance(sys_msg, dict) else ""
-            messages.insert(0, {"role": "user", "content": content})
+            if isinstance(content, str) and content.strip():
+                client_system_instructions = content
+            else:
+                messages.insert(0, {"role": "user", "content": content})
     stream_req = payload.get("stream")
     if stream_req is None:
         stream_req = True
@@ -249,13 +358,19 @@ def ollama_chat() -> Response:
     # Passthrough Responses API tools (web_search) via ChatMock extension fields
     extra_tools: List[Dict[str, Any]] = []
     had_responses_tools = False
-    rt_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
+    rt_payload = (
+        payload.get("responses_tools")
+        if isinstance(payload.get("responses_tools"), list)
+        else []
+    )
     if isinstance(rt_payload, list):
         for _t in rt_payload:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
                 continue
             if _t.get("type") not in ("web_search", "web_search_preview"):
-                err = {"error": "Only web_search/web_search_preview are supported in responses_tools"}
+                err = {
+                    "error": "Only web_search/web_search_preview are supported in responses_tools"
+                }
                 if verbose:
                     _log_json("OUT POST /api/chat", err)
                 return jsonify(err), 400
@@ -266,6 +381,7 @@ def ollama_chat() -> Response:
                 extra_tools = [{"type": "web_search"}]
         if extra_tools:
             import json as _json
+
             MAX_TOOLS_BYTES = 32768
             try:
                 size = len(_json.dumps(extra_tools))
@@ -291,12 +407,29 @@ def ollama_chat() -> Response:
 
     input_items = convert_chat_messages_to_responses_input(messages)
 
+    if not tools_responses:
+        tools_responses = derive_copilot_tools_dynamically(
+            messages,
+            client_system_instructions,
+            payload.get("input"),
+        )
+        if verbose and tools_responses:
+            print(
+                f"[Ollama fallback] Derived {len(tools_responses)} tool schemas "
+                "from prompt/history (no tools in request body)"
+            )
+
     model_reasoning = extract_reasoning_from_model_name(model)
     normalized_model = normalize_model_name(model)
+    effective_instructions = (
+        client_system_instructions
+        if client_system_instructions
+        else _instructions_for_model(normalized_model)
+    )
     upstream, error_resp = start_upstream_request(
         normalized_model,
         input_items,
-        instructions=_instructions_for_model(normalized_model),
+        instructions=effective_instructions,
         tools=tools_responses,
         tool_choice=tool_choice,
         parallel_tool_calls=parallel_tool_calls,
@@ -325,13 +458,21 @@ def ollama_chat() -> Response:
 
     if upstream.status_code >= 400:
         try:
-            err_body = json.loads(upstream.content.decode("utf-8", errors="ignore")) if upstream.content else {"raw": upstream.text}
+            err_body = (
+                json.loads(upstream.content.decode("utf-8", errors="ignore"))
+                if upstream.content
+                else {"raw": upstream.text}
+            )
         except Exception:
             err_body = {"raw": upstream.text}
         if had_responses_tools:
             if verbose:
-                print("[Passthrough] Upstream rejected tools; retrying without extras (args redacted)")
-            base_tools_only = convert_tools_chat_to_responses(normalize_ollama_tools(tools_req))
+                print(
+                    "[Passthrough] Upstream rejected tools; retrying without extras (args redacted)"
+                )
+            base_tools_only = convert_tools_chat_to_responses(
+                normalize_ollama_tools(tools_req)
+            )
             safe_choice = payload.get("tool_choice", "auto")
             upstream2, err2 = start_upstream_request(
                 normalize_model_name(model),
@@ -351,14 +492,34 @@ def ollama_chat() -> Response:
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
                 upstream = upstream2
             else:
-                err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error"), "code": "RESPONSES_TOOLS_REJECTED"}}
+                err = {
+                    "error": {
+                        "message": (err_body.get("error", {}) or {}).get(
+                            "message", "Upstream error"
+                        ),
+                        "code": "RESPONSES_TOOLS_REJECTED",
+                    }
+                }
                 if verbose:
                     _log_json("OUT POST /api/chat", err)
-                return jsonify(err), (upstream2.status_code if upstream2 is not None else upstream.status_code)
+                return jsonify(err), (
+                    upstream2.status_code
+                    if upstream2 is not None
+                    else upstream.status_code
+                )
         else:
             if verbose:
-                print("/api/chat upstream error status=", upstream.status_code, " body:", json.dumps(err_body)[:2000])
-            err = {"error": (err_body.get("error", {}) or {}).get("message", "Upstream error")}
+                print(
+                    "/api/chat upstream error status=",
+                    upstream.status_code,
+                    " body:",
+                    json.dumps(err_body)[:2000],
+                )
+            err = {
+                "error": (err_body.get("error", {}) or {}).get(
+                    "message", "Upstream error"
+                )
+            }
             if verbose:
                 _log_json("OUT POST /api/chat", err)
             return jsonify(err), upstream.status_code
@@ -367,21 +528,34 @@ def ollama_chat() -> Response:
     model_out = model if isinstance(model, str) and model.strip() else normalized_model
 
     if stream_req:
+
         def _gen():
-            compat = (current_app.config.get("REASONING_COMPAT", "think-tags") or "think-tags").strip().lower()
+            compat = (
+                (
+                    current_app.config.get("REASONING_COMPAT", "think-tags")
+                    or "think-tags"
+                )
+                .strip()
+                .lower()
+            )
             think_open = False
             think_closed = False
             saw_any_summary = False
             pending_summary_paragraph = False
             full_parts: List[str] = []
+            tool_calls: List[Dict[str, Any]] = []
             try:
                 for raw_line in upstream.iter_lines(decode_unicode=False):
                     if not raw_line:
                         continue
-                    line = raw_line.decode("utf-8", errors="ignore") if isinstance(raw_line, (bytes, bytearray)) else raw_line
+                    line = (
+                        raw_line.decode("utf-8", errors="ignore")
+                        if isinstance(raw_line, (bytes, bytearray))
+                        else raw_line
+                    )
                     if not line.startswith("data: "):
                         continue
-                    data = line[len("data: "):].strip()
+                    data = line[len("data: ") :].strip()
                     if not data:
                         continue
                     if data == "[DONE]":
@@ -397,16 +571,25 @@ def ollama_chat() -> Response:
                                 pending_summary_paragraph = True
                             else:
                                 saw_any_summary = True
-                    elif kind in ("response.reasoning_summary_text.delta", "response.reasoning_text.delta"):
+                    elif kind in (
+                        "response.reasoning_summary_text.delta",
+                        "response.reasoning_text.delta",
+                    ):
                         delta_txt = evt.get("delta") or ""
                         if compat == "o3":
-                            if kind == "response.reasoning_summary_text.delta" and pending_summary_paragraph:
+                            if (
+                                kind == "response.reasoning_summary_text.delta"
+                                and pending_summary_paragraph
+                            ):
                                 yield (
                                     json.dumps(
                                         {
                                             "model": model_out,
                                             "created_at": created_at,
-                                            "message": {"role": "assistant", "content": "\n"},
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": "\n",
+                                            },
                                             "done": False,
                                         }
                                     )
@@ -420,7 +603,10 @@ def ollama_chat() -> Response:
                                         {
                                             "model": model_out,
                                             "created_at": created_at,
-                                            "message": {"role": "assistant", "content": delta_txt},
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": delta_txt,
+                                            },
                                             "done": False,
                                         }
                                     )
@@ -434,7 +620,10 @@ def ollama_chat() -> Response:
                                         {
                                             "model": model_out,
                                             "created_at": created_at,
-                                            "message": {"role": "assistant", "content": "<think>"},
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": "<think>",
+                                            },
                                             "done": False,
                                         }
                                     )
@@ -443,13 +632,19 @@ def ollama_chat() -> Response:
                                 full_parts.append("<think>")
                                 think_open = True
                             if think_open and not think_closed:
-                                if kind == "response.reasoning_summary_text.delta" and pending_summary_paragraph:
+                                if (
+                                    kind == "response.reasoning_summary_text.delta"
+                                    and pending_summary_paragraph
+                                ):
                                     yield (
                                         json.dumps(
                                             {
                                                 "model": model_out,
                                                 "created_at": created_at,
-                                                "message": {"role": "assistant", "content": "\n"},
+                                                "message": {
+                                                    "role": "assistant",
+                                                    "content": "\n",
+                                                },
                                                 "done": False,
                                             }
                                         )
@@ -463,7 +658,10 @@ def ollama_chat() -> Response:
                                             {
                                                 "model": model_out,
                                                 "created_at": created_at,
-                                                "message": {"role": "assistant", "content": delta_txt},
+                                                "message": {
+                                                    "role": "assistant",
+                                                    "content": delta_txt,
+                                                },
                                                 "done": False,
                                             }
                                         )
@@ -480,7 +678,10 @@ def ollama_chat() -> Response:
                                     {
                                         "model": model_out,
                                         "created_at": created_at,
-                                        "message": {"role": "assistant", "content": "</think>"},
+                                        "message": {
+                                            "role": "assistant",
+                                            "content": "</think>",
+                                        },
                                         "done": False,
                                     }
                                 )
@@ -495,13 +696,43 @@ def ollama_chat() -> Response:
                                     {
                                         "model": model_out,
                                         "created_at": created_at,
-                                        "message": {"role": "assistant", "content": delta},
+                                        "message": {
+                                            "role": "assistant",
+                                            "content": delta,
+                                        },
                                         "done": False,
                                     }
                                 )
                                 + "\n"
                             )
                             full_parts.append(delta)
+                    elif kind == "response.output_item.done":
+                        item = evt.get("item") or {}
+                        if (
+                            isinstance(item, dict)
+                            and item.get("type") == "function_call"
+                        ):
+                            call_id = item.get("call_id") or item.get("id") or ""
+                            name = item.get("name") or ""
+                            args_raw = item.get("arguments") or ""
+                            if isinstance(args_raw, str):
+                                try:
+                                    args_obj = json.loads(args_raw) if args_raw else {}
+                                except (json.JSONDecodeError, ValueError):
+                                    args_obj = {"raw": args_raw}
+                            elif isinstance(args_raw, dict):
+                                args_obj = args_raw
+                            else:
+                                args_obj = {}
+                            if isinstance(call_id, str) and isinstance(name, str):
+                                tool_calls.append(
+                                    {
+                                        "function": {
+                                            "name": name,
+                                            "arguments": args_obj,
+                                        },
+                                    }
+                                )
                     elif kind == "response.completed":
                         break
             finally:
@@ -519,14 +750,19 @@ def ollama_chat() -> Response:
                         + "\n"
                     )
                     full_parts.append("</think>")
+                done_msg: Dict[str, Any] = {"role": "assistant", "content": ""}
+                if tool_calls:
+                    done_msg["tool_calls"] = tool_calls
                 done_obj = {
                     "model": model_out,
                     "created_at": created_at,
-                    "message": {"role": "assistant", "content": ""},
+                    "message": done_msg,
                     "done": True,
+                    "done_reason": "stop",
                 }
                 done_obj.update(_OLLAMA_FAKE_EVAL)
                 yield json.dumps(done_obj) + "\n"
+
         if verbose:
             print("OUT POST /api/chat (streaming response)")
         stream_iter = stream_with_context(_gen())
@@ -548,10 +784,14 @@ def ollama_chat() -> Response:
         for raw in upstream.iter_lines(decode_unicode=False):
             if not raw:
                 continue
-            line = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else raw
+            line = (
+                raw.decode("utf-8", errors="ignore")
+                if isinstance(raw, (bytes, bytearray))
+                else raw
+            )
             if not line.startswith("data: "):
                 continue
-            data = line[len("data: "):].strip()
+            data = line[len("data: ") :].strip()
             if not data:
                 continue
             if data == "[DONE]":
@@ -573,7 +813,11 @@ def ollama_chat() -> Response:
                     call_id = item.get("call_id") or item.get("id") or ""
                     name = item.get("name") or ""
                     args = item.get("arguments") or ""
-                    if isinstance(call_id, str) and isinstance(name, str) and isinstance(args, str):
+                    if (
+                        isinstance(call_id, str)
+                        and isinstance(name, str)
+                        and isinstance(args, str)
+                    ):
                         tool_calls.append(
                             {
                                 "id": call_id,
@@ -586,7 +830,9 @@ def ollama_chat() -> Response:
     finally:
         upstream.close()
 
-    if (current_app.config.get("REASONING_COMPAT", "think-tags") or "think-tags").strip().lower() == "think-tags":
+    if (
+        current_app.config.get("REASONING_COMPAT", "think-tags") or "think-tags"
+    ).strip().lower() == "think-tags":
         rtxt_parts = []
         if isinstance(reasoning_summary_text, str) and reasoning_summary_text.strip():
             rtxt_parts.append(reasoning_summary_text)
@@ -599,7 +845,11 @@ def ollama_chat() -> Response:
     out_json = {
         "model": normalize_model_name(model),
         "created_at": created_at,
-        "message": {"role": "assistant", "content": full_text, **({"tool_calls": tool_calls} if tool_calls else {})},
+        "message": {
+            "role": "assistant",
+            "content": full_text,
+            **({"tool_calls": tool_calls} if tool_calls else {}),
+        },
         "done": True,
         "done_reason": "stop",
     }

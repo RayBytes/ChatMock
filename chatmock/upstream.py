@@ -48,6 +48,12 @@ def normalize_model_name(name: str | None, debug_model: str | None = None) -> st
         "gpt5.2-codex": "gpt-5.2-codex",
         "gpt-5.2-codex": "gpt-5.2-codex",
         "gpt-5.2-codex-latest": "gpt-5.2-codex",
+        "gpt5.3": "gpt-5.3",
+        "gpt-5.3": "gpt-5.3",
+        "gpt-5.3-latest": "gpt-5.3",
+        "gpt5.3-codex": "gpt-5.3-codex",
+        "gpt-5.3-codex": "gpt-5.3-codex",
+        "gpt-5.3-codex-latest": "gpt-5.3-codex",
         "gpt5-codex": "gpt-5-codex",
         "gpt-5-codex": "gpt-5-codex",
         "gpt-5-codex-latest": "gpt-5-codex",
@@ -57,6 +63,22 @@ def normalize_model_name(name: str | None, debug_model: str | None = None) -> st
         "codex-mini": "codex-mini-latest",
         "codex-mini-latest": "codex-mini-latest",
         "gpt-5.1-codex-mini": "gpt-5.1-codex-mini",
+        # Workaround: the Copilot Chat extension's Ollama provider has a bug
+        # where it passes the raw /api/tags array to Object.entries(), causing
+        # numeric array indices to be used as model IDs instead of model names.
+        # Map these indices back to the correct model names based on the order
+        # in routes_ollama.py's /api/tags response.
+        "0": "gpt-5",
+        "1": "gpt-5.1",
+        "2": "gpt-5.2",
+        "3": "gpt-5.3",
+        "4": "gpt-5-codex",
+        "5": "gpt-5.2-codex",
+        "6": "gpt-5.3-codex",
+        "7": "gpt-5.1-codex",
+        "8": "gpt-5.1-codex-max",
+        "9": "gpt-5.1-codex-mini",
+        "10": "codex-mini-latest",
     }
     return mapping.get(base, base)
 
@@ -104,10 +126,18 @@ def start_upstream_request(
 
     responses_payload = {
         "model": model,
-        "instructions": instructions if isinstance(instructions, str) and instructions.strip() else instructions,
+        "instructions": (
+            instructions
+            if isinstance(instructions, str) and instructions.strip()
+            else instructions
+        ),
         "input": input_items,
         "tools": tools or [],
-        "tool_choice": tool_choice if tool_choice in ("auto", "none") or isinstance(tool_choice, dict) else "auto",
+        "tool_choice": (
+            tool_choice
+            if tool_choice in ("auto", "none") or isinstance(tool_choice, dict)
+            else "auto"
+        ),
         "parallel_tool_calls": bool(parallel_tool_calls),
         "store": False,
         "stream": True,
@@ -145,7 +175,10 @@ def start_upstream_request(
             timeout=600,
         )
     except requests.RequestException as e:
-        resp = make_response(jsonify({"error": {"message": f"Upstream ChatGPT request failed: {e}"}}), 502)
+        resp = make_response(
+            jsonify({"error": {"message": f"Upstream ChatGPT request failed: {e}"}}),
+            502,
+        )
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)
         return None, resp

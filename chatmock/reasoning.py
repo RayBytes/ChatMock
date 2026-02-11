@@ -11,6 +11,8 @@ def allowed_efforts_for_model(model: str | None) -> Set[str]:
     if not base:
         return DEFAULT_REASONING_EFFORTS
     normalized = base.split(":", 1)[0]
+    if normalized.startswith("gpt-5.3-codex"):
+        return {"low", "medium", "high", "xhigh"}
     if normalized.startswith("gpt-5.2"):
         return {"low", "medium", "high", "xhigh"}
     if normalized.startswith("gpt-5.1-codex-max"):
@@ -71,6 +73,19 @@ def apply_reasoning_to_message(
         rtxt = "\n\n".join([p for p in rtxt_parts if p])
         if rtxt:
             message["reasoning"] = {"content": [{"type": "text", "text": rtxt}]}
+        return message
+
+    if compat == "copilot":
+        # Send reasoning via reasoning_text field for the Copilot
+        # Chat extension's thinking content parser.
+        rtxt_parts: list[str] = []
+        if isinstance(reasoning_summary_text, str) and reasoning_summary_text.strip():
+            rtxt_parts.append(reasoning_summary_text)
+        if isinstance(reasoning_full_text, str) and reasoning_full_text.strip():
+            rtxt_parts.append(reasoning_full_text)
+        rtxt = "\n\n".join([p for p in rtxt_parts if p])
+        if rtxt:
+            message["reasoning_text"] = rtxt
         return message
 
     if compat in ("legacy", "current"):
