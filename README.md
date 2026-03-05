@@ -9,7 +9,7 @@
 <a href="https://github.com/RayBytes/ChatMock/blob/master/LICENSE"><img src="https://img.shields.io/github/license/RayBytes/ChatMock?color=2b9348" alt="License Badge"/></a>
 </div>
   </h1>
-  
+
   <p><b>OpenAI & Ollama compatible API powered by your ChatGPT plan.</b></p>
   <p>Use your ChatGPT Plus/Pro account to call OpenAI models from code or alternate chat UIs.</p>
   <br>
@@ -26,7 +26,7 @@ This does require a paid ChatGPT account.
 
 #### GUI Application
 
-If you're on **macOS**, you can download the GUI app from the [GitHub releases](https://github.com/RayBytes/ChatMock/releases).  
+If you're on **macOS**, you can download the GUI app from the [GitHub releases](https://github.com/RayBytes/ChatMock/releases).
 > **Note:** Since ChatMock isn't signed with an Apple Developer ID, you may need to run the following command in your terminal to open the app:
 >
 > ```bash
@@ -69,7 +69,7 @@ Read [the docker instrunctions here](https://github.com/RayBytes/ChatMock/blob/m
 
 # Examples
 
-### Python 
+### Python
 
 ```python
 from openai import OpenAI
@@ -101,7 +101,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 # What's supported
 
-- Tool/Function calling 
+- Tool/Function calling
 - Vision/Image understanding
 - Thinking summaries (through thinking tags)
 - Thinking effort
@@ -109,13 +109,14 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 ## Notes & Limits
 
 - Requires an active, paid ChatGPT account.
-- Some context length might be taken up by internal instructions (but they dont seem to degrade the model) 
+- Some context length might be taken up by internal instructions (but they dont seem to degrade the model)
 - Use responsibly and at your own risk. This project is not affiliated with OpenAI, and is a educational exercise.
 
 # Supported models
 - `gpt-5`
 - `gpt-5.1`
 - `gpt-5.2`
+- `gpt-5.4`
 - `gpt-5-codex`
 - `gpt-5.2-codex`
 - `gpt-5.3-codex`
@@ -130,7 +131,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 - `--reasoning-effort` (choice of minimal,low,medium,high,xhigh)<br>
 GPT-5 has a configurable amount of "effort" it can put into thinking, which may cause it to take more time for a response to return, but may overall give a smarter answer. Applying this parameter after `serve` forces the server to use this reasoning effort by default, unless overrided by the API request with a different effort set. The default reasoning effort without setting this parameter is `medium`.<br>
-    The `gpt-5.1` family (including codex) supports `low`, `medium`, and `high` while `gpt-5.1-codex-max` adds `xhigh`. The `gpt-5.2` and `gpt-5.3` families (including codex) support `low`, `medium`, `high`, and `xhigh`. 
+    The `gpt-5.1` family (including codex) supports `low`, `medium`, and `high` while `gpt-5.1-codex-max` adds `xhigh`. The `gpt-5.2`, `gpt-5.4` and `gpt-5.3` families (including codex) support `low`, `medium`, `high`, and `xhigh`.
 
 ### Thinking summaries
 

@@ -45,6 +45,8 @@ def normalize_model_name(name: str | None, debug_model: str | None = None) -> st
         "gpt5.2": "gpt-5.2",
         "gpt-5.2": "gpt-5.2",
         "gpt-5.2-latest": "gpt-5.2",
+        "gpt-5.4": "gpt-5.4",
+        "gpt-5.4-latest": "gpt-5.4",
         "gpt5.3-codex": "gpt-5.3-codex",
         "gpt-5.3-codex": "gpt-5.3-codex",
         "gpt-5.3-codex-latest": "gpt-5.3-codex",
