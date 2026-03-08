@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Set
 
 
-DEFAULT_REASONING_EFFORTS: Set[str] = {"minimal", "low", "medium", "high", "xhigh"}
+DEFAULT_REASONING_EFFORTS: Set[str] = {"minimal", "low", "medium", "high", "xhigh", "none"}
 
 
 def allowed_efforts_for_model(model: str | None) -> Set[str]:
@@ -11,6 +11,8 @@ def allowed_efforts_for_model(model: str | None) -> Set[str]:
     if not base:
         return DEFAULT_REASONING_EFFORTS
     normalized = base.split(":", 1)[0]
+    if normalized.startswith("gpt-5.4"):
+        return {"none", "low", "medium", "high", "xhigh"}
     if normalized.startswith("gpt-5.3"):
         return {"low", "medium", "high", "xhigh"}
     if normalized.startswith("gpt-5.2"):
@@ -103,7 +105,7 @@ def extract_reasoning_from_model_name(model: str | None) -> Dict[str, Any] | Non
     s = model.strip().lower()
     if not s:
         return None
-    efforts = {"minimal", "low", "medium", "high", "xhigh"}
+    efforts = {"minimal", "low", "medium", "high", "xhigh", "none"}
 
     if ":" in s:
         maybe = s.rsplit(":", 1)[-1].strip()
@@ -113,6 +115,8 @@ def extract_reasoning_from_model_name(model: str | None) -> Dict[str, Any] | Non
     for sep in ("-", "_"):
         if s.endswith(sep + "minimal"):
             return {"effort": "minimal"}
+        if s.endswith(sep + "none"):
+            return {"effort": "none"}
         if s.endswith(sep + "low"):
             return {"effort": "low"}
         if s.endswith(sep + "medium"):
