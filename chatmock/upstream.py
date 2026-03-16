@@ -9,6 +9,7 @@ from flask import Response, current_app, jsonify, make_response
 
 from .config import CHATGPT_RESPONSES_URL
 from .http import build_cors_headers
+from .model_registry import normalize_model_name
 from .session import ensure_session_id
 from flask import request as flask_request
 from .utils import get_effective_chatgpt_auth
@@ -22,50 +23,6 @@ def _log_json(prefix: str, payload: Any) -> None:
             print(f"{prefix}\n{payload}")
         except Exception:
             pass
-
-
-def normalize_model_name(name: str | None, debug_model: str | None = None) -> str:
-    if isinstance(debug_model, str) and debug_model.strip():
-        return debug_model.strip()
-    if not isinstance(name, str) or not name.strip():
-        return "gpt-5"
-    base = name.split(":", 1)[0].strip()
-    for sep in ("-", "_"):
-        lowered = base.lower()
-        for effort in ("minimal", "low", "medium", "high", "xhigh"):
-            suffix = f"{sep}{effort}"
-            if lowered.endswith(suffix):
-                base = base[: -len(suffix)]
-                break
-    mapping = {
-        "gpt5": "gpt-5",
-        "gpt-5-latest": "gpt-5",
-        "gpt-5": "gpt-5",
-        "gpt-5.1": "gpt-5.1",
-        "gpt5.4": "gpt-5.4",
-        "gpt-5.4": "gpt-5.4",
-        "gpt-5.4-latest": "gpt-5.4",
-        "gpt5.2": "gpt-5.2",
-        "gpt-5.2": "gpt-5.2",
-        "gpt-5.2-latest": "gpt-5.2",
-        "gpt5.3-codex": "gpt-5.3-codex",
-        "gpt-5.3-codex": "gpt-5.3-codex",
-        "gpt-5.3-codex-latest": "gpt-5.3-codex",
-        "gpt5.2-codex": "gpt-5.2-codex",
-        "gpt-5.2-codex": "gpt-5.2-codex",
-        "gpt-5.2-codex-latest": "gpt-5.2-codex",
-        "gpt5-codex": "gpt-5-codex",
-        "gpt-5-codex": "gpt-5-codex",
-        "gpt-5-codex-latest": "gpt-5-codex",
-        "gpt-5.1-codex": "gpt-5.1-codex",
-        "gpt-5.1-codex-max": "gpt-5.1-codex-max",
-        "codex": "codex-mini-latest",
-        "codex-mini": "codex-mini-latest",
-        "codex-mini-latest": "codex-mini-latest",
-        "gpt-5.1-codex-mini": "gpt-5.1-codex-mini",
-    }
-    return mapping.get(base, base)
-
 
 def start_upstream_request(
     model: str,

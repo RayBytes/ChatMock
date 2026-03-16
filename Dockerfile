@@ -5,10 +5,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . /app
+COPY pyproject.toml README.md chatmock.py prompt.md prompt_gpt5_codex.md /app/
+COPY chatmock /app/chatmock
+RUN pip install --no-cache-dir .
 
 RUN mkdir -p /data
 
@@ -19,4 +18,3 @@ EXPOSE 8000 1455
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["serve"]
-

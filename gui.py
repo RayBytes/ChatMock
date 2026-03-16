@@ -12,8 +12,22 @@ from chatmock.cli import cmd_login
 from chatmock.utils import load_chatgpt_tokens, parse_jwt_claims
 
 
-def run_server(host: str, port: int, reasoning_effort: str = "medium", reasoning_summary: str = "auto") -> None:
-    app = create_app(reasoning_effort=reasoning_effort, reasoning_summary=reasoning_summary)
+def run_server(
+    host: str,
+    port: int,
+    reasoning_effort: str = "medium",
+    reasoning_summary: str = "auto",
+    reasoning_compat: str = "think-tags",
+    expose_reasoning_models: bool = False,
+    default_web_search: bool = False,
+) -> None:
+    app = create_app(
+        reasoning_effort=reasoning_effort,
+        reasoning_summary=reasoning_summary,
+        reasoning_compat=reasoning_compat,
+        expose_reasoning_models=expose_reasoning_models,
+        default_web_search=default_web_search,
+    )
     app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
 
 
@@ -27,15 +41,30 @@ class ServerProcess(QtCore.QObject):
         self._port = 8000
         self._effort = "medium"
         self._summary = "auto"
+        self._compat = "think-tags"
+        self._expose_reasoning_models = False
+        self._default_web_search = False
 
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.state() != QtCore.QProcess.NotRunning
 
-    def start(self, host: str, port: int, effort: str, summary: str) -> None:
+    def start(
+        self,
+        host: str,
+        port: int,
+        effort: str,
+        summary: str,
+        compat: str,
+        expose_reasoning_models: bool,
+        default_web_search: bool,
+    ) -> None:
         if self.is_running():
             return
         self._host, self._port = host, port
         self._effort, self._summary = effort, summary
+        self._compat = compat
+        self._expose_reasoning_models = expose_reasoning_models
+        self._default_web_search = default_web_search
         self._proc = QtCore.QProcess()
         self._proc.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         args = [
@@ -44,7 +73,12 @@ class ServerProcess(QtCore.QObject):
             "--port", str(port),
             "--effort", effort,
             "--summary", summary,
+            "--compat", compat,
         ]
+        if expose_reasoning_models:
+            args.append("--expose-reasoning-models")
+        if default_web_search:
+            args.append("--enable-web-search")
         self._proc.start(sys.executable, args)
         self._proc.started.connect(lambda: self.state_changed.emit(True))
 
@@ -298,18 +332,28 @@ class MainWindow(QtWidgets.QMainWindow):
         opts.setVerticalSpacing(8)
         opts.addWidget(QtWidgets.QLabel("Reasoning Effort"), 0, 0)
         self.effort = QtWidgets.QComboBox()
-        self.effort.addItems(["minimal", "low", "medium", "high"])  # default medium
+        self.effort.addItems(["none", "minimal", "low", "medium", "high", "xhigh"])
         self.effort.setCurrentText("medium")
         self.effort.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.effort.setMinimumContentsLength(7)
         opts.addWidget(self.effort, 0, 1)
         opts.addWidget(QtWidgets.QLabel("Reasoning Summary"), 0, 2)
         self.summary = QtWidgets.QComboBox()
-        self.summary.addItems(["auto", "concise", "detailed", "none"])  # default auto
+        self.summary.addItems(["auto", "concise", "detailed", "none"])
         self.summary.setCurrentText("auto")
         self.summary.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.summary.setMinimumContentsLength(8)
         opts.addWidget(self.summary, 0, 3)
+        opts.addWidget(QtWidgets.QLabel("Reasoning Compat"), 1, 0)
+        self.compat = QtWidgets.QComboBox()
+        self.compat.addItems(["think-tags", "legacy", "o3", "current"])
+        self.compat.setCurrentText("think-tags")
+        self.compat.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        opts.addWidget(self.compat, 1, 1)
+        self.expose_reasoning_models = QtWidgets.QCheckBox("Expose reasoning models")
+        opts.addWidget(self.expose_reasoning_models, 1, 2)
+        self.enable_web_search = QtWidgets.QCheckBox("Enable web search")
+        opts.addWidget(self.enable_web_search, 1, 3)
         opts.setColumnStretch(1, 1)
         opts.setColumnStretch(3, 1)
         srv_layout.addLayout(opts)
@@ -418,9 +462,20 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         effort = self.effort.currentText().strip()
         summary = self.summary.currentText().strip()
+        compat = self.compat.currentText().strip()
+        expose_reasoning_models = self.expose_reasoning_models.isChecked()
+        default_web_search = self.enable_web_search.isChecked()
         self.status.setText(f"Starting server at http://{host}:{port} …")
         self.btn_start.setEnabled(False)
-        self._server.start(host, port, effort, summary)
+        self._server.start(
+            host,
+            port,
+            effort,
+            summary,
+            compat,
+            expose_reasoning_models,
+            default_web_search,
+        )
 
     def _stop_server(self) -> None:
         self._server.stop()
@@ -468,8 +523,19 @@ def main() -> None:
         p.add_argument("--port", type=int, default=8000)
         p.add_argument("--effort", default="medium")
         p.add_argument("--summary", default="auto")
+        p.add_argument("--compat", default="think-tags")
+        p.add_argument("--expose-reasoning-models", action="store_true")
+        p.add_argument("--enable-web-search", action="store_true")
         args, _ = p.parse_known_args()
-        run_server(args.host, args.port, args.effort, args.summary)
+        run_server(
+            args.host,
+            args.port,
+            args.effort,
+            args.summary,
+            args.compat,
+            args.expose_reasoning_models,
+            args.enable_web_search,
+        )
         return
 
     app = QtWidgets.QApplication(sys.argv)

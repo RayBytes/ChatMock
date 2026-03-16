@@ -287,7 +287,7 @@ def cmd_serve(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ChatGPT Local: login & OpenAI-compatible proxy")
+    parser = argparse.ArgumentParser(description="ChatMock: login & OpenAI-compatible proxy")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_login = sub.add_parser("login", help="Authorize with ChatGPT and store tokens")

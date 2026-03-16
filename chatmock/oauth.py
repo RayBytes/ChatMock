@@ -152,7 +152,7 @@ class OAuthHTTPServer(http.server.HTTPServer):
                 "requested_token": "openai-api-key",
                 "subject_token": token_data.id_token,
                 "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
-                "name": f"ChatGPT Local [auto-generated] ({today})",
+                "name": f"ChatMock [auto-generated] ({today})",
             }
         ).encode()
 
@@ -311,7 +311,7 @@ class OAuthHandler(http.server.BaseHTTPRequestHandler):
                 "requested_token": "openai-api-key",
                 "subject_token": token_data.id_token,
                 "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
-                "name": f"ChatGPT Local [auto-generated] ({today})",
+                "name": f"ChatMock [auto-generated] ({today})",
             }
         ).encode()
 

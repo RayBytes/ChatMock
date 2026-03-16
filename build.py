@@ -163,18 +163,29 @@ def main() -> None:
     parser.add_argument("--radius", type=float, default=0.22)
     parser.add_argument("--square", action="store_true")
     parser.add_argument("--dmg", action="store_true")
+    parser.add_argument("--dmg-only", action="store_true")
     args = parser.parse_args()
 
     ensure_dirs()
     entry = ROOT / args.entry
     icon_src = ROOT / args.icon
+    if args.dmg_only:
+        app_path = ROOT / "dist" / f"{args.name}.app"
+        if not app_path.exists():
+            raise SystemExit(f"App not found: {app_path}")
+        dmg = ROOT / "dist" / f"{args.name}.dmg"
+        make_dmg(app_path, dmg, args.name)
+        return
     if not entry.exists():
         raise SystemExit(f"Entry not found: {entry}")
     if not icon_src.exists():
         raise SystemExit(f"Icon PNG not found: {icon_src}")
 
     os_name = platform.system().lower()
-    extra_data: list[tuple[Path, str]] = [(ROOT / "prompt.md", ".")]
+    extra_data: list[tuple[Path, str]] = [
+        (ROOT / "prompt.md", "."),
+        (ROOT / "prompt_gpt5_codex.md", "."),
+    ]
 
     bundle_icon: Path | None = None
     rr = 0.0 if args.square else float(args.radius)

@@ -1,27 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Set
+from typing import Any, Dict
 
-
-DEFAULT_REASONING_EFFORTS: Set[str] = {"minimal", "low", "medium", "high", "xhigh", "none"}
-
-
-def allowed_efforts_for_model(model: str | None) -> Set[str]:
-    base = (model or "").strip().lower()
-    if not base:
-        return DEFAULT_REASONING_EFFORTS
-    normalized = base.split(":", 1)[0]
-    if normalized.startswith("gpt-5.4"):
-        return {"none", "low", "medium", "high", "xhigh"}
-    if normalized.startswith("gpt-5.3"):
-        return {"low", "medium", "high", "xhigh"}
-    if normalized.startswith("gpt-5.2"):
-        return {"low", "medium", "high", "xhigh"}
-    if normalized.startswith("gpt-5.1-codex-max"):
-        return {"low", "medium", "high", "xhigh"}
-    if normalized.startswith("gpt-5.1"):
-        return {"low", "medium", "high"}
-    return DEFAULT_REASONING_EFFORTS
+from .model_registry import DEFAULT_REASONING_EFFORTS, allowed_efforts_for_model, extract_reasoning_from_model_name
 
 
 def build_reasoning_param(
@@ -29,7 +10,7 @@ def build_reasoning_param(
     base_summary: str = "auto",
     overrides: Dict[str, Any] | None = None,
     *,
-    allowed_efforts: Set[str] | None = None,
+    allowed_efforts: frozenset[str] | None = None,
 ) -> Dict[str, Any]:
     effort = (base_effort or "").strip().lower()
     summary = (base_summary or "").strip().lower()
@@ -96,34 +77,3 @@ def apply_reasoning_to_message(
         if isinstance(content_text, str):
             message["content"] = think_block + (content_text or "")
     return message
-
-
-def extract_reasoning_from_model_name(model: str | None) -> Dict[str, Any] | None:
-    """Infer reasoning overrides from a model."""
-    if not isinstance(model, str) or not model:
-        return None
-    s = model.strip().lower()
-    if not s:
-        return None
-    efforts = {"minimal", "low", "medium", "high", "xhigh", "none"}
-
-    if ":" in s:
-        maybe = s.rsplit(":", 1)[-1].strip()
-        if maybe in efforts:
-            return {"effort": maybe}
-
-    for sep in ("-", "_"):
-        if s.endswith(sep + "minimal"):
-            return {"effort": "minimal"}
-        if s.endswith(sep + "none"):
-            return {"effort": "none"}
-        if s.endswith(sep + "low"):
-            return {"effort": "low"}
-        if s.endswith(sep + "medium"):
-            return {"effort": "medium"}
-        if s.endswith(sep + "high"):
-            return {"effort": "high"}
-        if s.endswith(sep + "xhigh"):
-            return {"effort": "xhigh"}
-
-    return None

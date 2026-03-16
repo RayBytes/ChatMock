@@ -9,6 +9,7 @@ from flask import Blueprint, Response, current_app, jsonify, make_response, requ
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
+from .model_registry import list_public_models, uses_codex_instructions
 from .reasoning import (
     allowed_efforts_for_model,
     apply_reasoning_to_message,
@@ -59,7 +60,7 @@ def _wrap_stream_logging(label: str, iterator, enabled: bool):
 
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if "codex" in (model or "").lower():
+    if uses_codex_instructions(model):
         codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
         if isinstance(codex, str) and codex.strip():
             return codex
@@ -531,24 +532,7 @@ def completions() -> Response:
 @openai_bp.route("/v1/models", methods=["GET"])
 def list_models() -> Response:
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    model_groups = [
-        ("gpt-5", ["high", "medium", "low", "minimal"]),
-        ("gpt-5.1", ["high", "medium", "low"]),
-        ("gpt-5.2", ["xhigh", "high", "medium", "low"]),
-        ("gpt-5.4", ["xhigh", "high", "medium", "low", "none"]),
-        ("gpt-5.3-codex", ["xhigh", "high", "medium", "low"]),
-        ("gpt-5-codex", ["high", "medium", "low"]),
-        ("gpt-5.2-codex", ["xhigh", "high", "medium", "low"]),
-        ("gpt-5.1-codex", ["high", "medium", "low"]),
-        ("gpt-5.1-codex-max", ["xhigh", "high", "medium", "low"]),
-        ("gpt-5.1-codex-mini", []),
-        ("codex-mini", []),
-    ]
-    model_ids: List[str] = []
-    for base, efforts in model_groups:
-        model_ids.append(base)
-        if expose_variants:
-            model_ids.extend([f"{base}-{effort}" for effort in efforts])
+    model_ids = list_public_models(expose_reasoning_models=expose_variants)
     data = [{"id": mid, "object": "model", "owned_by": "owner"} for mid in model_ids]
     models = {"object": "list", "data": data}
     resp = make_response(jsonify(models), 200)

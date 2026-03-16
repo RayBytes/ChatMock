@@ -1,0 +1,229 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(python - <<'PY'
+          import runpy
+          print(runpy.run_path("chatmock/version.py")["__version__"])
+          PY
+          )"
+          if [ "$VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag version $VERSION does not match package version $PACKAGE_VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@v5
+      - run: uv pip install --system .
+      - run: python -m unittest discover -s tests
+
+  build-python:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+
+  publish-pypi:
+    needs:
+      - validate
+      - build-python
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  build-windows:
+    needs: validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install ".[gui]"
+      - run: python build.py --name ChatMock
+      - run: Compress-Archive -Path dist/ChatMock -DestinationPath dist/ChatMock-windows.zip
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-gui
+          path: dist/ChatMock-windows.zip
+
+  build-macos:
+    needs: validate
+    runs-on: macos-latest
+    env:
+      APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install ".[gui]"
+      - run: |
+          security create-keychain -p "$RUNNER_TEMP" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$RUNNER_TEMP" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          python - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          data = os.environ["APPLE_CERTIFICATE_P12_BASE64"]
+          Path(os.environ["RUNNER_TEMP"], "chatmock-signing.p12").write_bytes(base64.b64decode(data))
+          PY
+          security import "$RUNNER_TEMP/chatmock-signing.p12" -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$RUNNER_TEMP" build.keychain
+      - run: python build.py --name ChatMock
+      - run: codesign --force --deep --options runtime --sign "$APPLE_SIGNING_IDENTITY" dist/ChatMock.app
+      - run: codesign --verify --deep --strict dist/ChatMock.app
+      - run: python build.py --name ChatMock --dmg-only
+      - run: codesign --force --sign "$APPLE_SIGNING_IDENTITY" dist/ChatMock.dmg
+      - run: codesign --verify --strict dist/ChatMock.dmg
+      - run: xcrun notarytool submit dist/ChatMock.dmg --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+      - run: xcrun stapler staple dist/ChatMock.dmg
+      - run: xcrun stapler validate dist/ChatMock.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-gui
+          path: dist/ChatMock.dmg
+
+  docker:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: storagetime/chatmock
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ needs.validate.outputs.tag }}
+            type=raw,value=${{ needs.validate.outputs.version }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  homebrew:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          ARCHIVE_URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+          SHA256="$(curl -fsSL "$ARCHIVE_URL" | shasum -a 256 | awk '{print $1}')"
+          git clone "https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/RayBytes/homebrew-chatmock.git" tap
+          cd tap
+          cat <<EOF > chatmock.rb
+          class Chatmock < Formula
+            include Language::Python::Virtualenv
+
+            desc "OpenAI & Ollama compatible API powered by your ChatGPT plan"
+            homepage "https://github.com/RayBytes/ChatMock"
+            url "${ARCHIVE_URL}"
+            sha256 "${SHA256}"
+            license "MIT"
+            head "https://github.com/RayBytes/ChatMock.git", branch: "main"
+
+            depends_on "python@3.11"
+
+            def install
+              virtualenv_create(libexec, "python3.11")
+              system libexec/"bin/pip", "install", "."
+              bin.install_symlink libexec/"bin/chatmock"
+            end
+
+            def caveats
+              <<~EOS
+                To get started with ChatMock:
+                  chatmock login
+                  chatmock serve
+              EOS
+            end
+
+            test do
+              output = shell_output("#{bin}/chatmock --help 2>&1")
+              assert_match "ChatMock", output
+            end
+          end
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add chatmock.rb
+          git commit -m "chatmock ${GITHUB_REF_NAME}" || exit 0
+          git push
+
+  release-assets:
+    needs:
+      - validate
+      - build-python
+      - build-windows
+      - build-macos
+      - publish-pypi
+      - docker
+      - homebrew
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+      - run: find release-artifacts -type f | sort
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/python-dist/*
+            release-artifacts/windows-gui/*
+            release-artifacts/macos-gui/*

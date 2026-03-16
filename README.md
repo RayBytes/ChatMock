@@ -22,26 +22,22 @@ This does require a paid ChatGPT account.
 
 ## Quickstart
 
-### Mac Users
+### Homebrew
 
-#### GUI Application
-
-If you're on **macOS**, you can download the GUI app from the [GitHub releases](https://github.com/RayBytes/ChatMock/releases).  
-> **Note:** Since ChatMock isn't signed with an Apple Developer ID, you may need to run the following command in your terminal to open the app:
->
-> ```bash
-> xattr -dr com.apple.quarantine /Applications/ChatMock.app
-> ```
->
-> *[More info here.](https://github.com/deskflow/deskflow/wiki/Running-on-macOS)*
-
-#### Command Line (Homebrew)
-
-You can also install ChatMock as a command-line tool using [Homebrew](https://brew.sh/):
-```
+```bash
 brew tap RayBytes/chatmock
 brew install chatmock
 ```
+
+### CLI
+
+```bash
+pipx install chatmock
+```
+
+### GUI
+
+If you're on **macOS** or **Windows**, you can download the GUI app from the [GitHub releases](https://github.com/RayBytes/ChatMock/releases).  
 
 ### Python
 If you wish to just simply run this as a python flask server, you are also freely welcome too.
@@ -80,7 +76,7 @@ client = OpenAI(
 )
 
 resp = client.chat.completions.create(
-    model="gpt-5",
+    model="gpt-5.4",
     messages=[{"role": "user", "content": "hello world"}]
 )
 
@@ -94,7 +90,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -H "Authorization: Bearer key" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-5",
+    "model": "gpt-5.4",
     "messages": [{"role":"user","content":"hello world"}]
   }'
 ```
@@ -113,13 +109,13 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 - Use responsibly and at your own risk. This project is not affiliated with OpenAI, and is a educational exercise.
 
 # Supported models
-- `gpt-5`
-- `gpt-5.1`
-- `gpt-5.2`
 - `gpt-5.4`
+- `gpt-5.2`
+- `gpt-5.1`
+- `gpt-5`
+- `gpt-5.3-codex`
 - `gpt-5-codex`
 - `gpt-5.2-codex`
-- `gpt-5.3-codex`
 - `gpt-5.1-codex`
 - `gpt-5.1-codex-max`
 - `gpt-5.1-codex-mini`
@@ -150,7 +146,7 @@ You can enable it by starting the server with this parameter, which will allow O
 #### Example usage
 ```json
 {
-  "model": "gpt-5",
+  "model": "gpt-5.4",
   "messages": [{"role":"user","content":"Find current METAR rules"}],
   "stream": true,
   "responses_tools": [{"type": "web_search"}],
@@ -174,4 +170,3 @@ When the model returns a thinking summary, the model will send back thinking tag
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=RayBytes/ChatMock&type=Timeline)](https://www.star-history.com/#RayBytes/ChatMock&Timeline)
-

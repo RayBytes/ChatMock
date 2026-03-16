@@ -10,6 +10,7 @@ from flask import Blueprint, Response, current_app, jsonify, make_response, requ
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
+from .model_registry import list_public_models, uses_codex_instructions
 from .reasoning import (
     allowed_efforts_for_model,
     build_reasoning_param,
@@ -71,7 +72,7 @@ def ollama_version() -> Response:
 
 def _instructions_for_model(model: str) -> str:
     base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if "codex" in (model or "").lower():
+    if uses_codex_instructions(model):
         codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
         if isinstance(codex, str) and codex.strip():
             return codex
@@ -93,58 +94,7 @@ def ollama_tags() -> Response:
     if bool(current_app.config.get("VERBOSE")):
         print("IN GET /api/tags")
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
-    model_ids = [
-        "gpt-5",
-        "gpt-5.1",
-        "gpt-5.2",
-        "gpt-5.4",
-        "gpt-5.3-codex",
-        "gpt-5-codex",
-        "gpt-5.2-codex",
-        "gpt-5.1-codex",
-        "gpt-5.1-codex-max",
-        "gpt-5.1-codex-mini",
-        "codex-mini",
-    ]
-    if expose_variants:
-        model_ids.extend(
-            [
-                "gpt-5-high",
-                "gpt-5-medium",
-                "gpt-5-low",
-                "gpt-5-minimal",
-                "gpt-5.1-high",
-                "gpt-5.1-medium",
-                "gpt-5.1-low",
-                "gpt-5.4-xhigh",
-                "gpt-5.4-high",
-                "gpt-5.4-medium",
-                "gpt-5.4-low",
-                "gpt-5.4-none",
-                "gpt-5.2-xhigh",
-                "gpt-5.2-high",
-                "gpt-5.2-medium",
-                "gpt-5.2-low",
-                "gpt-5-codex-high",
-                "gpt-5-codex-medium",
-                "gpt-5-codex-low",
-                "gpt-5.2-codex-xhigh",
-                "gpt-5.2-codex-high",
-                "gpt-5.2-codex-medium",
-                "gpt-5.2-codex-low",
-                "gpt-5.3-codex-xhigh",
-                "gpt-5.3-codex-high",
-                "gpt-5.3-codex-medium",
-                "gpt-5.3-codex-low",
-                "gpt-5.1-codex-high",
-                "gpt-5.1-codex-medium",
-                "gpt-5.1-codex-low",
-                "gpt-5.1-codex-max-xhigh",
-                "gpt-5.1-codex-max-high",
-                "gpt-5.1-codex-max-medium",
-                "gpt-5.1-codex-max-low",
-            ]
-        )
+    model_ids = list_public_models(expose_reasoning_models=expose_variants)
     models = []
     for model_id in model_ids:
         models.append(
