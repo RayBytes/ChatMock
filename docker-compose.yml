@@ -8,7 +8,7 @@ services:
       - CHATGPT_LOCAL_HOME=/data
       - PORT=${PORT:-8000}
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
     volumes:
       - chatmock_data:/data
       - ./prompt.md:/app/prompt.md:ro
@@ -25,11 +25,11 @@ services:
     command: ["login"]
     environment:
       - CHATGPT_LOCAL_HOME=/data
-      - CHATGPT_LOCAL_LOGIN_BIND=0.0.0.0
+      - CHATGPT_LOCAL_LOGIN_BIND=127.0.0.1
     volumes:
       - chatmock_data:/data
     ports:
-      - "1455:1455"
+      - "127.0.0.1:1455:1455"
 
 volumes:
   chatmock_data:
