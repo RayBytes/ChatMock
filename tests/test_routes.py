@@ -33,13 +33,17 @@ class RouteTests(unittest.TestCase):
         response = self.client.get("/v1/models")
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
-        self.assertIn("gpt-5.4", [item["id"] for item in body["data"]])
+        model_ids = [item["id"] for item in body["data"]]
+        self.assertIn("gpt-5.4", model_ids)
+        self.assertIn("gpt-5.4-mini", model_ids)
 
     def test_ollama_tags_list(self) -> None:
         response = self.client.get("/api/tags")
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
-        self.assertIn("gpt-5.4", [item["name"] for item in body["models"]])
+        model_names = [item["name"] for item in body["models"]]
+        self.assertIn("gpt-5.4", model_names)
+        self.assertIn("gpt-5.4-mini", model_names)
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions(self, mock_start) -> None:
@@ -54,12 +58,12 @@ class RouteTests(unittest.TestCase):
         )
         response = self.client.post(
             "/v1/chat/completions",
-            json={"model": "gpt5.4", "messages": [{"role": "user", "content": "hi"}]},
+            json={"model": "gpt5.4-mini", "messages": [{"role": "user", "content": "hi"}]},
         )
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(body["choices"][0]["message"]["content"], "hello")
-        self.assertEqual(body["model"], "gpt5.4")
+        self.assertEqual(body["model"], "gpt5.4-mini")
 
     @patch("chatmock.routes_ollama.start_upstream_request")
     def test_ollama_chat(self, mock_start) -> None:

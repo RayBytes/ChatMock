@@ -110,6 +110,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 # Supported models
 - `gpt-5.4`
+- `gpt-5.4-mini`
 - `gpt-5.2`
 - `gpt-5.1`
 - `gpt-5`
@@ -127,7 +128,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 - `--reasoning-effort` (choice of none,minimal,low,medium,high,xhigh)<br>
 GPT-5 has a configurable amount of "effort" it can put into thinking, which may cause it to take more time for a response to return, but may overall give a smarter answer. Applying this parameter after `serve` forces the server to use this reasoning effort by default, unless overrided by the API request with a different effort set. The default reasoning effort without setting this parameter is `medium`.<br>
-    The `gpt-5.1` family (including codex) supports `low`, `medium`, and `high` while `gpt-5.1-codex-max` adds `xhigh`. The `gpt-5.2` and `gpt-5.3` families (including codex) support `low`, `medium`, `high`, and `xhigh`. GPT-5.4 supports `none`, `low`, `medium`, `high`, and `xhigh`.
+    The `gpt-5.1` family (including codex) supports `low`, `medium`, and `high` while `gpt-5.1-codex-max` adds `xhigh`. The `gpt-5.2` and `gpt-5.3` families (including codex) support `low`, `medium`, `high`, and `xhigh`. `gpt-5.4` supports `none`, `low`, `medium`, `high`, and `xhigh`.
 
 ### Thinking summaries
 
