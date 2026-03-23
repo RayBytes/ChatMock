@@ -24,6 +24,7 @@ Set options in `.env` or pass environment variables:
 - `CHATGPT_LOCAL_REASONING_EFFORT`: minimal|low|medium|high|xhigh
 - `CHATGPT_LOCAL_REASONING_SUMMARY`: auto|concise|detailed|none
 - `CHATGPT_LOCAL_REASONING_COMPAT`: legacy|o3|think-tags|current
+- `CHATGPT_LOCAL_FAST_MODE`: `true|false` to enable fast mode by default for supported models
 - `CHATGPT_LOCAL_DEBUG_MODEL`: force model override (e.g., `gpt-5.4`)
 - `CHATGPT_LOCAL_CLIENT_ID`: OAuth client id override (rarely needed)
 - `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS`: `true|false` to add reasoning model variants to `/v1/models`

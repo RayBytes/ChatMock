@@ -18,6 +18,7 @@ def run_server(
     reasoning_effort: str = "medium",
     reasoning_summary: str = "auto",
     reasoning_compat: str = "think-tags",
+    fast_mode: bool = False,
     expose_reasoning_models: bool = False,
     default_web_search: bool = False,
 ) -> None:
@@ -25,6 +26,7 @@ def run_server(
         reasoning_effort=reasoning_effort,
         reasoning_summary=reasoning_summary,
         reasoning_compat=reasoning_compat,
+        fast_mode=fast_mode,
         expose_reasoning_models=expose_reasoning_models,
         default_web_search=default_web_search,
     )
@@ -42,6 +44,7 @@ class ServerProcess(QtCore.QObject):
         self._effort = "medium"
         self._summary = "auto"
         self._compat = "think-tags"
+        self._fast_mode = False
         self._expose_reasoning_models = False
         self._default_web_search = False
 
@@ -55,6 +58,7 @@ class ServerProcess(QtCore.QObject):
         effort: str,
         summary: str,
         compat: str,
+        fast_mode: bool,
         expose_reasoning_models: bool,
         default_web_search: bool,
     ) -> None:
@@ -63,6 +67,7 @@ class ServerProcess(QtCore.QObject):
         self._host, self._port = host, port
         self._effort, self._summary = effort, summary
         self._compat = compat
+        self._fast_mode = fast_mode
         self._expose_reasoning_models = expose_reasoning_models
         self._default_web_search = default_web_search
         self._proc = QtCore.QProcess()
@@ -75,6 +80,8 @@ class ServerProcess(QtCore.QObject):
             "--summary", summary,
             "--compat", compat,
         ]
+        if fast_mode:
+            args.append("--fast-mode")
         if expose_reasoning_models:
             args.append("--expose-reasoning-models")
         if default_web_search:
@@ -352,8 +359,10 @@ class MainWindow(QtWidgets.QMainWindow):
         opts.addWidget(self.compat, 1, 1)
         self.expose_reasoning_models = QtWidgets.QCheckBox("Expose reasoning models")
         opts.addWidget(self.expose_reasoning_models, 1, 2)
+        self.fast_mode = QtWidgets.QCheckBox("Enable fast mode")
+        opts.addWidget(self.fast_mode, 1, 3)
         self.enable_web_search = QtWidgets.QCheckBox("Enable web search")
-        opts.addWidget(self.enable_web_search, 1, 3)
+        opts.addWidget(self.enable_web_search, 2, 0)
         opts.setColumnStretch(1, 1)
         opts.setColumnStretch(3, 1)
         srv_layout.addLayout(opts)
@@ -463,6 +472,7 @@ class MainWindow(QtWidgets.QMainWindow):
         effort = self.effort.currentText().strip()
         summary = self.summary.currentText().strip()
         compat = self.compat.currentText().strip()
+        fast_mode = self.fast_mode.isChecked()
         expose_reasoning_models = self.expose_reasoning_models.isChecked()
         default_web_search = self.enable_web_search.isChecked()
         self.status.setText(f"Starting server at http://{host}:{port} …")
@@ -473,6 +483,7 @@ class MainWindow(QtWidgets.QMainWindow):
             effort,
             summary,
             compat,
+            fast_mode,
             expose_reasoning_models,
             default_web_search,
         )
@@ -524,6 +535,7 @@ def main() -> None:
         p.add_argument("--effort", default="medium")
         p.add_argument("--summary", default="auto")
         p.add_argument("--compat", default="think-tags")
+        p.add_argument("--fast-mode", action="store_true")
         p.add_argument("--expose-reasoning-models", action="store_true")
         p.add_argument("--enable-web-search", action="store_true")
         args, _ = p.parse_known_args()
@@ -533,6 +545,7 @@ def main() -> None:
             args.effort,
             args.summary,
             args.compat,
+            args.fast_mode,
             args.expose_reasoning_models,
             args.enable_web_search,
         )

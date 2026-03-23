@@ -10,6 +10,7 @@ class ModelRegistryTests(unittest.TestCase):
         self.assertEqual(normalize_model_name("gpt5"), "gpt-5")
         self.assertEqual(normalize_model_name("gpt5.4"), "gpt-5.4")
         self.assertEqual(normalize_model_name("gpt5.4-mini"), "gpt-5.4-mini")
+        self.assertEqual(normalize_model_name("gpt5.3-codex-spark"), "gpt-5.3-codex-spark")
         self.assertEqual(normalize_model_name("codex"), "codex-mini-latest")
 
     def test_strips_reasoning_suffixes(self) -> None:
@@ -28,6 +29,7 @@ class ModelRegistryTests(unittest.TestCase):
         model_ids = list_public_models(expose_reasoning_models=True)
         self.assertIn("gpt-5.4", model_ids)
         self.assertIn("gpt-5.4-mini", model_ids)
+        self.assertIn("gpt-5.3-codex-spark", model_ids)
         self.assertIn("gpt-5.4-none", model_ids)
         self.assertIn("gpt-5.4-mini-xhigh", model_ids)
         self.assertNotIn("gpt-5.4-mini-none", model_ids)

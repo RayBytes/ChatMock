@@ -267,6 +267,7 @@ def cmd_serve(
     reasoning_effort: str,
     reasoning_summary: str,
     reasoning_compat: str,
+    fast_mode: bool,
     debug_model: str | None,
     expose_reasoning_models: bool,
     default_web_search: bool,
@@ -277,6 +278,7 @@ def cmd_serve(
         reasoning_effort=reasoning_effort,
         reasoning_summary=reasoning_summary,
         reasoning_compat=reasoning_compat,
+        fast_mode=fast_mode,
         debug_model=debug_model,
         expose_reasoning_models=expose_reasoning_models,
         default_web_search=default_web_search,
@@ -308,6 +310,12 @@ def main() -> None:
         dest="debug_model",
         default=os.getenv("CHATGPT_LOCAL_DEBUG_MODEL"),
         help="Forcibly override requested 'model' with this value",
+    )
+    p_serve.add_argument(
+        "--fast-mode",
+        action=argparse.BooleanOptionalAction,
+        default=(os.getenv("CHATGPT_LOCAL_FAST_MODE") or "").strip().lower() in ("1", "true", "yes", "on"),
+        help="Enable GPT fast mode by default for supported models; request-level overrides still take precedence.",
     )
     p_serve.add_argument(
         "--reasoning-effort",
@@ -366,6 +374,7 @@ def main() -> None:
                 reasoning_effort=args.reasoning_effort,
                 reasoning_summary=args.reasoning_summary,
                 reasoning_compat=args.reasoning_compat,
+                fast_mode=args.fast_mode,
                 debug_model=args.debug_model,
                 expose_reasoning_models=args.expose_reasoning_models,
                 default_web_search=args.enable_web_search,

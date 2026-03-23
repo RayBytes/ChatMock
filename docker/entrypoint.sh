@@ -23,6 +23,9 @@ if [[ "$cmd" == "serve" ]]; then
   if bool "${VERBOSE_OBFUSCATION:-}" || bool "${CHATGPT_LOCAL_VERBOSE_OBFUSCATION:-}"; then
     ARGS+=(--verbose-obfuscation)
   fi
+  if bool "${FAST_MODE:-}" || bool "${CHATGPT_LOCAL_FAST_MODE:-}"; then
+    ARGS+=(--fast-mode)
+  fi
 
   if [[ "$#" -gt 0 ]]; then
     ARGS+=("$@")

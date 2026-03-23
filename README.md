@@ -1,172 +1,175 @@
 <div align="center">
-  <h1>ChatMock
-  <div align="center">
-<a href="https://github.com/RayBytes/ChatMock/stargazers"><img src="https://img.shields.io/github/stars/RayBytes/ChatMock" alt="Stars Badge"/></a>
-<a href="https://github.com/RayBytes/ChatMock/network/members"><img src="https://img.shields.io/github/forks/RayBytes/ChatMock" alt="Forks Badge"/></a>
-<a href="https://github.com/RayBytes/ChatMock/pulls"><img src="https://img.shields.io/github/issues-pr/RayBytes/ChatMock" alt="Pull Requests Badge"/></a>
-<a href="https://github.com/RayBytes/ChatMock/issues"><img src="https://img.shields.io/github/issues/RayBytes/ChatMock" alt="Issues Badge"/></a>
-<a href="https://github.com/RayBytes/ChatMock/graphs/contributors"><img alt="GitHub contributors" src="https://img.shields.io/github/contributors/RayBytes/ChatMock?color=2b9348"></a>
-<a href="https://github.com/RayBytes/ChatMock/blob/master/LICENSE"><img src="https://img.shields.io/github/license/RayBytes/ChatMock?color=2b9348" alt="License Badge"/></a>
+
+# ChatMock
+
+**Allows Codex to work in your favourite chat apps and coding tools.**
+
+[![PyPI](https://img.shields.io/pypi/v/chatmock?color=blue&label=pypi)](https://pypi.org/project/chatmock/)
+[![Python](https://img.shields.io/pypi/pyversions/chatmock)](https://pypi.org/project/chatmock/)
+[![License](https://img.shields.io/github/license/RayBytes/ChatMock)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/RayBytes/ChatMock?style=flat)](https://github.com/RayBytes/ChatMock/stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/RayBytes/ChatMock)](https://github.com/RayBytes/ChatMock/commits/main)
+[![Issues](https://img.shields.io/github/issues/RayBytes/ChatMock)](https://github.com/RayBytes/ChatMock/issues)
+
+<br>
+
+
 </div>
-  </h1>
-  
-  <p><b>OpenAI & Ollama compatible API powered by your ChatGPT plan.</b></p>
-  <p>Use your ChatGPT Plus/Pro account to call OpenAI models from code or alternate chat UIs.</p>
-  <br>
-</div>
 
-## What It Does
+<br>
 
-ChatMock runs a local server that creates an OpenAI/Ollama compatible API, and requests are then fulfilled using your authenticated ChatGPT login with the oauth client of Codex, OpenAI's coding CLI tool. This allows you to use GPT-5, GPT-5-Codex, and other models right through your OpenAI account, without requiring an api key. You are then able to use it in other chat apps or other coding tools. <br>
-This does require a paid ChatGPT account.
+## Install
 
-## Quickstart
-
-### Homebrew
-
+#### Homebrew
 ```bash
 brew tap RayBytes/chatmock
 brew install chatmock
 ```
 
-### CLI
-
+#### pipx / pip
 ```bash
 pipx install chatmock
 ```
 
-### GUI
+#### GUI
+Download from [releases](https://github.com/RayBytes/ChatMock/releases) (macOS & Windows)
 
-If you're on **macOS** or **Windows**, you can download the GUI app from the [GitHub releases](https://github.com/RayBytes/ChatMock/releases).  
+#### Docker
+See [DOCKER.md](DOCKER.md)
 
-### Python
-If you wish to just simply run this as a python flask server, you are also freely welcome too.
+<br>
 
-Clone or download this repository, then cd into the project directory. Then follow the instrunctions listed below.
-
-1. Sign in with your ChatGPT account and follow the prompts
-```bash
-python chatmock.py login
-```
-You can make sure this worked by running `python chatmock.py info`
-
-2. After the login completes successfully, you can just simply start the local server
+## Getting Started
 
 ```bash
-python chatmock.py serve
+# 1. Sign in with your ChatGPT account
+chatmock login
+
+# 2. Start the server
+chatmock serve
 ```
-Then, you can simply use the address and port as the baseURL as you require (http://127.0.0.1:8000 by default)
 
-**Reminder:** When setting a baseURL in other applications, make you sure you include /v1/ at the end of the URL if you're using this as a OpenAI compatible endpoint (e.g http://127.0.0.1:8000/v1)
+The server runs at `http://127.0.0.1:8000` by default. Use `http://127.0.0.1:8000/v1` as your base URL for OpenAI-compatible apps.
 
-### Docker
+<br>
 
-Read [the docker instrunctions here](https://github.com/RayBytes/ChatMock/blob/main/DOCKER.md)
+## Usage
 
-# Examples
-
-### Python 
+<details open>
+<summary><b>Python</b></summary>
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
     base_url="http://127.0.0.1:8000/v1",
-    api_key="key"  # ignored
+    api_key="anything"  # not checked
 )
 
-resp = client.chat.completions.create(
+response = client.chat.completions.create(
     model="gpt-5.4",
-    messages=[{"role": "user", "content": "hello world"}]
+    messages=[{"role": "user", "content": "hello"}]
 )
-
-print(resp.choices[0].message.content)
+print(response.choices[0].message.content)
 ```
 
-### curl
+</details>
+
+<details>
+<summary><b>cURL</b></summary>
 
 ```bash
 curl http://127.0.0.1:8000/v1/chat/completions \
-  -H "Authorization: Bearer key" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-5.4",
-    "messages": [{"role":"user","content":"hello world"}]
+    "messages": [{"role": "user", "content": "hello"}]
   }'
 ```
 
-# What's supported
+</details>
 
-- Tool/Function calling 
-- Vision/Image understanding
-- Thinking summaries (through thinking tags)
-- Thinking effort
+<br>
 
-## Notes & Limits
+## Supported Models
 
-- Requires an active, paid ChatGPT account.
-- Some context length might be taken up by internal instructions (but they dont seem to degrade the model) 
-- Use responsibly and at your own risk. This project is not affiliated with OpenAI, and is a educational exercise.
-
-# Supported models
 - `gpt-5.4`
 - `gpt-5.4-mini`
 - `gpt-5.2`
 - `gpt-5.1`
 - `gpt-5`
 - `gpt-5.3-codex`
-- `gpt-5-codex`
+- `gpt-5.3-codex-spark`
 - `gpt-5.2-codex`
+- `gpt-5-codex`
 - `gpt-5.1-codex`
 - `gpt-5.1-codex-max`
 - `gpt-5.1-codex-mini`
 - `codex-mini`
 
-# Customisation / Configuration
+<br>
 
-### Thinking effort
+## Features
 
-- `--reasoning-effort` (choice of none,minimal,low,medium,high,xhigh)<br>
-GPT-5 has a configurable amount of "effort" it can put into thinking, which may cause it to take more time for a response to return, but may overall give a smarter answer. Applying this parameter after `serve` forces the server to use this reasoning effort by default, unless overrided by the API request with a different effort set. The default reasoning effort without setting this parameter is `medium`.<br>
-    The `gpt-5.1` family (including codex) supports `low`, `medium`, and `high` while `gpt-5.1-codex-max` adds `xhigh`. The `gpt-5.2` and `gpt-5.3` families (including codex) support `low`, `medium`, `high`, and `xhigh`. `gpt-5.4` supports `none`, `low`, `medium`, `high`, and `xhigh`.
+- Tool / function calling
+- Vision / image input
+- Thinking summaries (via think tags)
+- Configurable thinking effort
+- Fast mode for supported models
+- Web search tool
+- OpenAI-compatible `/v1/responses` (HTTP + WebSocket)
+- Ollama-compatible endpoints
+- Reasoning effort exposed as separate models (optional)
 
-### Thinking summaries
+<br>
 
-- `--reasoning-summary` (choice of auto,concise,detailed,none)<br>
-Models like GPT-5 do not return raw thinking content, but instead return thinking summaries. These can also be customised by you.
+## Configuration
 
-### OpenAI Tools
+All flags go after `chatmock serve`. These can also be set as environment variables.
 
-- `--enable-web-search`<br>
-You can also access OpenAI tools through this project. Currently, only web search is available.
-You can enable it by starting the server with this parameter, which will allow OpenAI to determine when a request requires a web search, or you can use the following parameters during a request to the API to enable web search:
-<br><br>
-`responses_tools`: supports `[{"type":"web_search"}]` / `{ "type": "web_search_preview" }`<br>
-`responses_tool_choice`: `"auto"` or `"none"`
+| Flag | Env var | Options | Default | Description |
+|------|---------|---------|---------|-------------|
+| `--reasoning-effort` | `CHATGPT_LOCAL_REASONING_EFFORT` | none, minimal, low, medium, high, xhigh | medium | How hard the model thinks |
+| `--reasoning-summary` | `CHATGPT_LOCAL_REASONING_SUMMARY` | auto, concise, detailed, none | auto | Thinking summary verbosity |
+| `--reasoning-compat` | `CHATGPT_LOCAL_REASONING_COMPAT` | legacy, o3, think-tags | think-tags | How reasoning is returned to the client |
+| `--fast-mode` | `CHATGPT_LOCAL_FAST_MODE` | true/false | false | Priority processing for supported models |
+| `--enable-web-search` | `CHATGPT_LOCAL_ENABLE_WEB_SEARCH` | true/false | false | Allow the model to search the web |
+| `--expose-reasoning-models` | `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS` | true/false | false | List each reasoning level as its own model |
 
-#### Example usage
+<details>
+<summary><b>Web search in a request</b></summary>
+
 ```json
 {
   "model": "gpt-5.4",
-  "messages": [{"role":"user","content":"Find current METAR rules"}],
-  "stream": true,
+  "messages": [{"role": "user", "content": "latest news on ..."}],
   "responses_tools": [{"type": "web_search"}],
   "responses_tool_choice": "auto"
 }
 ```
 
-### Expose reasoning models
+</details>
 
-- `--expose-reasoning-models`<br>
-If your preferred app doesn’t support selecting reasoning effort, or you just want a simpler approach, this parameter exposes each reasoning level as a separate, queryable model. Each reasoning level also appears individually under ⁠/v1/models, so model pickers in your favorite chat apps will list all reasoning options as distinct models you can switch between.
+<details>
+<summary><b>Fast mode in a request</b></summary>
+
+```json
+{
+  "model": "gpt-5.4",
+  "input": "summarize this",
+  "fast_mode": true
+}
+```
+
+</details>
+
+<br>
 
 ## Notes
-If you wish to have the fastest responses, I'd recommend setting `--reasoning-effort` to low, and `--reasoning-summary` to none. <br>
-All parameters and choices can be seen by sending `python chatmock.py serve --h`<br>
-The context size of this route is also larger than what you get access to in the regular ChatGPT app.<br>
 
-When the model returns a thinking summary, the model will send back thinking tags to make it compatible with chat apps. **If you don't like this behavior, you can instead set `--reasoning-compat` to legacy, and reasoning will be set in the reasoning tag instead of being returned in the actual response text.**
+Use responsibly and at your own risk. This project is not affiliated with OpenAI.
 
+<br>
 
 ## Star History
 

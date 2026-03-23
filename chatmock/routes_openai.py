@@ -7,16 +7,31 @@ from typing import Any, Dict, List
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
+from .fast_mode import resolve_service_tier
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .model_registry import list_public_models, uses_codex_instructions
+from .responses_api import (
+    ResponsesRequestError,
+    aggregate_response_from_sse,
+    extract_client_session_id,
+    instructions_for_model,
+    normalize_responses_payload,
+    stream_upstream_bytes,
+)
 from .reasoning import (
     allowed_efforts_for_model,
     apply_reasoning_to_message,
     build_reasoning_param,
     extract_reasoning_from_model_name,
 )
-from .upstream import normalize_model_name, start_upstream_request
+from .session import (
+    clear_responses_reuse_state,
+    note_responses_final_response,
+    note_responses_stream_event,
+    prepare_responses_request_for_session,
+)
+from .upstream import normalize_model_name, start_upstream_raw_request, start_upstream_request
 from .utils import (
     convert_chat_messages_to_responses_input,
     convert_tools_chat_to_responses,
@@ -59,12 +74,32 @@ def _wrap_stream_logging(label: str, iterator, enabled: bool):
 
 
 def _instructions_for_model(model: str) -> str:
-    base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if uses_codex_instructions(model):
-        codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
-        if isinstance(codex, str) and codex.strip():
-            return codex
-    return base
+    return instructions_for_model(current_app.config, model)
+
+
+def _service_tier_from_payload(
+    model: str,
+    payload: Dict[str, Any],
+    *,
+    verbose: bool = False,
+) -> tuple[str | None, Response | None]:
+    resolution = resolve_service_tier(
+        model,
+        request_fast_mode=payload.get("fast_mode"),
+        request_service_tier=payload.get("service_tier"),
+        server_fast_mode=bool(current_app.config.get("FAST_MODE")),
+    )
+    if resolution.warning_message and verbose:
+        print(f"[FastMode] {resolution.warning_message}")
+    if resolution.error_message:
+        err = {"error": {"message": resolution.error_message}}
+        if verbose:
+            _log_json("OUT POST service_tier resolution", err)
+        resp = make_response(jsonify(err), 400)
+        for k, v in build_cors_headers().items():
+            resp.headers.setdefault(k, v)
+        return None, resp
+    return resolution.service_tier, None
 
 
 @openai_bp.route("/v1/chat/completions", methods=["POST"])
@@ -178,6 +213,9 @@ def chat_completions() -> Response:
         reasoning_overrides,
         allowed_efforts=allowed_efforts_for_model(model),
     )
+    service_tier, tier_error = _service_tier_from_payload(model, payload, verbose=verbose)
+    if tier_error is not None:
+        return tier_error
 
     upstream, error_resp = start_upstream_request(
         model,
@@ -187,6 +225,7 @@ def chat_completions() -> Response:
         tool_choice=tool_choice,
         parallel_tool_calls=parallel_tool_calls,
         reasoning_param=reasoning_param,
+        service_tier=service_tier,
     )
     if error_resp is not None:
         if verbose:
@@ -224,6 +263,7 @@ def chat_completions() -> Response:
                 tool_choice=safe_choice,
                 parallel_tool_calls=parallel_tool_calls,
                 reasoning_param=reasoning_param,
+                service_tier=service_tier,
             )
             record_rate_limits_from_response(upstream2)
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
@@ -413,11 +453,15 @@ def completions() -> Response:
         reasoning_overrides,
         allowed_efforts=allowed_efforts_for_model(model),
     )
+    service_tier, tier_error = _service_tier_from_payload(model, payload, verbose=verbose)
+    if tier_error is not None:
+        return tier_error
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
         instructions=_instructions_for_model(model),
         reasoning_param=reasoning_param,
+        service_tier=service_tier,
     )
     if error_resp is not None:
         if verbose:
@@ -524,6 +568,161 @@ def completions() -> Response:
     if verbose:
         _log_json("OUT POST /v1/completions", completion)
     resp = make_response(jsonify(completion), upstream.status_code)
+    for k, v in build_cors_headers().items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
+@openai_bp.route("/v1/responses", methods=["POST"])
+def responses_create() -> Response:
+    verbose = bool(current_app.config.get("VERBOSE"))
+    raw = request.get_data(cache=True, as_text=True) or ""
+    if verbose:
+        try:
+            print("IN POST /v1/responses\n" + raw)
+        except Exception:
+            pass
+
+    try:
+        payload = json.loads(raw) if raw else {}
+    except Exception:
+        err = {"error": {"message": "Invalid JSON body"}}
+        if verbose:
+            _log_json("OUT POST /v1/responses", err)
+        return jsonify(err), 400
+
+    if not isinstance(payload, dict):
+        err = {"error": {"message": "Request body must be a JSON object"}}
+        if verbose:
+            _log_json("OUT POST /v1/responses", err)
+        return jsonify(err), 400
+
+    try:
+        normalized = normalize_responses_payload(
+            payload,
+            config=current_app.config,
+            client_session_id=extract_client_session_id(request.headers),
+        )
+    except ResponsesRequestError as exc:
+        err: Dict[str, Any] = {"error": {"message": str(exc)}}
+        if exc.code:
+            err["error"]["code"] = exc.code
+        if verbose:
+            _log_json("OUT POST /v1/responses", err)
+        return jsonify(err), exc.status_code
+
+    if normalized.service_tier_resolution.warning_message and verbose:
+        print(f"[FastMode] {normalized.service_tier_resolution.warning_message}")
+
+    prepared = prepare_responses_request_for_session(
+        normalized.session_id,
+        normalized.payload,
+        allow_previous_response_id=False,
+    )
+    stream_req = bool(prepared.payload.get("stream", False))
+    upstream_payload = dict(prepared.payload)
+    upstream_payload["stream"] = True
+    upstream, error_resp = start_upstream_raw_request(
+        upstream_payload,
+        session_id=normalized.session_id,
+        stream=True,
+    )
+    if error_resp is not None:
+        clear_responses_reuse_state(normalized.session_id)
+        if verbose:
+            try:
+                body = error_resp.get_data(as_text=True)
+                if body:
+                    try:
+                        parsed = json.loads(body)
+                    except Exception:
+                        parsed = body
+                    _log_json("OUT POST /v1/responses", parsed)
+            except Exception:
+                pass
+        return error_resp
+
+    record_rate_limits_from_response(upstream)
+
+    if upstream.status_code >= 400:
+        try:
+            err_body = json.loads(upstream.content.decode("utf-8", errors="ignore")) if upstream.content else {"error": {"message": upstream.text}}
+        except Exception:
+            err_body = {"error": {"message": upstream.text or "Upstream error"}}
+        finally:
+            upstream.close()
+        clear_responses_reuse_state(normalized.session_id)
+        if verbose:
+            _log_json("OUT POST /v1/responses", err_body)
+        resp = make_response(jsonify(err_body), upstream.status_code)
+        for k, v in build_cors_headers().items():
+            resp.headers.setdefault(k, v)
+        return resp
+
+    if stream_req:
+        if verbose:
+            print("OUT POST /v1/responses (streaming response)")
+        stream_iter = _wrap_stream_logging(
+            "STREAM OUT /v1/responses",
+            stream_upstream_bytes(
+                upstream,
+                on_event=lambda evt: note_responses_stream_event(normalized.session_id, evt),
+            ),
+            verbose,
+        )
+        resp = Response(
+            stream_iter,
+            status=upstream.status_code,
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+        for k, v in build_cors_headers().items():
+            resp.headers.setdefault(k, v)
+        return resp
+
+    content_type = upstream.headers.get("Content-Type", "")
+    if "application/json" in content_type.lower():
+        try:
+            body = upstream.json()
+        except Exception:
+            body = None
+        finally:
+            upstream.close()
+        if isinstance(body, dict):
+            note_responses_final_response(normalized.session_id, body)
+            if verbose:
+                _log_json("OUT POST /v1/responses", body)
+            resp = make_response(jsonify(body), upstream.status_code)
+            for k, v in build_cors_headers().items():
+                resp.headers.setdefault(k, v)
+            return resp
+
+    response_obj, error_obj = aggregate_response_from_sse(
+        upstream,
+        on_event=lambda evt: note_responses_stream_event(normalized.session_id, evt),
+    )
+    if error_obj is not None:
+        clear_responses_reuse_state(normalized.session_id)
+        if verbose:
+            _log_json("OUT POST /v1/responses", error_obj)
+        resp = make_response(jsonify(error_obj), 502)
+        for k, v in build_cors_headers().items():
+            resp.headers.setdefault(k, v)
+        return resp
+
+    if response_obj is None:
+        clear_responses_reuse_state(normalized.session_id)
+        err = {"error": {"message": "Upstream response stream did not contain a completed response object"}}
+        if verbose:
+            _log_json("OUT POST /v1/responses", err)
+        resp = make_response(jsonify(err), 502)
+        for k, v in build_cors_headers().items():
+            resp.headers.setdefault(k, v)
+        return resp
+
+    if verbose:
+        _log_json("OUT POST /v1/responses", response_obj)
+    resp = make_response(jsonify(response_obj), upstream.status_code)
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp

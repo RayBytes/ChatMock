@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from flask import Flask, jsonify
+from flask_sock import Sock
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .http import build_cors_headers
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
+from .websocket_routes import register_websocket_routes
 
 
 def create_app(
@@ -14,6 +16,7 @@ def create_app(
     reasoning_effort: str = "medium",
     reasoning_summary: str = "auto",
     reasoning_compat: str = "think-tags",
+    fast_mode: bool = False,
     debug_model: str | None = None,
     expose_reasoning_models: bool = False,
     default_web_search: bool = False,
@@ -26,6 +29,7 @@ def create_app(
         REASONING_EFFORT=reasoning_effort,
         REASONING_SUMMARY=reasoning_summary,
         REASONING_COMPAT=reasoning_compat,
+        FAST_MODE=bool(fast_mode),
         DEBUG_MODEL=debug_model,
         BASE_INSTRUCTIONS=BASE_INSTRUCTIONS,
         GPT5_CODEX_INSTRUCTIONS=GPT5_CODEX_INSTRUCTIONS,
@@ -46,5 +50,7 @@ def create_app(
 
     app.register_blueprint(openai_bp)
     app.register_blueprint(ollama_bp)
+    sock = Sock(app)
+    register_websocket_routes(sock)
 
     return app

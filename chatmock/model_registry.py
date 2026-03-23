@@ -63,6 +63,14 @@ _MODEL_SPECS = (
         uses_codex_instructions=True,
     ),
     ModelSpec(
+        public_id="gpt-5.3-codex-spark",
+        upstream_id="gpt-5.3-codex-spark",
+        aliases=("gpt5.3-codex-spark", "gpt-5.3-codex-spark-latest"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh")),
+        variant_efforts=("xhigh", "high", "medium", "low"),
+        uses_codex_instructions=True,
+    ),
+    ModelSpec(
         public_id="gpt-5-codex",
         upstream_id="gpt-5-codex",
         aliases=("gpt5-codex", "gpt-5-codex-latest"),

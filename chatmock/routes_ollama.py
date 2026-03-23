@@ -8,9 +8,11 @@ from typing import Any, Dict, List
 from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
+from .fast_mode import resolve_service_tier
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .model_registry import list_public_models, uses_codex_instructions
+from .responses_api import instructions_for_model
 from .reasoning import (
     allowed_efforts_for_model,
     build_reasoning_param,
@@ -71,12 +73,7 @@ def ollama_version() -> Response:
 
 
 def _instructions_for_model(model: str) -> str:
-    base = current_app.config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if uses_codex_instructions(model):
-        codex = current_app.config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
-        if isinstance(codex, str) and codex.strip():
-            return codex
-    return base
+    return instructions_for_model(current_app.config, model)
 
 
 _OLLAMA_FAKE_EVAL = {
@@ -254,6 +251,19 @@ def ollama_chat() -> Response:
 
     model_reasoning = extract_reasoning_from_model_name(model)
     normalized_model = normalize_model_name(model)
+    service_tier_resolution = resolve_service_tier(
+        normalized_model,
+        request_fast_mode=payload.get("fast_mode"),
+        request_service_tier=payload.get("service_tier"),
+        server_fast_mode=bool(current_app.config.get("FAST_MODE")),
+    )
+    if service_tier_resolution.warning_message and verbose:
+        print(f"[FastMode] {service_tier_resolution.warning_message}")
+    if service_tier_resolution.error_message:
+        err = {"error": service_tier_resolution.error_message}
+        if verbose:
+            _log_json("OUT POST /api/chat", err)
+        return jsonify(err), 400
     upstream, error_resp = start_upstream_request(
         normalized_model,
         input_items,
@@ -267,6 +277,7 @@ def ollama_chat() -> Response:
             model_reasoning,
             allowed_efforts=allowed_efforts_for_model(model),
         ),
+        service_tier=service_tier_resolution.service_tier,
     )
     if error_resp is not None:
         if verbose:
@@ -307,6 +318,7 @@ def ollama_chat() -> Response:
                     model_reasoning,
                     allowed_efforts=allowed_efforts_for_model(model),
                 ),
+                service_tier=service_tier_resolution.service_tier,
             )
             record_rate_limits_from_response(upstream2)
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:

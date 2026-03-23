@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from typing import Any, Dict, List, Tuple
+from urllib.parse import urlparse, urlunparse
 
 import requests
 from flask import Response, current_app, jsonify, make_response
@@ -33,6 +34,7 @@ def start_upstream_request(
     tool_choice: Any | None = None,
     parallel_tool_calls: bool = False,
     reasoning_param: Dict[str, Any] | None = None,
+    service_tier: str | None = None,
 ):
     access_token, account_id = get_effective_chatgpt_auth()
     if not access_token or not account_id:
@@ -81,6 +83,62 @@ def start_upstream_request(
 
     if reasoning_param is not None:
         responses_payload["reasoning"] = reasoning_param
+    if isinstance(service_tier, str) and service_tier.strip():
+        responses_payload["service_tier"] = service_tier.strip().lower()
+
+    return start_upstream_raw_request(
+        responses_payload,
+        session_id=session_id,
+        stream=True,
+    )
+
+
+def build_upstream_headers(
+    access_token: str,
+    account_id: str,
+    session_id: str,
+    *,
+    accept: str = "text/event-stream",
+) -> Dict[str, str]:
+    return {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "Accept": accept,
+        "chatgpt-account-id": account_id,
+        "OpenAI-Beta": "responses=experimental",
+        "session_id": session_id,
+    }
+
+
+def start_upstream_raw_request(
+    responses_payload: Dict[str, Any],
+    *,
+    session_id: str | None = None,
+    stream: bool = True,
+):
+    access_token, account_id = get_effective_chatgpt_auth()
+    if not access_token or not account_id:
+        resp = make_response(
+            jsonify(
+                {
+                    "error": {
+                        "message": "Missing ChatGPT credentials. Run 'python3 chatmock.py login' first.",
+                    }
+                }
+            ),
+            401,
+        )
+        for k, v in build_cors_headers().items():
+            resp.headers.setdefault(k, v)
+        return None, resp
+
+    effective_session_id = session_id
+    if not isinstance(effective_session_id, str) or not effective_session_id.strip():
+        payload_prompt_cache_key = responses_payload.get("prompt_cache_key")
+        if isinstance(payload_prompt_cache_key, str) and payload_prompt_cache_key.strip():
+            effective_session_id = payload_prompt_cache_key.strip()
+    if not isinstance(effective_session_id, str) or not effective_session_id.strip():
+        effective_session_id = str(int(time.time() * 1000))
 
     verbose = False
     try:
@@ -90,21 +148,19 @@ def start_upstream_request(
     if verbose:
         _log_json("OUTBOUND >> ChatGPT Responses API payload", responses_payload)
 
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-        "Accept": "text/event-stream",
-        "chatgpt-account-id": account_id,
-        "OpenAI-Beta": "responses=experimental",
-        "session_id": session_id,
-    }
+    headers = build_upstream_headers(
+        access_token,
+        account_id,
+        effective_session_id,
+        accept=("text/event-stream" if stream else "application/json"),
+    )
 
     try:
         upstream = requests.post(
             CHATGPT_RESPONSES_URL,
             headers=headers,
             json=responses_payload,
-            stream=True,
+            stream=stream,
             timeout=600,
         )
     except requests.RequestException as e:
@@ -113,3 +169,13 @@ def start_upstream_request(
             resp.headers.setdefault(k, v)
         return None, resp
     return upstream, None
+
+
+def build_upstream_websocket_url() -> str:
+    parsed = urlparse(CHATGPT_RESPONSES_URL)
+    scheme = parsed.scheme.lower()
+    if scheme == "https":
+        parsed = parsed._replace(scheme="wss")
+    elif scheme == "http":
+        parsed = parsed._replace(scheme="ws")
+    return urlunparse(parsed)
