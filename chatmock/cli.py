@@ -284,7 +284,7 @@ def cmd_serve(
         default_web_search=default_web_search,
     )
 
-    app.run(host=host, debug=False, use_reloader=False, port=port, threaded=True)
+    app.run(host=host, use_reloader=False, port=port, threaded=True)
     return 0
 
 

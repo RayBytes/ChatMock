@@ -88,6 +88,7 @@ def normalize_responses_payload(
 
     normalized = dict(payload)
     normalized["model"] = normalized_model
+    normalized.pop("max_output_tokens", None)
 
     if "input" in normalized:
         normalized["input"] = canonicalize_responses_input(normalized.get("input"))

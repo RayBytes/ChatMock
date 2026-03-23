@@ -91,6 +91,26 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(body["choices"][0]["message"]["content"], "hello")
         self.assertEqual(body["model"], "gpt5.4-mini")
 
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_honors_debug_model_override(self, mock_start) -> None:
+        app = create_app(debug_model="gpt-5.4")
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+        response = client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-5.3-codex", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.args[0], "gpt-5.4")
+
     @patch("chatmock.routes_ollama.start_upstream_request")
     def test_ollama_chat(self, mock_start) -> None:
         mock_start.return_value = (
@@ -109,6 +129,28 @@ class RouteTests(unittest.TestCase):
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(body["message"]["content"], "hello")
+        self.assertEqual(body["model"], "gpt-5.4")
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_chat_honors_debug_model_override(self, mock_start) -> None:
+        app = create_app(debug_model="gpt-5.4")
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed"},
+                ]
+            ),
+            None,
+        )
+        response = client.post(
+            "/api/chat",
+            json={"model": "gpt-5.3-codex", "messages": [{"role": "user", "content": "hi"}], "stream": False},
+        )
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.args[0], "gpt-5.4")
         self.assertEqual(body["model"], "gpt-5.4")
 
     @patch("chatmock.routes_openai.start_upstream_request")
@@ -211,6 +253,70 @@ class RouteTests(unittest.TestCase):
         )
         self.assertEqual(outbound_payload["reasoning"]["effort"], "medium")
         self.assertIsInstance(outbound_payload["prompt_cache_key"], str)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
+        app = create_app(debug_model="gpt-5.4")
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_debug", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_debug",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+        response = client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.3-codex", "input": "hello"},
+        )
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["model"], "gpt-5.4")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_strips_unsupported_max_output_tokens(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_limit", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_limit",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "max_output_tokens": 20},
+        )
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertNotIn("max_output_tokens", outbound_payload)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_does_not_use_previous_response_id_for_http_follow_up(self, mock_start) -> None:
@@ -496,7 +602,6 @@ class RouteTests(unittest.TestCase):
             kwargs={
                 "host": host,
                 "port": port,
-                "debug": False,
                 "use_reloader": False,
                 "threaded": True,
             },

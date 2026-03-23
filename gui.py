@@ -19,6 +19,7 @@ def run_server(
     reasoning_summary: str = "auto",
     reasoning_compat: str = "think-tags",
     fast_mode: bool = False,
+    debug_model: str | None = None,
     expose_reasoning_models: bool = False,
     default_web_search: bool = False,
 ) -> None:
@@ -27,10 +28,11 @@ def run_server(
         reasoning_summary=reasoning_summary,
         reasoning_compat=reasoning_compat,
         fast_mode=fast_mode,
+        debug_model=debug_model,
         expose_reasoning_models=expose_reasoning_models,
         default_web_search=default_web_search,
     )
-    app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
+    app.run(host=host, port=port, use_reloader=False, threaded=True)
 
 
 class ServerProcess(QtCore.QObject):
@@ -45,6 +47,7 @@ class ServerProcess(QtCore.QObject):
         self._summary = "auto"
         self._compat = "think-tags"
         self._fast_mode = False
+        self._debug_model: str | None = None
         self._expose_reasoning_models = False
         self._default_web_search = False
 
@@ -59,6 +62,7 @@ class ServerProcess(QtCore.QObject):
         summary: str,
         compat: str,
         fast_mode: bool,
+        debug_model: str | None,
         expose_reasoning_models: bool,
         default_web_search: bool,
     ) -> None:
@@ -68,6 +72,7 @@ class ServerProcess(QtCore.QObject):
         self._effort, self._summary = effort, summary
         self._compat = compat
         self._fast_mode = fast_mode
+        self._debug_model = debug_model
         self._expose_reasoning_models = expose_reasoning_models
         self._default_web_search = default_web_search
         self._proc = QtCore.QProcess()
@@ -80,6 +85,8 @@ class ServerProcess(QtCore.QObject):
             "--summary", summary,
             "--compat", compat,
         ]
+        if isinstance(debug_model, str) and debug_model.strip():
+            args.extend(["--debug-model", debug_model.strip()])
         if fast_mode:
             args.append("--fast-mode")
         if expose_reasoning_models:
@@ -317,6 +324,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.port_edit.setValidator(QtGui.QIntValidator(1, 65535, self))
         self.port_edit.setMaximumWidth(100)
         form.addWidget(self.port_edit, 0, 3)
+        form.addWidget(QtWidgets.QLabel("Debug Model"), 1, 0)
+        self.debug_model_edit = QtWidgets.QLineEdit("")
+        self.debug_model_edit.setClearButtonEnabled(True)
+        self.debug_model_edit.setPlaceholderText("Optional override, e.g. gpt-5.4")
+        self.debug_model_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        form.addWidget(self.debug_model_edit, 1, 1, 1, 3)
         form.setColumnStretch(1, 1)
         srv_layout.addLayout(form)
 
@@ -473,6 +486,7 @@ class MainWindow(QtWidgets.QMainWindow):
         summary = self.summary.currentText().strip()
         compat = self.compat.currentText().strip()
         fast_mode = self.fast_mode.isChecked()
+        debug_model = self.debug_model_edit.text().strip() or None
         expose_reasoning_models = self.expose_reasoning_models.isChecked()
         default_web_search = self.enable_web_search.isChecked()
         self.status.setText(f"Starting server at http://{host}:{port} …")
@@ -484,6 +498,7 @@ class MainWindow(QtWidgets.QMainWindow):
             summary,
             compat,
             fast_mode,
+            debug_model,
             expose_reasoning_models,
             default_web_search,
         )
@@ -536,6 +551,7 @@ def main() -> None:
         p.add_argument("--summary", default="auto")
         p.add_argument("--compat", default="think-tags")
         p.add_argument("--fast-mode", action="store_true")
+        p.add_argument("--debug-model")
         p.add_argument("--expose-reasoning-models", action="store_true")
         p.add_argument("--enable-web-search", action="store_true")
         args, _ = p.parse_known_args()
@@ -546,6 +562,7 @@ def main() -> None:
             args.summary,
             args.compat,
             args.fast_mode,
+            args.debug_model,
             args.expose_reasoning_models,
             args.enable_web_search,
         )

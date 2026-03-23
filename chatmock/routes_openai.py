@@ -109,7 +109,6 @@ def chat_completions() -> Response:
     reasoning_effort = current_app.config.get("REASONING_EFFORT", "medium")
     reasoning_summary = current_app.config.get("REASONING_SUMMARY", "auto")
     reasoning_compat = current_app.config.get("REASONING_COMPAT", "think-tags")
-    debug_model = current_app.config.get("DEBUG_MODEL")
 
     raw = request.get_data(cache=True, as_text=True) or ""
     if verbose:
@@ -129,7 +128,7 @@ def chat_completions() -> Response:
             return jsonify(err), 400
 
     requested_model = payload.get("model")
-    model = normalize_model_name(requested_model, debug_model)
+    model = normalize_model_name(requested_model, current_app.config.get("DEBUG_MODEL"))
     messages = payload.get("messages")
     if messages is None and isinstance(payload.get("prompt"), str):
         messages = [{"role": "user", "content": payload.get("prompt") or ""}]
@@ -413,7 +412,6 @@ def chat_completions() -> Response:
 def completions() -> Response:
     verbose = bool(current_app.config.get("VERBOSE"))
     verbose_obfuscation = bool(current_app.config.get("VERBOSE_OBFUSCATION"))
-    debug_model = current_app.config.get("DEBUG_MODEL")
     reasoning_effort = current_app.config.get("REASONING_EFFORT", "medium")
     reasoning_summary = current_app.config.get("REASONING_SUMMARY", "auto")
 
@@ -432,7 +430,7 @@ def completions() -> Response:
         return jsonify(err), 400
 
     requested_model = payload.get("model")
-    model = normalize_model_name(requested_model, debug_model)
+    model = normalize_model_name(requested_model, current_app.config.get("DEBUG_MODEL"))
     prompt = payload.get("prompt")
     if isinstance(prompt, list):
         prompt = "".join([p if isinstance(p, str) else "" for p in prompt])

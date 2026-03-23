@@ -250,7 +250,7 @@ def ollama_chat() -> Response:
     input_items = convert_chat_messages_to_responses_input(messages)
 
     model_reasoning = extract_reasoning_from_model_name(model)
-    normalized_model = normalize_model_name(model)
+    normalized_model = normalize_model_name(model, current_app.config.get("DEBUG_MODEL"))
     service_tier_resolution = resolve_service_tier(
         normalized_model,
         request_fast_mode=payload.get("fast_mode"),
@@ -306,7 +306,7 @@ def ollama_chat() -> Response:
             base_tools_only = convert_tools_chat_to_responses(normalize_ollama_tools(tools_req))
             safe_choice = payload.get("tool_choice", "auto")
             upstream2, err2 = start_upstream_request(
-                normalize_model_name(model),
+                normalize_model_name(model, current_app.config.get("DEBUG_MODEL")),
                 input_items,
                 instructions=BASE_INSTRUCTIONS,
                 tools=base_tools_only,
@@ -570,7 +570,7 @@ def ollama_chat() -> Response:
             full_text = f"<think>{rtxt}</think>" + (full_text or "")
 
     out_json = {
-        "model": normalize_model_name(model),
+        "model": normalize_model_name(model, current_app.config.get("DEBUG_MODEL")),
         "created_at": created_at,
         "message": {"role": "assistant", "content": full_text, **({"tool_calls": tool_calls} if tool_calls else {})},
         "done": True,
