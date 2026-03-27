@@ -6,13 +6,14 @@ services:
     env_file: .env
     environment:
       - CHATGPT_LOCAL_HOME=/data
+      - PORT=${PORT:-8000}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
     volumes:
       - chatmock_data:/data
       - ./prompt.md:/app/prompt.md:ro
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)\" "]
+      test: ["CMD-SHELL", "python -c \"import os,urllib.request,sys; port=os.getenv('PORT', '8000'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{port}/health').status==200 else 1)\" "]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -24,11 +25,11 @@ services:
     command: ["login"]
     environment:
       - CHATGPT_LOCAL_HOME=/data
-      - CHATGPT_LOCAL_LOGIN_BIND=0.0.0.0
+      - CHATGPT_LOCAL_LOGIN_BIND=127.0.0.1
     volumes:
       - chatmock_data:/data
     ports:
-      - "1455:1455"
+      - "127.0.0.1:1455:1455"
 
 volumes:
   chatmock_data:
