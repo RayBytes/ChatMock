@@ -15,6 +15,7 @@ class ModelSpec:
     aliases: tuple[str, ...]
     allowed_efforts: frozenset[str]
     variant_efforts: tuple[str, ...]
+    public_aliases: tuple[str, ...] = ()
     uses_codex_instructions: bool = False
 
 
@@ -126,6 +127,8 @@ for _spec in _MODEL_SPECS:
     _ALIASES[_spec.public_id] = _spec.upstream_id
     for _alias in _spec.aliases:
         _ALIASES[_alias] = _spec.upstream_id
+    for _public_alias in _spec.public_aliases:
+        _ALIASES[_public_alias] = _spec.upstream_id
 
 
 def _strip_model_name(model: str | None) -> tuple[str, str | None]:
@@ -189,6 +192,7 @@ def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
     model_ids: list[str] = []
     for spec in _MODEL_SPECS:
         model_ids.append(spec.public_id)
+        model_ids.extend(spec.public_aliases)
         if expose_reasoning_models:
             model_ids.extend(f"{spec.public_id}-{effort}" for effort in spec.variant_efforts)
     return model_ids

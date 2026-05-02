@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import datetime
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
+from requests import Response as RequestsResponse
 from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
@@ -12,7 +13,7 @@ from .fast_mode import resolve_service_tier
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .model_registry import list_public_models, uses_codex_instructions
-from .responses_api import instructions_for_model
+from .responses_api import client_compat_error_response, instructions_for_model, is_vscode_client_compat
 from .reasoning import (
     allowed_efforts_for_model,
     build_reasoning_param,
@@ -182,7 +183,7 @@ def ollama_chat() -> Response:
         err = {"error": "Invalid JSON body"}
         if verbose:
             _log_json("OUT POST /api/chat", err)
-        return jsonify(err), 400
+        return make_response(jsonify(err), 400)
 
     model = payload.get("model")
     raw_messages = payload.get("messages")
@@ -199,6 +200,23 @@ def ollama_chat() -> Response:
     if stream_req is None:
         stream_req = True
     stream_req = bool(stream_req)
+
+    if not is_vscode_client_compat(current_app.config):
+        if "responses_tools" in payload:
+            return client_compat_error_response(
+                "responses_tools",
+                "/api/chat",
+                verbose=verbose,
+                log_json=_log_json,
+            )
+        if "responses_tool_choice" in payload:
+            return client_compat_error_response(
+                "responses_tool_choice",
+                "/api/chat",
+                verbose=verbose,
+                log_json=_log_json,
+            )
+
     tools_req = payload.get("tools") if isinstance(payload.get("tools"), list) else []
     tools_responses = convert_tools_chat_to_responses(normalize_ollama_tools(tools_req))
     tool_choice = payload.get("tool_choice", "auto")
@@ -216,7 +234,7 @@ def ollama_chat() -> Response:
                 err = {"error": "Only web_search/web_search_preview are supported in responses_tools"}
                 if verbose:
                     _log_json("OUT POST /api/chat", err)
-                return jsonify(err), 400
+                return make_response(jsonify(err), 400)
             extra_tools.append(_t)
         if not extra_tools and bool(current_app.config.get("DEFAULT_WEB_SEARCH")):
             rtc = payload.get("responses_tool_choice")
@@ -233,7 +251,7 @@ def ollama_chat() -> Response:
                 err = {"error": "responses_tools too large"}
                 if verbose:
                     _log_json("OUT POST /api/chat", err)
-                return jsonify(err), 400
+                return make_response(jsonify(err), 400)
             had_responses_tools = True
             tools_responses = (tools_responses or []) + extra_tools
 
@@ -245,7 +263,7 @@ def ollama_chat() -> Response:
         err = {"error": "Invalid request format"}
         if verbose:
             _log_json("OUT POST /api/chat", err)
-        return jsonify(err), 400
+        return make_response(jsonify(err), 400)
 
     input_items = convert_chat_messages_to_responses_input(messages)
 
@@ -263,7 +281,7 @@ def ollama_chat() -> Response:
         err = {"error": service_tier_resolution.error_message}
         if verbose:
             _log_json("OUT POST /api/chat", err)
-        return jsonify(err), 400
+        return make_response(jsonify(err), 400)
     upstream, error_resp = start_upstream_request(
         normalized_model,
         input_items,
@@ -293,13 +311,18 @@ def ollama_chat() -> Response:
                 pass
         return error_resp
 
-    record_rate_limits_from_response(upstream)
+    upstream_resp = cast(RequestsResponse, upstream)
+    record_rate_limits_from_response(upstream_resp)
 
-    if upstream.status_code >= 400:
+    if upstream_resp.status_code >= 400:
         try:
-            err_body = json.loads(upstream.content.decode("utf-8", errors="ignore")) if upstream.content else {"raw": upstream.text}
+            if upstream_resp.content:
+                parsed_err_body = json.loads(upstream_resp.content.decode("utf-8", errors="ignore"))
+                err_body: Dict[str, Any] = parsed_err_body if isinstance(parsed_err_body, dict) else {"raw": parsed_err_body}
+            else:
+                err_body = {"raw": upstream_resp.text}
         except Exception:
-            err_body = {"raw": upstream.text}
+            err_body = {"raw": upstream_resp.text}
         if had_responses_tools:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extras (args redacted)")
@@ -321,20 +344,33 @@ def ollama_chat() -> Response:
                 service_tier=service_tier_resolution.service_tier,
             )
             record_rate_limits_from_response(upstream2)
-            if err2 is None and upstream2 is not None and upstream2.status_code < 400:
-                upstream = upstream2
+            if err2 is not None:
+                if verbose:
+                    try:
+                        body = err2.get_data(as_text=True)
+                        if body:
+                            try:
+                                parsed = json.loads(body)
+                            except Exception:
+                                parsed = body
+                            _log_json("OUT POST /api/chat", parsed)
+                    except Exception:
+                        pass
+                return err2
+            if upstream2 is not None and upstream2.status_code < 400:
+                upstream_resp = upstream2
             else:
                 err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error"), "code": "RESPONSES_TOOLS_REJECTED"}}
                 if verbose:
                     _log_json("OUT POST /api/chat", err)
-                return jsonify(err), (upstream2.status_code if upstream2 is not None else upstream.status_code)
+                return make_response(jsonify(err), upstream2.status_code if upstream2 is not None else upstream_resp.status_code)
         else:
             if verbose:
-                print("/api/chat upstream error status=", upstream.status_code, " body:", json.dumps(err_body)[:2000])
+                print("/api/chat upstream error status=", upstream_resp.status_code, " body:", json.dumps(err_body)[:2000])
             err = {"error": (err_body.get("error", {}) or {}).get("message", "Upstream error")}
             if verbose:
                 _log_json("OUT POST /api/chat", err)
-            return jsonify(err), upstream.status_code
+            return make_response(jsonify(err), upstream_resp.status_code)
 
     created_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     model_out = model if isinstance(model, str) and model.strip() else normalized_model
@@ -348,7 +384,7 @@ def ollama_chat() -> Response:
             pending_summary_paragraph = False
             full_parts: List[str] = []
             try:
-                for raw_line in upstream.iter_lines(decode_unicode=False):
+                for raw_line in upstream_resp.iter_lines(decode_unicode=False):
                     if not raw_line:
                         continue
                     line = raw_line.decode("utf-8", errors="ignore") if isinstance(raw_line, (bytes, bytearray)) else raw_line
@@ -478,7 +514,7 @@ def ollama_chat() -> Response:
                     elif kind == "response.completed":
                         break
             finally:
-                upstream.close()
+                upstream_resp.close()
                 if compat == "think-tags" and think_open and not think_closed:
                     yield (
                         json.dumps(
@@ -518,7 +554,7 @@ def ollama_chat() -> Response:
     reasoning_full_text = ""
     tool_calls: List[Dict[str, Any]] = []
     try:
-        for raw in upstream.iter_lines(decode_unicode=False):
+        for raw in upstream_resp.iter_lines(decode_unicode=False):
             if not raw:
                 continue
             line = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else raw
@@ -557,7 +593,7 @@ def ollama_chat() -> Response:
             elif kind == "response.completed":
                 break
     finally:
-        upstream.close()
+        upstream_resp.close()
 
     if (current_app.config.get("REASONING_COMPAT", "think-tags") or "think-tags").strip().lower() == "think-tags":
         rtxt_parts = []

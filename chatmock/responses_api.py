@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Iterator, List
+from typing import Any, Callable, Dict, Iterable, Iterator, List
+
+from flask import Response, jsonify, make_response
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .fast_mode import ServiceTierResolution, resolve_service_tier
+from .http import build_cors_headers
 from .model_registry import (
     allowed_efforts_for_model,
     extract_reasoning_from_model_name,
@@ -14,6 +17,7 @@ from .model_registry import (
 )
 from .reasoning import build_reasoning_param
 from .session import ensure_session_id
+from .utils import convert_tools_chat_to_responses
 
 
 @dataclass(frozen=True)
@@ -33,6 +37,40 @@ class NormalizedResponsesRequest:
     normalized_model: str
     session_id: str
     service_tier_resolution: ServiceTierResolution
+
+
+def is_vscode_client_compat(config: Dict[str, Any]) -> bool:
+    return str(config.get("CLIENT_COMPAT") or "default").strip().lower() == "vscode"
+
+
+def client_compat_error_response(
+    feature_name: str,
+    route_name: str,
+    *,
+    verbose: bool = False,
+    log_json: Callable[[str, Any], None] | None = None,
+) -> Response:
+    err = {
+        "error": {
+            "message": f"{feature_name} on {route_name} is only supported when CLIENT_COMPAT=vscode",
+            "code": "CLIENT_COMPAT_UNSUPPORTED",
+        }
+    }
+    if verbose and log_json is not None:
+        log_json(f"OUT POST {route_name}", err)
+    resp = make_response(jsonify(err), 400)
+    for key, value in build_cors_headers().items():
+        resp.headers.setdefault(key, value)
+    return resp
+
+
+def _uses_chat_completions_tool_schema(tools: Any) -> bool:
+    if not isinstance(tools, list):
+        return False
+    for tool in tools:
+        if isinstance(tool, dict) and isinstance(tool.get("function"), dict):
+            return True
+    return False
 
 
 def instructions_for_model(config: Dict[str, Any], model: str) -> str:
@@ -83,18 +121,28 @@ def normalize_responses_payload(
     config: Dict[str, Any],
     client_session_id: str | None = None,
 ) -> NormalizedResponsesRequest:
+    if not is_vscode_client_compat(config) and _uses_chat_completions_tool_schema(payload.get("tools")):
+        raise ResponsesRequestError(
+            "chat.completions tool schema on /v1/responses is only supported when CLIENT_COMPAT=vscode",
+            code="CLIENT_COMPAT_UNSUPPORTED",
+        )
+
     requested_model = payload.get("model") if isinstance(payload.get("model"), str) else None
     normalized_model = normalize_model_name(requested_model, config.get("DEBUG_MODEL"))
 
     normalized = dict(payload)
     normalized["model"] = normalized_model
     normalized.pop("max_output_tokens", None)
+    # The Codex backend behind ChatMock rejects Responses truncation hints,
+    # so keep accepting the client field but do not forward it upstream.
+    normalized.pop("truncation", None)
 
     if "input" in normalized:
         normalized["input"] = canonicalize_responses_input(normalized.get("input"))
 
-    if "store" not in normalized:
-        normalized["store"] = False
+    # Copilot/Codex traffic is expected to be non-persistent here and the
+    # upstream contract rejects stored responses, so always pin this off.
+    normalized["store"] = False
 
     instructions = normalized.get("instructions")
     if not isinstance(instructions, str) or not instructions.strip():
@@ -122,6 +170,11 @@ def normalize_responses_payload(
     normalized["include"] = include_list
 
     tools = normalized.get("tools")
+    converted_tools = convert_tools_chat_to_responses(tools)
+    if converted_tools:
+        normalized["tools"] = converted_tools
+        tools = converted_tools
+
     if (not isinstance(tools, list) or not tools) and bool(config.get("DEFAULT_WEB_SEARCH")):
         tool_choice = normalized.get("tool_choice")
         if not (isinstance(tool_choice, str) and tool_choice.strip().lower() == "none"):

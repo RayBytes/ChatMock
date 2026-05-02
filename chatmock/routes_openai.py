@@ -14,8 +14,10 @@ from .model_registry import list_public_models, uses_codex_instructions
 from .responses_api import (
     ResponsesRequestError,
     aggregate_response_from_sse,
+    client_compat_error_response,
     extract_client_session_id,
     instructions_for_model,
+    is_vscode_client_compat,
     normalize_responses_payload,
     stream_upstream_bytes,
 )
@@ -102,6 +104,31 @@ def _service_tier_from_payload(
     return resolution.service_tier, None
 
 
+def _extract_upstream_error_payload(upstream: Any) -> Dict[str, Any]:
+    raw = getattr(upstream, "content", b"") or b""
+    text = (getattr(upstream, "text", "") or "").strip()
+    parsed: Any = None
+
+    try:
+        if raw:
+            parsed = json.loads(raw.decode("utf-8", errors="ignore"))
+        elif text:
+            parsed = json.loads(text)
+    except Exception:
+        parsed = None
+
+    if isinstance(parsed, dict):
+        return parsed
+    if isinstance(parsed, str) and parsed:
+        return {"error": {"message": parsed}}
+    if parsed is not None:
+        try:
+            return {"error": {"message": json.dumps(parsed, ensure_ascii=False)}}
+        except Exception:
+            pass
+    return {"error": {"message": text or "Upstream error"}}
+
+
 @openai_bp.route("/v1/chat/completions", methods=["POST"])
 def chat_completions() -> Response:
     verbose = bool(current_app.config.get("VERBOSE"))
@@ -126,6 +153,22 @@ def chat_completions() -> Response:
             if verbose:
                 _log_json("OUT POST /v1/chat/completions", err)
             return jsonify(err), 400
+
+    if not is_vscode_client_compat(current_app.config):
+        if "responses_tools" in payload:
+            return client_compat_error_response(
+                "responses_tools",
+                "/v1/chat/completions",
+                verbose=verbose,
+                log_json=_log_json,
+            )
+        if "responses_tool_choice" in payload:
+            return client_compat_error_response(
+                "responses_tool_choice",
+                "/v1/chat/completions",
+                verbose=verbose,
+                log_json=_log_json,
+            )
 
     requested_model = payload.get("model")
     model = normalize_model_name(requested_model, current_app.config.get("DEBUG_MODEL"))
@@ -244,11 +287,7 @@ def chat_completions() -> Response:
 
     created = int(time.time())
     if upstream.status_code >= 400:
-        try:
-            raw = upstream.content
-            err_body = json.loads(raw.decode("utf-8", errors="ignore")) if raw else {"raw": upstream.text}
-        except Exception:
-            err_body = {"raw": upstream.text}
+        err_body = _extract_upstream_error_payload(upstream)
         if had_responses_tools:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
@@ -265,25 +304,33 @@ def chat_completions() -> Response:
                 service_tier=service_tier,
             )
             record_rate_limits_from_response(upstream2)
-            if err2 is None and upstream2 is not None and upstream2.status_code < 400:
+            if err2 is not None:
+                if verbose:
+                    try:
+                        body = err2.get_data(as_text=True)
+                        if body:
+                            try:
+                                parsed = json.loads(body)
+                            except Exception:
+                                parsed = body
+                            _log_json("OUT POST /v1/chat/completions", parsed)
+                    except Exception:
+                        pass
+                return err2
+            if upstream2 is not None and upstream2.status_code < 400:
                 upstream = upstream2
             else:
-                err = {
-                    "error": {
-                        "message": (err_body.get("error", {}) or {}).get("message", "Upstream error"),
-                        "code": "RESPONSES_TOOLS_REJECTED",
-                    }
-                }
+                failed_upstream = upstream2 if upstream2 is not None else upstream
+                err = _extract_upstream_error_payload(failed_upstream)
                 if verbose:
                     _log_json("OUT POST /v1/chat/completions", err)
                 return jsonify(err), (upstream2.status_code if upstream2 is not None else upstream.status_code)
         else:
             if verbose:
                 print("Upstream error status=", upstream.status_code)
-            err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}
             if verbose:
-                _log_json("OUT POST /v1/chat/completions", err)
-            return jsonify(err), upstream.status_code
+                _log_json("OUT POST /v1/chat/completions", err_body)
+            return jsonify(err_body), upstream.status_code
 
     if is_stream:
         if verbose:

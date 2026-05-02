@@ -13,6 +13,9 @@ class ModelRegistryTests(unittest.TestCase):
         self.assertEqual(normalize_model_name("gpt5.3-codex-spark"), "gpt-5.3-codex-spark")
         self.assertEqual(normalize_model_name("codex"), "codex-mini-latest")
 
+    def test_preserves_unknown_model_names(self) -> None:
+        self.assertEqual(normalize_model_name("unknown-model-xyz"), "unknown-model-xyz")
+
     def test_strips_reasoning_suffixes(self) -> None:
         self.assertEqual(normalize_model_name("gpt-5.4-high"), "gpt-5.4")
         self.assertEqual(normalize_model_name("gpt-5.4-mini-high"), "gpt-5.4-mini")
@@ -27,9 +30,11 @@ class ModelRegistryTests(unittest.TestCase):
 
     def test_public_models_include_variants(self) -> None:
         model_ids = list_public_models(expose_reasoning_models=True)
+        self.assertNotIn("claude-sonnet-4-5", model_ids)
         self.assertIn("gpt-5.4", model_ids)
         self.assertIn("gpt-5.4-mini", model_ids)
         self.assertIn("gpt-5.3-codex-spark", model_ids)
+        self.assertIn("gpt-5-codex", model_ids)
         self.assertIn("gpt-5.4-none", model_ids)
         self.assertIn("gpt-5.4-mini-xhigh", model_ids)
         self.assertNotIn("gpt-5.4-mini-none", model_ids)
