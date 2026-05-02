@@ -50,6 +50,42 @@ class FakeUpstream:
         return None
 
 
+class FakeUpstreamWebsocket:
+    def __init__(self, messages: list[dict[str, object]] | None = None) -> None:
+        self.sent: list[str] = []
+        self._messages = [json.dumps(message) for message in (messages or [])]
+
+    def send(self, message: str) -> None:
+        self.sent.append(message)
+
+    def recv(self) -> str:
+        return self._messages.pop(0)
+
+    def close(self) -> None:
+        return None
+
+
+def start_test_server(app) -> tuple[str, int]:
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    host, port = sock.getsockname()
+    sock.close()
+
+    server_thread = threading.Thread(
+        target=app.run,
+        kwargs={
+            "host": host,
+            "port": port,
+            "use_reloader": False,
+            "threaded": True,
+        },
+        daemon=True,
+    )
+    server_thread.start()
+    time.sleep(0.5)
+    return host, port
+
+
 TOOL_SEARCH_PARAMETERS = {
     "type": "object",
     "properties": {"query": {"type": "string"}},
@@ -391,6 +427,128 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mock_start.call_args.args[0], "gpt-5.4")
         self.assertEqual(body["model"], "gpt-5.4")
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_chat_rejects_responses_tools_in_default_mode(self, mock_start) -> None:
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+                "responses_tools": [{"type": "web_search"}],
+            },
+        )
+        body = response.get_json()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(body["error"]["code"], "CLIENT_COMPAT_UNSUPPORTED")
+        self.assertIn("responses_tools", body["error"]["message"])
+        mock_start.assert_not_called()
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_chat_rejects_responses_tool_choice_in_default_mode(self, mock_start) -> None:
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+                "responses_tool_choice": "none",
+            },
+        )
+        body = response.get_json()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(body["error"]["code"], "CLIENT_COMPAT_UNSUPPORTED")
+        self.assertIn("responses_tool_choice", body["error"]["message"])
+        mock_start.assert_not_called()
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_chat_accepts_responses_extensions_in_vscode_mode(self, mock_start) -> None:
+        app = create_app(client_compat="vscode")
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed"},
+                ]
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/api/chat",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+                "responses_tools": [{"type": "web_search"}],
+                "responses_tool_choice": "none",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["tools"], [{"type": "web_search"}])
+        self.assertEqual(mock_start.call_args.kwargs["tool_choice"], "none")
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_chat_accepts_responses_tool_choice_in_vscode_mode(self, mock_start) -> None:
+        app = create_app(client_compat="vscode")
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed"},
+                ]
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/api/chat",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+                "responses_tool_choice": "none",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["tool_choice"], "none")
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_chat_accepts_standard_function_tools_in_both_modes(self, mock_start) -> None:
+        for client_compat in ("default", "vscode"):
+            with self.subTest(client_compat=client_compat):
+                app = create_app(client_compat=client_compat)
+                client = app.test_client()
+                mock_start.reset_mock()
+                mock_start.return_value = (
+                    FakeUpstream(
+                        [
+                            {"type": "response.output_text.delta", "delta": "hello"},
+                            {"type": "response.completed"},
+                        ]
+                    ),
+                    None,
+                )
+
+                response = client.post(
+                    "/api/chat",
+                    json={
+                        "model": "gpt-5.4",
+                        "messages": [{"role": "user", "content": "hi"}],
+                        "stream": False,
+                        "tools": [TOOL_SEARCH_CHAT_TOOL],
+                    },
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(mock_start.call_args.kwargs["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_fast_mode_sets_priority_service_tier(self, mock_start) -> None:
@@ -983,57 +1141,85 @@ class RouteTests(unittest.TestCase):
 
     @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.websocket_routes.connect_upstream_websocket")
+    def test_responses_websocket_rejects_chat_completions_style_tool_in_default_mode(self, mock_connect, _mock_auth) -> None:
+        app = create_app()
+        host, port = start_test_server(app)
+
+        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+            client.send(
+                json.dumps(
+                    {
+                        "type": "response.create",
+                        "model": "gpt-5.4",
+                        "input": "hello",
+                        "tools": [TOOL_SEARCH_CHAT_TOOL],
+                    }
+                )
+            )
+            error = json.loads(client.recv())
+
+        self.assertEqual(error["type"], "error")
+        self.assertEqual(error["error"]["code"], "CLIENT_COMPAT_UNSUPPORTED")
+        self.assertIn("chat.completions tool schema", error["error"]["message"])
+        mock_connect.assert_not_called()
+
+    @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.websocket_routes.connect_upstream_websocket")
+    def test_responses_websocket_accepts_chat_completions_style_tool_in_vscode_mode(self, mock_connect, _mock_auth) -> None:
+        fake_upstream = FakeUpstreamWebsocket(
+            [
+                {"type": "response.created", "response": {"id": "resp_ws_1"}},
+                {"type": "response.completed", "response": {"id": "resp_ws_1"}},
+            ]
+        )
+        mock_connect.return_value = fake_upstream
+
+        app = create_app(client_compat="vscode")
+        host, port = start_test_server(app)
+
+        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+            client.send(
+                json.dumps(
+                    {
+                        "type": "response.create",
+                        "model": "gpt-5.4",
+                        "input": "hello",
+                        "tools": [TOOL_SEARCH_CHAT_TOOL],
+                    }
+                )
+            )
+            first = json.loads(client.recv())
+            second = json.loads(client.recv())
+
+        self.assertEqual(first["type"], "response.created")
+        self.assertEqual(second["type"], "response.completed")
+        outbound = json.loads(fake_upstream.sent[0])
+        self.assertEqual(outbound["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
+
+    @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.websocket_routes.connect_upstream_websocket")
     def test_responses_websocket_rewrites_response_create(self, mock_connect, _mock_auth) -> None:
-        class FakeUpstreamWebsocket:
-            def __init__(self) -> None:
-                self.sent: list[str] = []
-                self._messages = [
-                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_1"}}),
-                    json.dumps({
-                        "type": "response.output_item.done",
-                        "item": {
-                            "type": "message",
-                            "role": "assistant",
-                            "id": "msg_1",
-                            "content": [{"type": "output_text", "text": "assistant output"}],
-                        },
-                    }),
-                    json.dumps({"type": "response.completed", "response": {"id": "resp_ws_1"}}),
-                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_2"}}),
-                    json.dumps({"type": "response.completed", "response": {"id": "resp_ws_2"}}),
-                ]
-
-            def send(self, message: str) -> None:
-                self.sent.append(message)
-
-            def recv(self) -> str:
-                return self._messages.pop(0)
-
-            def close(self) -> None:
-                return None
-
-        fake_upstream = FakeUpstreamWebsocket()
+        fake_upstream = FakeUpstreamWebsocket(
+            [
+                {"type": "response.created", "response": {"id": "resp_ws_1"}},
+                {
+                    "type": "response.output_item.done",
+                    "item": {
+                        "type": "message",
+                        "role": "assistant",
+                        "id": "msg_1",
+                        "content": [{"type": "output_text", "text": "assistant output"}],
+                    },
+                },
+                {"type": "response.completed", "response": {"id": "resp_ws_1"}},
+                {"type": "response.created", "response": {"id": "resp_ws_2"}},
+                {"type": "response.completed", "response": {"id": "resp_ws_2"}},
+            ]
+        )
         mock_connect.return_value = fake_upstream
 
         app = create_app()
-
-        sock = socket.socket()
-        sock.bind(("127.0.0.1", 0))
-        host, port = sock.getsockname()
-        sock.close()
-
-        server_thread = threading.Thread(
-            target=app.run,
-            kwargs={
-                "host": host,
-                "port": port,
-                "use_reloader": False,
-                "threaded": True,
-            },
-            daemon=True,
-        )
-        server_thread.start()
-        time.sleep(0.5)
+        host, port = start_test_server(app)
 
         with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
             client.send(json.dumps({"type": "response.create", "model": "gpt-5.4", "input": "hello", "fast_mode": True}))
