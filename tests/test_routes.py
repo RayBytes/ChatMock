@@ -567,7 +567,7 @@ class RouteTests(unittest.TestCase):
 
         response = client.post(
             "/v1/responses",
-            json={"model": "gpt-5.4", "input": "hello", "tools": [TOOL_SEARCH_RESPONSES_TOOL]},
+            json={"model": "gpt-5.4", "input": "hello", "tools": [TOOL_SEARCH_CHAT_TOOL]},
         )
 
         self.assertEqual(response.status_code, 200)
