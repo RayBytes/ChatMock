@@ -13,7 +13,7 @@ from .fast_mode import resolve_service_tier
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .model_registry import list_public_models, uses_codex_instructions
-from .responses_api import instructions_for_model, is_vscode_client_compat
+from .responses_api import client_compat_error_response, instructions_for_model, is_vscode_client_compat
 from .reasoning import (
     allowed_efforts_for_model,
     build_reasoning_param,
@@ -55,21 +55,6 @@ def _wrap_stream_logging(label: str, iterator, enabled: bool):
             yield chunk
 
     return _gen()
-
-
-def _client_compat_error_response(feature_name: str, route_name: str, *, verbose: bool = False) -> Response:
-    err = {
-        "error": {
-            "message": f"{feature_name} on {route_name} is only supported when CLIENT_COMPAT=vscode",
-            "code": "CLIENT_COMPAT_UNSUPPORTED",
-        }
-    }
-    if verbose:
-        _log_json(f"OUT POST {route_name}", err)
-    resp = make_response(jsonify(err), 400)
-    for key, value in build_cors_headers().items():
-        resp.headers.setdefault(key, value)
-    return resp
 
 
 @ollama_bp.route("/api/version", methods=["GET"])
@@ -218,9 +203,19 @@ def ollama_chat() -> Response:
 
     if not is_vscode_client_compat(current_app.config):
         if "responses_tools" in payload:
-            return _client_compat_error_response("responses_tools", "/api/chat", verbose=verbose)
+            return client_compat_error_response(
+                "responses_tools",
+                "/api/chat",
+                verbose=verbose,
+                log_json=_log_json,
+            )
         if "responses_tool_choice" in payload:
-            return _client_compat_error_response("responses_tool_choice", "/api/chat", verbose=verbose)
+            return client_compat_error_response(
+                "responses_tool_choice",
+                "/api/chat",
+                verbose=verbose,
+                log_json=_log_json,
+            )
 
     tools_req = payload.get("tools") if isinstance(payload.get("tools"), list) else []
     tools_responses = convert_tools_chat_to_responses(normalize_ollama_tools(tools_req))
@@ -349,7 +344,20 @@ def ollama_chat() -> Response:
                 service_tier=service_tier_resolution.service_tier,
             )
             record_rate_limits_from_response(upstream2)
-            if err2 is None and upstream2 is not None and upstream2.status_code < 400:
+            if err2 is not None:
+                if verbose:
+                    try:
+                        body = err2.get_data(as_text=True)
+                        if body:
+                            try:
+                                parsed = json.loads(body)
+                            except Exception:
+                                parsed = body
+                            _log_json("OUT POST /api/chat", parsed)
+                    except Exception:
+                        pass
+                return err2
+            if upstream2 is not None and upstream2.status_code < 400:
                 upstream_resp = upstream2
             else:
                 err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error"), "code": "RESPONSES_TOOLS_REJECTED"}}

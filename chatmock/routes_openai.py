@@ -14,6 +14,7 @@ from .model_registry import list_public_models, uses_codex_instructions
 from .responses_api import (
     ResponsesRequestError,
     aggregate_response_from_sse,
+    client_compat_error_response,
     extract_client_session_id,
     instructions_for_model,
     is_vscode_client_compat,
@@ -128,21 +129,6 @@ def _extract_upstream_error_payload(upstream: Any) -> Dict[str, Any]:
     return {"error": {"message": text or "Upstream error"}}
 
 
-def _client_compat_error_response(feature_name: str, route_name: str, *, verbose: bool = False) -> Response:
-    err = {
-        "error": {
-            "message": f"{feature_name} on {route_name} is only supported when CLIENT_COMPAT=vscode",
-            "code": "CLIENT_COMPAT_UNSUPPORTED",
-        }
-    }
-    if verbose:
-        _log_json(f"OUT POST {route_name}", err)
-    resp = make_response(jsonify(err), 400)
-    for key, value in build_cors_headers().items():
-        resp.headers.setdefault(key, value)
-    return resp
-
-
 @openai_bp.route("/v1/chat/completions", methods=["POST"])
 def chat_completions() -> Response:
     verbose = bool(current_app.config.get("VERBOSE"))
@@ -170,9 +156,19 @@ def chat_completions() -> Response:
 
     if not is_vscode_client_compat(current_app.config):
         if "responses_tools" in payload:
-            return _client_compat_error_response("responses_tools", "/v1/chat/completions", verbose=verbose)
+            return client_compat_error_response(
+                "responses_tools",
+                "/v1/chat/completions",
+                verbose=verbose,
+                log_json=_log_json,
+            )
         if "responses_tool_choice" in payload:
-            return _client_compat_error_response("responses_tool_choice", "/v1/chat/completions", verbose=verbose)
+            return client_compat_error_response(
+                "responses_tool_choice",
+                "/v1/chat/completions",
+                verbose=verbose,
+                log_json=_log_json,
+            )
 
     requested_model = payload.get("model")
     model = normalize_model_name(requested_model, current_app.config.get("DEBUG_MODEL"))
@@ -308,7 +304,20 @@ def chat_completions() -> Response:
                 service_tier=service_tier,
             )
             record_rate_limits_from_response(upstream2)
-            if err2 is None and upstream2 is not None and upstream2.status_code < 400:
+            if err2 is not None:
+                if verbose:
+                    try:
+                        body = err2.get_data(as_text=True)
+                        if body:
+                            try:
+                                parsed = json.loads(body)
+                            except Exception:
+                                parsed = body
+                            _log_json("OUT POST /v1/chat/completions", parsed)
+                    except Exception:
+                        pass
+                return err2
+            if upstream2 is not None and upstream2.status_code < 400:
                 upstream = upstream2
             else:
                 failed_upstream = upstream2 if upstream2 is not None else upstream

@@ -6,12 +6,14 @@ import sys
 import threading
 import time
 import unittest
+from contextlib import closing, contextmanager
 from unittest.mock import patch
 
 import chatmock.cli as cli
 from chatmock.app import create_app
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
+from werkzeug.serving import make_server
 
 
 class FakeUpstream:
@@ -65,25 +67,30 @@ class FakeUpstreamWebsocket:
         return None
 
 
-def start_test_server(app) -> tuple[str, int]:
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    host, port = sock.getsockname()
-    sock.close()
+def _wait_for_server(host: str, port: int, *, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with closing(socket.create_connection((host, port), timeout=0.1)):
+                return
+        except OSError:
+            time.sleep(0.01)
+    raise RuntimeError(f"Timed out waiting for test server on {host}:{port}")
 
-    server_thread = threading.Thread(
-        target=app.run,
-        kwargs={
-            "host": host,
-            "port": port,
-            "use_reloader": False,
-            "threaded": True,
-        },
-        daemon=True,
-    )
+
+@contextmanager
+def start_test_server(app):
+    server = make_server("127.0.0.1", 0, app, threaded=True)
+    host, port = server.socket.getsockname()[:2]
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
-    time.sleep(0.5)
-    return host, port
+    _wait_for_server(host, port)
+    try:
+        yield host, port
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=2.0)
 
 
 TOOL_SEARCH_PARAMETERS = {
@@ -367,6 +374,42 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(mock_start.call_args.kwargs["tool_choice"], "none")
 
     @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_retry_returns_second_start_error_response(self, mock_start) -> None:
+        app = create_app(client_compat="vscode")
+        client = app.test_client()
+        initial_error = {"error": {"message": "tool rejected", "code": "initial_failure"}}
+        retry_error = {"error": {"message": "retry failed", "code": "retry_failure"}}
+        retry_response = app.response_class(
+            response=json.dumps(retry_error),
+            status=429,
+            mimetype="application/json",
+        )
+        mock_start.side_effect = [
+            (
+                FakeUpstream(
+                    status_code=400,
+                    content=json.dumps(initial_error).encode("utf-8"),
+                    text=json.dumps(initial_error),
+                ),
+                None,
+            ),
+            (None, retry_response),
+        ]
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "responses_tools": [{"type": "web_search"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.get_json(), retry_error)
+        self.assertEqual(mock_start.call_count, 2)
+
+    @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_honors_debug_model_override(self, mock_start) -> None:
         app = create_app(debug_model="gpt-5.4")
         client = app.test_client()
@@ -549,6 +592,43 @@ class RouteTests(unittest.TestCase):
 
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(mock_start.call_args.kwargs["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_chat_retry_returns_second_start_error_response(self, mock_start) -> None:
+        app = create_app(client_compat="vscode")
+        client = app.test_client()
+        initial_error = {"error": {"message": "tool rejected", "code": "initial_failure"}}
+        retry_error = {"error": {"message": "retry failed", "code": "retry_failure"}}
+        retry_response = app.response_class(
+            response=json.dumps(retry_error),
+            status=429,
+            mimetype="application/json",
+        )
+        mock_start.side_effect = [
+            (
+                FakeUpstream(
+                    status_code=400,
+                    content=json.dumps(initial_error).encode("utf-8"),
+                    text=json.dumps(initial_error),
+                ),
+                None,
+            ),
+            (None, retry_response),
+        ]
+
+        response = client.post(
+            "/api/chat",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+                "responses_tools": [{"type": "web_search"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.get_json(), retry_error)
+        self.assertEqual(mock_start.call_count, 2)
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_fast_mode_sets_priority_service_tier(self, mock_start) -> None:
@@ -1139,24 +1219,34 @@ class RouteTests(unittest.TestCase):
         self.assertIn("Fast mode is not supported", body["error"]["message"])
         mock_start.assert_not_called()
 
+    def test_start_test_server_context_manager_starts_and_stops_server(self) -> None:
+        app = create_app()
+
+        with start_test_server(app) as (host, port):
+            with closing(socket.create_connection((host, port), timeout=1.0)):
+                pass
+
+        with self.assertRaises(OSError):
+            with closing(socket.create_connection((host, port), timeout=0.2)):
+                pass
+
     @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.websocket_routes.connect_upstream_websocket")
     def test_responses_websocket_rejects_chat_completions_style_tool_in_default_mode(self, mock_connect, _mock_auth) -> None:
         app = create_app()
-        host, port = start_test_server(app)
-
-        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
-            client.send(
-                json.dumps(
-                    {
-                        "type": "response.create",
-                        "model": "gpt-5.4",
-                        "input": "hello",
-                        "tools": [TOOL_SEARCH_CHAT_TOOL],
-                    }
+        with start_test_server(app) as (host, port):
+            with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+                client.send(
+                    json.dumps(
+                        {
+                            "type": "response.create",
+                            "model": "gpt-5.4",
+                            "input": "hello",
+                            "tools": [TOOL_SEARCH_CHAT_TOOL],
+                        }
+                    )
                 )
-            )
-            error = json.loads(client.recv())
+                error = json.loads(client.recv())
 
         self.assertEqual(error["type"], "error")
         self.assertEqual(error["error"]["code"], "CLIENT_COMPAT_UNSUPPORTED")
@@ -1175,21 +1265,20 @@ class RouteTests(unittest.TestCase):
         mock_connect.return_value = fake_upstream
 
         app = create_app(client_compat="vscode")
-        host, port = start_test_server(app)
-
-        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
-            client.send(
-                json.dumps(
-                    {
-                        "type": "response.create",
-                        "model": "gpt-5.4",
-                        "input": "hello",
-                        "tools": [TOOL_SEARCH_CHAT_TOOL],
-                    }
+        with start_test_server(app) as (host, port):
+            with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+                client.send(
+                    json.dumps(
+                        {
+                            "type": "response.create",
+                            "model": "gpt-5.4",
+                            "input": "hello",
+                            "tools": [TOOL_SEARCH_CHAT_TOOL],
+                        }
+                    )
                 )
-            )
-            first = json.loads(client.recv())
-            second = json.loads(client.recv())
+                first = json.loads(client.recv())
+                second = json.loads(client.recv())
 
         self.assertEqual(first["type"], "response.created")
         self.assertEqual(second["type"], "response.completed")
@@ -1219,29 +1308,28 @@ class RouteTests(unittest.TestCase):
         mock_connect.return_value = fake_upstream
 
         app = create_app()
-        host, port = start_test_server(app)
-
-        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
-            client.send(json.dumps({"type": "response.create", "model": "gpt-5.4", "input": "hello", "fast_mode": True}))
-            first = json.loads(client.recv())
-            assistant = json.loads(client.recv())
-            second = json.loads(client.recv())
-            client.send(
-                json.dumps(
-                    {
-                        "type": "response.create",
-                        "model": "gpt-5.4",
-                        "fast_mode": True,
-                        "input": [
-                            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
-                            {"type": "message", "role": "assistant", "id": "msg_1", "content": [{"type": "output_text", "text": "assistant output"}]},
-                            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
-                        ],
-                    }
+        with start_test_server(app) as (host, port):
+            with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+                client.send(json.dumps({"type": "response.create", "model": "gpt-5.4", "input": "hello", "fast_mode": True}))
+                first = json.loads(client.recv())
+                assistant = json.loads(client.recv())
+                second = json.loads(client.recv())
+                client.send(
+                    json.dumps(
+                        {
+                            "type": "response.create",
+                            "model": "gpt-5.4",
+                            "fast_mode": True,
+                            "input": [
+                                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+                                {"type": "message", "role": "assistant", "id": "msg_1", "content": [{"type": "output_text", "text": "assistant output"}]},
+                                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+                            ],
+                        }
+                    )
                 )
-            )
-            third = json.loads(client.recv())
-            fourth = json.loads(client.recv())
+                third = json.loads(client.recv())
+                fourth = json.loads(client.recv())
 
         self.assertEqual(first["type"], "response.created")
         self.assertEqual(assistant["type"], "response.output_item.done")

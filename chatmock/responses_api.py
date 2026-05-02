@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Iterator, List
+from typing import Any, Callable, Dict, Iterable, Iterator, List
+
+from flask import Response, jsonify, make_response
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .fast_mode import ServiceTierResolution, resolve_service_tier
+from .http import build_cors_headers
 from .model_registry import (
     allowed_efforts_for_model,
     extract_reasoning_from_model_name,
@@ -38,6 +41,27 @@ class NormalizedResponsesRequest:
 
 def is_vscode_client_compat(config: Dict[str, Any]) -> bool:
     return str(config.get("CLIENT_COMPAT") or "default").strip().lower() == "vscode"
+
+
+def client_compat_error_response(
+    feature_name: str,
+    route_name: str,
+    *,
+    verbose: bool = False,
+    log_json: Callable[[str, Any], None] | None = None,
+) -> Response:
+    err = {
+        "error": {
+            "message": f"{feature_name} on {route_name} is only supported when CLIENT_COMPAT=vscode",
+            "code": "CLIENT_COMPAT_UNSUPPORTED",
+        }
+    }
+    if verbose and log_json is not None:
+        log_json(f"OUT POST {route_name}", err)
+    resp = make_response(jsonify(err), 400)
+    for key, value in build_cors_headers().items():
+        resp.headers.setdefault(key, value)
+    return resp
 
 
 def _uses_chat_completions_tool_schema(tools: Any) -> bool:
