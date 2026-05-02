@@ -133,11 +133,15 @@ def normalize_responses_payload(
     normalized = dict(payload)
     normalized["model"] = normalized_model
     normalized.pop("max_output_tokens", None)
+    # The Codex backend behind ChatMock rejects Responses truncation hints,
+    # so keep accepting the client field but do not forward it upstream.
     normalized.pop("truncation", None)
 
     if "input" in normalized:
         normalized["input"] = canonicalize_responses_input(normalized.get("input"))
 
+    # Copilot/Codex traffic is expected to be non-persistent here and the
+    # upstream contract rejects stored responses, so always pin this off.
     normalized["store"] = False
 
     instructions = normalized.get("instructions")
