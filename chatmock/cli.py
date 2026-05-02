@@ -264,6 +264,7 @@ def cmd_serve(
     port: int,
     verbose: bool,
     verbose_obfuscation: bool,
+    client_compat: str,
     reasoning_effort: str,
     reasoning_summary: str,
     reasoning_compat: str,
@@ -275,6 +276,7 @@ def cmd_serve(
     app = create_app(
         verbose=verbose,
         verbose_obfuscation=verbose_obfuscation,
+        client_compat=client_compat,
         reasoning_effort=reasoning_effort,
         reasoning_summary=reasoning_summary,
         reasoning_compat=reasoning_compat,
@@ -300,6 +302,12 @@ def main() -> None:
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    p_serve.add_argument(
+        "--client-compat",
+        choices=["default", "vscode"],
+        default="default",
+        help="Startup compatibility mode for client-specific behavior (default: default)",
+    )
     p_serve.add_argument(
         "--verbose-obfuscation",
         action="store_true",
@@ -371,6 +379,7 @@ def main() -> None:
                 port=args.port,
                 verbose=args.verbose,
                 verbose_obfuscation=args.verbose_obfuscation,
+                client_compat=args.client_compat,
                 reasoning_effort=args.reasoning_effort,
                 reasoning_summary=args.reasoning_summary,
                 reasoning_compat=args.reasoning_compat,

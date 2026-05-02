@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 import threading
 import time
 import unittest
 from unittest.mock import patch
 
+import chatmock.cli as cli
 from chatmock.app import create_app
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
@@ -70,6 +72,43 @@ TOOL_SEARCH_RESPONSES_TOOL = {
     "strict": False,
     "parameters": TOOL_SEARCH_PARAMETERS,
 }
+
+
+class StartupModeTests(unittest.TestCase):
+    def test_create_app_defaults_client_compat(self) -> None:
+        app = create_app()
+        self.assertEqual(app.config["CLIENT_COMPAT"], "default")
+
+    def test_create_app_accepts_vscode_client_compat(self) -> None:
+        app = create_app(client_compat="vscode")
+        self.assertEqual(app.config["CLIENT_COMPAT"], "vscode")
+
+    @patch("chatmock.cli.cmd_serve", return_value=0)
+    def test_cli_serve_defaults_client_compat(self, mock_cmd_serve) -> None:
+        with patch.object(sys, "argv", ["chatmock", "serve"]):
+            with self.assertRaises(SystemExit) as raised:
+                cli.main()
+
+        self.assertEqual(raised.exception.code, 0)
+        self.assertEqual(mock_cmd_serve.call_args.kwargs["client_compat"], "default")
+
+    @patch("chatmock.cli.cmd_serve", return_value=0)
+    def test_cli_serve_accepts_vscode_client_compat(self, mock_cmd_serve) -> None:
+        with patch.object(sys, "argv", ["chatmock", "serve", "--client-compat", "vscode"]):
+            with self.assertRaises(SystemExit) as raised:
+                cli.main()
+
+        self.assertEqual(raised.exception.code, 0)
+        self.assertEqual(mock_cmd_serve.call_args.kwargs["client_compat"], "vscode")
+
+    @patch("chatmock.cli.cmd_serve", return_value=0)
+    def test_cli_serve_rejects_invalid_client_compat(self, mock_cmd_serve) -> None:
+        with patch.object(sys, "argv", ["chatmock", "serve", "--client-compat", "invalid"]):
+            with self.assertRaises(SystemExit) as raised:
+                cli.main()
+
+        self.assertEqual(raised.exception.code, 2)
+        mock_cmd_serve.assert_not_called()
 
 
 class RouteTests(unittest.TestCase):
