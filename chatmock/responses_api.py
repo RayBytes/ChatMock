@@ -14,6 +14,7 @@ from .model_registry import (
 )
 from .reasoning import build_reasoning_param
 from .session import ensure_session_id
+from .utils import convert_tools_chat_to_responses
 
 
 @dataclass(frozen=True)
@@ -89,12 +90,12 @@ def normalize_responses_payload(
     normalized = dict(payload)
     normalized["model"] = normalized_model
     normalized.pop("max_output_tokens", None)
+    normalized.pop("truncation", None)
 
     if "input" in normalized:
         normalized["input"] = canonicalize_responses_input(normalized.get("input"))
 
-    if "store" not in normalized:
-        normalized["store"] = False
+    normalized["store"] = False
 
     instructions = normalized.get("instructions")
     if not isinstance(instructions, str) or not instructions.strip():
@@ -122,6 +123,11 @@ def normalize_responses_payload(
     normalized["include"] = include_list
 
     tools = normalized.get("tools")
+    converted_tools = convert_tools_chat_to_responses(tools)
+    if converted_tools:
+        normalized["tools"] = converted_tools
+        tools = converted_tools
+
     if (not isinstance(tools, list) or not tools) and bool(config.get("DEFAULT_WEB_SEARCH")):
         tool_choice = normalized.get("tool_choice")
         if not (isinstance(tool_choice, str) and tool_choice.strip().lower() == "none"):

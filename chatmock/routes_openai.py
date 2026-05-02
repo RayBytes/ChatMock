@@ -102,6 +102,31 @@ def _service_tier_from_payload(
     return resolution.service_tier, None
 
 
+def _extract_upstream_error_payload(upstream: Any) -> Dict[str, Any]:
+    raw = getattr(upstream, "content", b"") or b""
+    text = (getattr(upstream, "text", "") or "").strip()
+    parsed: Any = None
+
+    try:
+        if raw:
+            parsed = json.loads(raw.decode("utf-8", errors="ignore"))
+        elif text:
+            parsed = json.loads(text)
+    except Exception:
+        parsed = None
+
+    if isinstance(parsed, dict):
+        return parsed
+    if isinstance(parsed, str) and parsed:
+        return {"error": {"message": parsed}}
+    if parsed is not None:
+        try:
+            return {"error": {"message": json.dumps(parsed, ensure_ascii=False)}}
+        except Exception:
+            pass
+    return {"error": {"message": text or "Upstream error"}}
+
+
 @openai_bp.route("/v1/chat/completions", methods=["POST"])
 def chat_completions() -> Response:
     verbose = bool(current_app.config.get("VERBOSE"))
@@ -244,11 +269,7 @@ def chat_completions() -> Response:
 
     created = int(time.time())
     if upstream.status_code >= 400:
-        try:
-            raw = upstream.content
-            err_body = json.loads(raw.decode("utf-8", errors="ignore")) if raw else {"raw": upstream.text}
-        except Exception:
-            err_body = {"raw": upstream.text}
+        err_body = _extract_upstream_error_payload(upstream)
         if had_responses_tools:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
@@ -268,22 +289,17 @@ def chat_completions() -> Response:
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
                 upstream = upstream2
             else:
-                err = {
-                    "error": {
-                        "message": (err_body.get("error", {}) or {}).get("message", "Upstream error"),
-                        "code": "RESPONSES_TOOLS_REJECTED",
-                    }
-                }
+                failed_upstream = upstream2 if upstream2 is not None else upstream
+                err = _extract_upstream_error_payload(failed_upstream)
                 if verbose:
                     _log_json("OUT POST /v1/chat/completions", err)
                 return jsonify(err), (upstream2.status_code if upstream2 is not None else upstream.status_code)
         else:
             if verbose:
                 print("Upstream error status=", upstream.status_code)
-            err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}
             if verbose:
-                _log_json("OUT POST /v1/chat/completions", err)
-            return jsonify(err), upstream.status_code
+                _log_json("OUT POST /v1/chat/completions", err_body)
+            return jsonify(err_body), upstream.status_code
 
     if is_stream:
         if verbose:

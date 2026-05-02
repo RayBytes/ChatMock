@@ -48,6 +48,30 @@ class FakeUpstream:
         return None
 
 
+TOOL_SEARCH_PARAMETERS = {
+    "type": "object",
+    "properties": {"query": {"type": "string"}},
+    "required": ["query"],
+}
+
+TOOL_SEARCH_CHAT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "tool_search",
+        "description": "Search the workspace for relevant files and symbols.",
+        "parameters": TOOL_SEARCH_PARAMETERS,
+    },
+}
+
+TOOL_SEARCH_RESPONSES_TOOL = {
+    "type": "function",
+    "name": "tool_search",
+    "description": "Search the workspace for relevant files and symbols.",
+    "strict": False,
+    "parameters": TOOL_SEARCH_PARAMETERS,
+}
+
+
 class RouteTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_session_state()
@@ -62,6 +86,7 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.4", model_ids)
         self.assertIn("gpt-5.4-mini", model_ids)
         self.assertIn("gpt-5.3-codex-spark", model_ids)
+        self.assertNotIn("claude-sonnet-4-5", model_ids)
 
     def test_ollama_tags_list(self) -> None:
         response = self.client.get("/api/tags")
@@ -90,6 +115,143 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(body["choices"][0]["message"]["content"], "hello")
         self.assertEqual(body["model"], "gpt5.4-mini")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_preserves_upstream_json_error_object(self, mock_start) -> None:
+        upstream_error = {
+            "error": {
+                "message": "Unknown tool: tool_search",
+                "type": "invalid_request_error",
+                "param": "tools[0].name",
+                "code": "unknown_tool",
+            }
+        }
+        mock_start.return_value = (
+            FakeUpstream(
+                status_code=400,
+                content=json.dumps(upstream_error).encode("utf-8"),
+                text=json.dumps(upstream_error),
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json(), upstream_error)
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_preserve_unknown_model_id(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+        requested_model = "claude-sonnet-4-5"
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={"model": requested_model, "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        normalized_model = mock_start.call_args.args[0]
+        self.assertEqual(normalized_model, requested_model)
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_accepts_tool_search_function_tool(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [TOOL_SEARCH_CHAT_TOOL],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_tool_search_round_trips_through_function_call_path(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "type": "function_call",
+                            "call_id": "call_tool_search",
+                            "name": "tool_search",
+                            "arguments": json.dumps({"query": "workspace symbols"}),
+                        },
+                    },
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [TOOL_SEARCH_CHAT_TOOL],
+            },
+        )
+        body = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        tool_calls = body["choices"][0]["message"]["tool_calls"]
+        self.assertEqual(tool_calls[0]["function"]["name"], "tool_search")
+        self.assertEqual(
+            json.loads(tool_calls[0]["function"]["arguments"]),
+            {"query": "workspace symbols"},
+        )
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_mixed_tools_and_responses_tools_prefer_standard_tools_contract(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [TOOL_SEARCH_CHAT_TOOL],
+                "responses_tools": [{"type": "web_search"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_tools = mock_start.call_args.kwargs["tools"]
+        self.assertEqual(outbound_tools[0], TOOL_SEARCH_RESPONSES_TOOL)
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_honors_debug_model_override(self, mock_start) -> None:
@@ -255,6 +417,108 @@ class RouteTests(unittest.TestCase):
         self.assertIsInstance(outbound_payload["prompt_cache_key"], str)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_overrides_incoming_store_true(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_store", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_store",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "store": True},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["store"], False)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_accepts_tool_search_function_tool(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_123", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_123",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "tools": [TOOL_SEARCH_CHAT_TOOL]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_does_not_inject_web_search_when_standard_tools_present(self, mock_start) -> None:
+        app = create_app(default_web_search=True)
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_123", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_123",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "tools": [TOOL_SEARCH_CHAT_TOOL]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_tools = mock_start.call_args.args[0]["tools"]
+        self.assertEqual(len(outbound_tools), 1)
+        self.assertFalse(any(isinstance(tool, dict) and tool.get("type") == "web_search" for tool in outbound_tools))
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
         app = create_app(debug_model="gpt-5.4")
         client = app.test_client()
@@ -317,6 +581,37 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         outbound_payload = mock_start.call_args.args[0]
         self.assertNotIn("max_output_tokens", outbound_payload)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_strips_unsupported_truncation(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_truncation", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_truncation",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "truncation": "auto"},
+        )
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertNotIn("truncation", outbound_payload)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_does_not_use_previous_response_id_for_http_follow_up(self, mock_start) -> None:
