@@ -14,7 +14,7 @@ class ModelRegistryTests(unittest.TestCase):
         self.assertEqual(normalize_model_name("codex"), "codex-mini-latest")
 
     def test_preserves_unknown_model_names(self) -> None:
-        self.assertEqual(normalize_model_name("claude-sonnet-4-5"), "claude-sonnet-4-5")
+        self.assertEqual(normalize_model_name("unknown-model-xyz"), "unknown-model-xyz")
 
     def test_strips_reasoning_suffixes(self) -> None:
         self.assertEqual(normalize_model_name("gpt-5.4-high"), "gpt-5.4")

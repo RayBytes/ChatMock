@@ -236,7 +236,7 @@ class RouteTests(unittest.TestCase):
             ),
             None,
         )
-        requested_model = "claude-sonnet-4-5"
+        requested_model = "unknown-model-xyz"
 
         response = self.client.post(
             "/v1/chat/completions",
