@@ -36,6 +36,19 @@ class NormalizedResponsesRequest:
     service_tier_resolution: ServiceTierResolution
 
 
+def is_vscode_client_compat(config: Dict[str, Any]) -> bool:
+    return str(config.get("CLIENT_COMPAT") or "default").strip().lower() == "vscode"
+
+
+def _uses_chat_completions_tool_schema(tools: Any) -> bool:
+    if not isinstance(tools, list):
+        return False
+    for tool in tools:
+        if isinstance(tool, dict) and isinstance(tool.get("function"), dict):
+            return True
+    return False
+
+
 def instructions_for_model(config: Dict[str, Any], model: str) -> str:
     base = config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
     if uses_codex_instructions(model):
@@ -84,6 +97,12 @@ def normalize_responses_payload(
     config: Dict[str, Any],
     client_session_id: str | None = None,
 ) -> NormalizedResponsesRequest:
+    if not is_vscode_client_compat(config) and _uses_chat_completions_tool_schema(payload.get("tools")):
+        raise ResponsesRequestError(
+            "chat.completions tool schema on /v1/responses is only supported when CLIENT_COMPAT=vscode",
+            code="CLIENT_COMPAT_UNSUPPORTED",
+        )
+
     requested_model = payload.get("model") if isinstance(payload.get("model"), str) else None
     normalized_model = normalize_model_name(requested_model, config.get("DEBUG_MODEL"))
 

@@ -16,6 +16,7 @@ from .responses_api import (
     aggregate_response_from_sse,
     extract_client_session_id,
     instructions_for_model,
+    is_vscode_client_compat,
     normalize_responses_payload,
     stream_upstream_bytes,
 )
@@ -127,6 +128,21 @@ def _extract_upstream_error_payload(upstream: Any) -> Dict[str, Any]:
     return {"error": {"message": text or "Upstream error"}}
 
 
+def _client_compat_error_response(feature_name: str, route_name: str, *, verbose: bool = False) -> Response:
+    err = {
+        "error": {
+            "message": f"{feature_name} on {route_name} is only supported when CLIENT_COMPAT=vscode",
+            "code": "CLIENT_COMPAT_UNSUPPORTED",
+        }
+    }
+    if verbose:
+        _log_json(f"OUT POST {route_name}", err)
+    resp = make_response(jsonify(err), 400)
+    for key, value in build_cors_headers().items():
+        resp.headers.setdefault(key, value)
+    return resp
+
+
 @openai_bp.route("/v1/chat/completions", methods=["POST"])
 def chat_completions() -> Response:
     verbose = bool(current_app.config.get("VERBOSE"))
@@ -151,6 +167,12 @@ def chat_completions() -> Response:
             if verbose:
                 _log_json("OUT POST /v1/chat/completions", err)
             return jsonify(err), 400
+
+    if not is_vscode_client_compat(current_app.config):
+        if "responses_tools" in payload:
+            return _client_compat_error_response("responses_tools", "/v1/chat/completions", verbose=verbose)
+        if "responses_tool_choice" in payload:
+            return _client_compat_error_response("responses_tool_choice", "/v1/chat/completions", verbose=verbose)
 
     requested_model = payload.get("model")
     model = normalize_model_name(requested_model, current_app.config.get("DEBUG_MODEL"))
