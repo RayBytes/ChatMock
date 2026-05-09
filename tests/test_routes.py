@@ -1266,6 +1266,83 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(outbound_payload["input"], native_input)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_preserves_deferred_namespace_on_http_follow_up_with_explicit_previous_response_id(self, mock_start) -> None:
+        mock_start.side_effect = [
+            (
+                FakeUpstream(
+                    [
+                        {
+                            "type": "response.created",
+                            "response": {"id": "resp_1", "object": "response", "status": "in_progress"},
+                        },
+                        {
+                            "type": "response.completed",
+                            "response": {"id": "resp_1", "object": "response", "status": "completed", "output": []},
+                        },
+                    ],
+                    headers={"Content-Type": "text/event-stream"},
+                ),
+                None,
+            ),
+            (
+                FakeUpstream(
+                    [
+                        {
+                            "type": "response.created",
+                            "response": {"id": "resp_2", "object": "response", "status": "in_progress"},
+                        },
+                        {
+                            "type": "response.completed",
+                            "response": {"id": "resp_2", "object": "response", "status": "completed", "output": []},
+                        },
+                    ],
+                    headers={"Content-Type": "text/event-stream"},
+                ),
+                None,
+            ),
+        ]
+
+        headers = {"X-Session-Id": "session-fixed"}
+        first = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+            headers=headers,
+        )
+        native_input = [
+            {
+                "type": "tool_search_output",
+                "execution": "client",
+                "call_id": "call_ts_resume",
+                "status": "completed",
+                "tools": [DEFERRED_TOOL_SEARCH_OUTPUT_TOOL_WITH_NAMESPACE],
+            },
+            {
+                "type": "function_call",
+                "call_id": "call_grep_resume",
+                "name": "grep_search",
+                "namespace": "grep_search",
+                "arguments": json.dumps({"query": "*.ts"}),
+            },
+        ]
+
+        second = self.client.post(
+            "/v1/responses",
+            json={
+                "model": "gpt-5.4",
+                "previous_response_id": "resp_prev_explicit",
+                "input": native_input,
+            },
+            headers=headers,
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        outbound_payload = mock_start.call_args_list[1].args[0]
+        self.assertEqual(outbound_payload["previous_response_id"], "resp_prev_explicit")
+        self.assertEqual(outbound_payload["input"], native_input)
+        self.assertEqual(outbound_payload["input"][1]["namespace"], "grep_search")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_does_not_auto_inject_previous_response_id_for_http_follow_up(self, mock_start) -> None:
         mock_start.side_effect = [
             (
@@ -1491,6 +1568,28 @@ class RouteTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("response.output_text.delta", response.get_data(as_text=True))
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_stream_passthroughs_tool_search_call_output_item(self, mock_start) -> None:
+        chunk = (
+            b'data: {"type":"response.output_item.done","item":{"type":"tool_search_call","execution":"client","call_id":"call_ts_1","status":"completed","arguments":{"query":"workspace symbols"}}}\n\n'
+        )
+        mock_start.return_value = (
+            FakeUpstream(
+                headers={"Content-Type": "text/event-stream"},
+                content=chunk,
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "stream": True},
+        )
+        response_text = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"type":"tool_search_call"', response_text)
+        self.assertIn('"call_id":"call_ts_1"', response_text)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_rejects_unsupported_explicit_priority(self, mock_start) -> None:
