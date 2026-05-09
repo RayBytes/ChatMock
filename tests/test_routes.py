@@ -99,7 +99,18 @@ TOOL_SEARCH_PARAMETERS = {
     "required": ["query"],
 }
 
-TOOL_SEARCH_CHAT_TOOL = {
+NATIVE_TOOL_SEARCH_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": "Natural language description of what tool capability you are looking for.",
+        }
+    },
+    "required": ["query"],
+}
+
+LEGACY_TOOL_SEARCH_CHAT_TOOL = {
     "type": "function",
     "function": {
         "name": "tool_search",
@@ -108,12 +119,33 @@ TOOL_SEARCH_CHAT_TOOL = {
     },
 }
 
-TOOL_SEARCH_RESPONSES_TOOL = {
+LEGACY_TOOL_SEARCH_RESPONSES_TOOL = {
     "type": "function",
     "name": "tool_search",
     "description": "Search the workspace for relevant files and symbols.",
     "strict": False,
     "parameters": TOOL_SEARCH_PARAMETERS,
+}
+
+NATIVE_TOOL_SEARCH_RESPONSES_TOOL = {
+    "type": "tool_search",
+    "execution": "client",
+    "description": "Search for relevant tools by describing what you need. Returns tool definitions for tools matching your query.",
+    "parameters": NATIVE_TOOL_SEARCH_PARAMETERS,
+}
+
+# Matches the VS Code tool_search_output ToolSearchLoadedTool wire shape.
+VSCODE_TOOL_SEARCH_OUTPUT_TOOL = {
+    "type": "function",
+    "name": "grep_search",
+    "description": "Search for text",
+    "defer_loading": True,
+    "parameters": TOOL_SEARCH_PARAMETERS,
+}
+
+DEFERRED_TOOL_SEARCH_OUTPUT_TOOL_WITH_NAMESPACE = {
+    **VSCODE_TOOL_SEARCH_OUTPUT_TOOL,
+    "namespace": "grep_search",
 }
 
 
@@ -248,7 +280,7 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(normalized_model, requested_model)
 
     @patch("chatmock.routes_openai.start_upstream_request")
-    def test_chat_completions_accepts_tool_search_function_tool(self, mock_start) -> None:
+    def test_chat_completions_accepts_legacy_tool_search_function_tool(self, mock_start) -> None:
         mock_start.return_value = (
             FakeUpstream(
                 [
@@ -264,15 +296,15 @@ class RouteTests(unittest.TestCase):
             json={
                 "model": "gpt-5.4",
                 "messages": [{"role": "user", "content": "hi"}],
-                "tools": [TOOL_SEARCH_CHAT_TOOL],
+                "tools": [LEGACY_TOOL_SEARCH_CHAT_TOOL],
             },
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(mock_start.call_args.kwargs["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
+        self.assertEqual(mock_start.call_args.kwargs["tools"], [LEGACY_TOOL_SEARCH_RESPONSES_TOOL])
 
     @patch("chatmock.routes_openai.start_upstream_request")
-    def test_chat_completions_tool_search_round_trips_through_function_call_path(self, mock_start) -> None:
+    def test_chat_completions_legacy_tool_search_round_trips_through_function_call_path(self, mock_start) -> None:
         mock_start.return_value = (
             FakeUpstream(
                 [
@@ -296,7 +328,7 @@ class RouteTests(unittest.TestCase):
             json={
                 "model": "gpt-5.4",
                 "messages": [{"role": "user", "content": "hi"}],
-                "tools": [TOOL_SEARCH_CHAT_TOOL],
+                "tools": [LEGACY_TOOL_SEARCH_CHAT_TOOL],
             },
         )
         body = response.get_json()
@@ -362,7 +394,7 @@ class RouteTests(unittest.TestCase):
             json={
                 "model": "gpt-5.4",
                 "messages": [{"role": "user", "content": "hi"}],
-                "tools": [TOOL_SEARCH_CHAT_TOOL],
+                "tools": [LEGACY_TOOL_SEARCH_CHAT_TOOL],
                 "responses_tools": [{"type": "web_search"}],
                 "responses_tool_choice": "none",
             },
@@ -370,7 +402,7 @@ class RouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         outbound_tools = mock_start.call_args.kwargs["tools"]
-        self.assertEqual(outbound_tools[0], TOOL_SEARCH_RESPONSES_TOOL)
+        self.assertEqual(outbound_tools[0], LEGACY_TOOL_SEARCH_RESPONSES_TOOL)
         self.assertEqual(mock_start.call_args.kwargs["tool_choice"], "none")
 
     @patch("chatmock.routes_openai.start_upstream_request")
@@ -586,12 +618,12 @@ class RouteTests(unittest.TestCase):
                         "model": "gpt-5.4",
                         "messages": [{"role": "user", "content": "hi"}],
                         "stream": False,
-                        "tools": [TOOL_SEARCH_CHAT_TOOL],
+                        "tools": [LEGACY_TOOL_SEARCH_CHAT_TOOL],
                     },
                 )
 
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(mock_start.call_args.kwargs["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
+                self.assertEqual(mock_start.call_args.kwargs["tools"], [LEGACY_TOOL_SEARCH_RESPONSES_TOOL])
 
     @patch("chatmock.routes_ollama.start_upstream_request")
     def test_ollama_chat_retry_returns_second_start_error_response(self, mock_start) -> None:
@@ -768,7 +800,7 @@ class RouteTests(unittest.TestCase):
     def test_responses_route_rejects_chat_completions_style_tool_in_default_mode(self, mock_start) -> None:
         response = self.client.post(
             "/v1/responses",
-            json={"model": "gpt-5.4", "input": "hello", "tools": [TOOL_SEARCH_CHAT_TOOL]},
+            json={"model": "gpt-5.4", "input": "hello", "tools": [LEGACY_TOOL_SEARCH_CHAT_TOOL]},
         )
         body = response.get_json()
 
@@ -778,7 +810,7 @@ class RouteTests(unittest.TestCase):
         mock_start.assert_not_called()
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
-    def test_responses_route_accepts_chat_completions_style_tool_in_vscode_mode(self, mock_start) -> None:
+    def test_responses_route_accepts_legacy_chat_completions_style_tool_in_vscode_mode(self, mock_start) -> None:
         app = create_app(client_compat="vscode")
         client = app.test_client()
         mock_start.return_value = (
@@ -805,15 +837,15 @@ class RouteTests(unittest.TestCase):
 
         response = client.post(
             "/v1/responses",
-            json={"model": "gpt-5.4", "input": "hello", "tools": [TOOL_SEARCH_CHAT_TOOL]},
+            json={"model": "gpt-5.4", "input": "hello", "tools": [LEGACY_TOOL_SEARCH_CHAT_TOOL]},
         )
 
         self.assertEqual(response.status_code, 200)
         outbound_payload = mock_start.call_args.args[0]
-        self.assertEqual(outbound_payload["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
+        self.assertEqual(outbound_payload["tools"], [LEGACY_TOOL_SEARCH_RESPONSES_TOOL])
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
-    def test_responses_route_accepts_standard_function_tools_in_both_modes(self, mock_start) -> None:
+    def test_responses_route_accepts_legacy_function_tool_search_in_both_modes(self, mock_start) -> None:
         for client_compat in ("default", "vscode"):
             with self.subTest(client_compat=client_compat):
                 app = create_app(client_compat=client_compat)
@@ -843,15 +875,182 @@ class RouteTests(unittest.TestCase):
 
                 response = client.post(
                     "/v1/responses",
-                    json={"model": "gpt-5.4", "input": "hello", "tools": [TOOL_SEARCH_RESPONSES_TOOL]},
+                    json={"model": "gpt-5.4", "input": "hello", "tools": [LEGACY_TOOL_SEARCH_RESPONSES_TOOL]},
                 )
 
                 self.assertEqual(response.status_code, 200)
                 outbound_payload = mock_start.call_args.args[0]
-                self.assertEqual(outbound_payload["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
+                self.assertEqual(outbound_payload["tools"], [LEGACY_TOOL_SEARCH_RESPONSES_TOOL])
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
-    def test_responses_route_does_not_inject_web_search_when_standard_tools_present(self, mock_start) -> None:
+    def test_responses_route_accepts_native_tool_search_in_both_modes(self, mock_start) -> None:
+        for client_compat in ("default", "vscode"):
+            with self.subTest(client_compat=client_compat):
+                app = create_app(client_compat=client_compat)
+                client = app.test_client()
+                mock_start.reset_mock()
+                mock_start.return_value = (
+                    FakeUpstream(
+                        [
+                            {
+                                "type": "response.created",
+                                "response": {"id": "resp_native_tool", "object": "response", "status": "in_progress"},
+                            },
+                            {
+                                "type": "response.completed",
+                                "response": {
+                                    "id": "resp_native_tool",
+                                    "object": "response",
+                                    "status": "completed",
+                                    "output": [],
+                                },
+                            },
+                        ],
+                        headers={"Content-Type": "text/event-stream"},
+                    ),
+                    None,
+                )
+
+                response = client.post(
+                    "/v1/responses",
+                    json={"model": "gpt-5.4", "input": "hello", "tools": [NATIVE_TOOL_SEARCH_RESPONSES_TOOL]},
+                )
+
+                self.assertEqual(response.status_code, 200)
+                outbound_payload = mock_start.call_args.args[0]
+                self.assertEqual(outbound_payload["tools"], [NATIVE_TOOL_SEARCH_RESPONSES_TOOL])
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_preserves_native_tool_search_call_input(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_tool_search_call", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_tool_search_call",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+        native_input = [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+            {
+                "type": "tool_search_call",
+                "execution": "client",
+                "call_id": "call_ts_1",
+                "status": "completed",
+                "arguments": {"query": "workspace symbols"},
+            },
+        ]
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": native_input},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["input"], native_input)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_preserves_native_tool_search_output_input(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_tool_search_output", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_tool_search_output",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+        native_input = [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+            {
+                "type": "tool_search_output",
+                "execution": "client",
+                "call_id": "call_ts_1",
+                "status": "completed",
+                "tools": [VSCODE_TOOL_SEARCH_OUTPUT_TOOL],
+            },
+        ]
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": native_input},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["input"], native_input)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_preserves_extra_tool_fields_on_native_tool_search_output_input(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_tool_search_output_extra", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_tool_search_output_extra",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+        native_input = [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+            {
+                "type": "tool_search_output",
+                "execution": "client",
+                "call_id": "call_ts_1",
+                "status": "completed",
+                "tools": [DEFERRED_TOOL_SEARCH_OUTPUT_TOOL_WITH_NAMESPACE],
+            },
+        ]
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": native_input},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["input"], native_input)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_does_not_inject_web_search_when_legacy_standard_tools_present(self, mock_start) -> None:
         app = create_app(default_web_search=True)
         client = app.test_client()
         mock_start.return_value = (
@@ -878,12 +1077,48 @@ class RouteTests(unittest.TestCase):
 
         response = client.post(
             "/v1/responses",
-            json={"model": "gpt-5.4", "input": "hello", "tools": [TOOL_SEARCH_RESPONSES_TOOL]},
+            json={"model": "gpt-5.4", "input": "hello", "tools": [LEGACY_TOOL_SEARCH_RESPONSES_TOOL]},
         )
 
         self.assertEqual(response.status_code, 200)
         outbound_tools = mock_start.call_args.args[0]["tools"]
-        self.assertEqual(len(outbound_tools), 1)
+        self.assertEqual(outbound_tools, [LEGACY_TOOL_SEARCH_RESPONSES_TOOL])
+        self.assertFalse(any(isinstance(tool, dict) and tool.get("type") == "web_search" for tool in outbound_tools))
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_does_not_inject_web_search_when_native_standard_tools_present(self, mock_start) -> None:
+        app = create_app(default_web_search=True)
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_123", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_123",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "tools": [NATIVE_TOOL_SEARCH_RESPONSES_TOOL]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_tools = mock_start.call_args.args[0]["tools"]
+        self.assertEqual(outbound_tools, [NATIVE_TOOL_SEARCH_RESPONSES_TOOL])
         self.assertFalse(any(isinstance(tool, dict) and tool.get("type") == "web_search" for tool in outbound_tools))
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
@@ -982,7 +1217,56 @@ class RouteTests(unittest.TestCase):
         self.assertNotIn("truncation", outbound_payload)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
-    def test_responses_route_does_not_use_previous_response_id_for_http_follow_up(self, mock_start) -> None:
+    def test_responses_route_preserves_explicit_previous_response_id_on_http(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_explicit_prev", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_explicit_prev",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        native_input = [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "resume"}]},
+            {
+                "type": "tool_search_output",
+                "execution": "client",
+                "call_id": "call_ts_resume",
+                "status": "completed",
+                "tools": [VSCODE_TOOL_SEARCH_OUTPUT_TOOL],
+            },
+        ]
+
+        response = self.client.post(
+            "/v1/responses",
+            json={
+                "model": "gpt-5.4",
+                "previous_response_id": "resp_prev_explicit",
+                "input": native_input,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["previous_response_id"], "resp_prev_explicit")
+        self.assertEqual(outbound_payload["input"], native_input)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_does_not_auto_inject_previous_response_id_for_http_follow_up(self, mock_start) -> None:
         mock_start.side_effect = [
             (
                 FakeUpstream(
@@ -1242,7 +1526,7 @@ class RouteTests(unittest.TestCase):
                             "type": "response.create",
                             "model": "gpt-5.4",
                             "input": "hello",
-                            "tools": [TOOL_SEARCH_CHAT_TOOL],
+                            "tools": [LEGACY_TOOL_SEARCH_CHAT_TOOL],
                         }
                     )
                 )
@@ -1273,7 +1557,7 @@ class RouteTests(unittest.TestCase):
                             "type": "response.create",
                             "model": "gpt-5.4",
                             "input": "hello",
-                            "tools": [TOOL_SEARCH_CHAT_TOOL],
+                            "tools": [LEGACY_TOOL_SEARCH_CHAT_TOOL],
                         }
                     )
                 )
@@ -1283,7 +1567,7 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(first["type"], "response.created")
         self.assertEqual(second["type"], "response.completed")
         outbound = json.loads(fake_upstream.sent[0])
-        self.assertEqual(outbound["tools"], [TOOL_SEARCH_RESPONSES_TOOL])
+        self.assertEqual(outbound["tools"], [LEGACY_TOOL_SEARCH_RESPONSES_TOOL])
 
     @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.websocket_routes.connect_upstream_websocket")
