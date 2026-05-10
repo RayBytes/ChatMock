@@ -8,7 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from chatmock.app import create_app
-from chatmock.session import reset_session_state
+from chatmock.session import note_responses_final_response, reset_session_state
+from flask import Response
 from websockets.sync.client import connect as ws_connect
 
 
@@ -46,6 +47,14 @@ class FakeUpstream:
 
     def close(self) -> None:
         return None
+
+
+def make_json_response(body: dict[str, object], *, status_code: int = 200) -> Response:
+    return Response(json.dumps(body), status=status_code, mimetype="application/json")
+
+
+def make_sse_response(payload: bytes, *, status_code: int = 200) -> Response:
+    return Response(payload, status=status_code, mimetype="text/event-stream")
 
 
 class RouteTests(unittest.TestCase):
@@ -659,6 +668,304 @@ class RouteTests(unittest.TestCase):
             follow_up["input"],
             [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]}],
         )
+
+
+class ResponsesWebsocketUpstreamContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_session_state()
+        self.app = create_app()
+        self.client = self.app.test_client()
+
+    def test_disabled_mode_keeps_http_upstream_transport(self) -> None:
+        with (
+            patch("chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket") as mock_bridge,
+            patch("chatmock.routes_openai.start_upstream_raw_request") as mock_start,
+        ):
+            mock_start.return_value = (
+                FakeUpstream(
+                    [
+                        {
+                            "type": "response.created",
+                            "response": {"id": "resp_http_1", "object": "response", "status": "in_progress"},
+                        },
+                        {
+                            "type": "response.completed",
+                            "response": {
+                                "id": "resp_http_1",
+                                "object": "response",
+                                "status": "completed",
+                                "output": [],
+                            },
+                        },
+                    ],
+                    headers={"Content-Type": "text/event-stream"},
+                ),
+                None,
+            )
+
+            response = self.client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello"},
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], "resp_http_1")
+        mock_start.assert_called_once()
+        mock_bridge.assert_not_called()
+
+    def test_enabled_mode_uses_websocket_bridge_for_non_stream_requests(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        client = app.test_client()
+
+        with (
+            patch(
+                "chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket"
+            ) as mock_bridge,
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            mock_bridge.return_value = make_json_response(
+                {
+                    "id": "resp_ws_nonstream",
+                    "object": "response",
+                    "status": "completed",
+                    "output": [],
+                }
+            )
+
+            response = client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello"},
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], "resp_ws_nonstream")
+        mock_bridge.assert_called_once()
+        self.assertFalse(mock_bridge.call_args.kwargs["stream"])
+        self.assertTrue(mock_bridge.call_args.kwargs["payload"]["stream"])
+        self.assertNotIn("previous_response_id", mock_bridge.call_args.kwargs["payload"])
+
+    def test_enabled_mode_uses_websocket_bridge_for_streaming_requests(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        client = app.test_client()
+
+        with (
+            patch(
+                "chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket"
+            ) as mock_bridge,
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            mock_bridge.return_value = make_sse_response(
+                b'data: {"type":"response.output_text.delta","delta":"hello"}\n\n'
+            )
+
+            response = client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello", "stream": True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content_type.startswith("text/event-stream"))
+        self.assertIn("response.output_text.delta", response.get_data(as_text=True))
+        mock_bridge.assert_called_once()
+        self.assertTrue(mock_bridge.call_args.kwargs["stream"])
+        self.assertTrue(mock_bridge.call_args.kwargs["payload"]["stream"])
+
+    def test_enabled_mode_keeps_http_previous_response_id_disabled(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        client = app.test_client()
+        bridge_calls: list[dict[str, object]] = []
+        bridge_bodies = [
+            {
+                "id": "resp_ws_1",
+                "object": "response",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "id": "msg_1",
+                        "content": [{"type": "output_text", "text": "assistant output"}],
+                    }
+                ],
+            },
+            {
+                "id": "resp_ws_2",
+                "object": "response",
+                "status": "completed",
+                "output": [],
+            },
+        ]
+
+        def bridge_side_effect(*, payload, session_id, stream, verbose=False):
+            body = bridge_bodies[len(bridge_calls)]
+            note_responses_final_response(session_id, body)
+            bridge_calls.append(
+                {
+                    "payload": payload,
+                    "session_id": session_id,
+                    "stream": stream,
+                    "verbose": verbose,
+                }
+            )
+            return make_json_response(body)
+
+        with (
+            patch(
+                "chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket",
+                side_effect=bridge_side_effect,
+            ),
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            headers = {"X-Session-Id": "session-fixed"}
+            first = client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello"},
+                headers=headers,
+            )
+            second = client.post(
+                "/v1/responses",
+                json={
+                    "model": "gpt-5.4",
+                    "input": [
+                        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+                        {
+                            "type": "message",
+                            "role": "assistant",
+                            "id": "msg_1",
+                            "content": [{"type": "output_text", "text": "assistant output"}],
+                        },
+                        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+                    ],
+                },
+                headers=headers,
+            )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(len(bridge_calls), 2)
+        second_payload = bridge_calls[1]["payload"]
+        self.assertFalse(bridge_calls[1]["stream"])
+        self.assertNotIn("previous_response_id", second_payload)
+        self.assertEqual(
+            second_payload["input"],
+            [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "id": "msg_1",
+                    "content": [{"type": "output_text", "text": "assistant output"}],
+                },
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+            ],
+        )
+
+    def test_enabled_mode_surfaces_websocket_connect_failure_as_http_error(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        client = app.test_client()
+
+        with (
+            patch(
+                "chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket"
+            ) as mock_bridge,
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            mock_bridge.return_value = make_json_response(
+                {"error": {"message": "Upstream websocket connection failed: dial tcp refused"}},
+                status_code=502,
+            )
+
+            response = client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello"},
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(body["error"]["message"], "Upstream websocket connection failed: dial tcp refused")
+        mock_bridge.assert_called_once()
+
+    def test_enabled_mode_surfaces_midstream_connection_loss_as_http_error(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        client = app.test_client()
+
+        with (
+            patch(
+                "chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket"
+            ) as mock_bridge,
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            mock_bridge.return_value = make_json_response(
+                {"error": {"message": "Upstream websocket closed before response.completed"}},
+                status_code=502,
+            )
+
+            response = client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello"},
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(body["error"]["message"], "Upstream websocket closed before response.completed")
+        mock_bridge.assert_called_once()
+
+    def test_enabled_mode_surfaces_malformed_upstream_events_as_http_error(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        client = app.test_client()
+
+        with (
+            patch(
+                "chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket"
+            ) as mock_bridge,
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            mock_bridge.return_value = make_json_response(
+                {"error": {"message": "Upstream websocket event payload was not a JSON object"}},
+                status_code=502,
+            )
+
+            response = client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello"},
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(body["error"]["message"], "Upstream websocket event payload was not a JSON object")
+        mock_bridge.assert_called_once()
 
 
 if __name__ == "__main__":
