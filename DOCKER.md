@@ -28,9 +28,36 @@ Set options in `.env` or pass environment variables:
 - `CHATGPT_LOCAL_CLIENT_ID`: OAuth client id override (rarely needed)
 - `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS`: `true|false` to add reasoning model variants to `/v1/models`
 - `CHATGPT_LOCAL_ENABLE_WEB_SEARCH`: `true|false` to enable default web search tool
+- `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM`: `true|false` to opt into websocket upstream transport for HTTP `/v1/responses` (default `false`)
+
+## `/v1/responses` websocket upstream
+Set `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true` to opt into websocket upstream transport for HTTP `/v1/responses` only.
+
+- The client-facing request still uses HTTP.
+- HTTP follow-up requests still do not use `previous_response_id` in this mode.
+- ChatMock does not reuse an upstream websocket across separate HTTP requests.
+- If the websocket upstream path fails, the request fails clearly instead of silently falling back to the legacy HTTP POST upstream transport.
 
 ## Logs
 Set `VERBOSE=true` to include extra logging for troubleshooting upstream or chat app requests. Please include and use these logs when submitting bug reports.
+
+## Manual verification
+Disabled mode (`CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=false` or unset):
+
+```bash
+curl -s http://localhost:8000/v1/responses \
+   -H 'Content-Type: application/json' \
+   -d '{"model":"gpt-5.4","input":"Hello world!"}' | jq .
+```
+
+Confirm the default HTTP `/v1/responses` path works with the mode disabled.
+
+Enabled mode (`CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true`):
+
+1. Restart `chatmock` after changing the environment variable, then rerun the same HTTP `/v1/responses` request.
+2. Confirm the request still works with the websocket bridge enabled.
+3. Send an HTTP follow-up `/v1/responses` request and confirm `previous_response_id` behaviour is unchanged.
+4. If you intentionally break websocket upstream connectivity, confirm the request fails clearly instead of silently succeeding through the legacy HTTP POST upstream path.
 
 ## Test
 

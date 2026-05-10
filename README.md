@@ -136,6 +136,7 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 | `--fast-mode` | `CHATGPT_LOCAL_FAST_MODE` | true/false | false | Priority processing for supported models |
 | `--enable-web-search` | `CHATGPT_LOCAL_ENABLE_WEB_SEARCH` | true/false | false | Allow the model to search the web |
 | `--expose-reasoning-models` | `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS` | true/false | false | List each reasoning level as its own model |
+| `--responses-websocket-upstream` / `--no-responses-websocket-upstream` | `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM` | true/false | false | Use websocket upstream transport for HTTP `/v1/responses` only |
 
 <details>
 <summary><b>Web search in a request</b></summary>
@@ -161,6 +162,23 @@ All flags go after `chatmock serve`. These can also be set as environment variab
   "fast_mode": true
 }
 ```
+
+</details>
+
+<details>
+<summary><b>HTTP /v1/responses websocket upstream</b></summary>
+
+- Disabled by default.
+- This only changes the upstream transport for HTTP `/v1/responses` requests.
+- HTTP follow-up requests still do not use `previous_response_id` in this mode.
+- ChatMock does not reuse an upstream websocket across separate HTTP requests.
+- If the websocket upstream path fails, the request fails clearly instead of silently falling back to the legacy HTTP POST upstream transport.
+
+Manual verification:
+1. Start `chatmock serve` (or `chatmock serve --no-responses-websocket-upstream`) and confirm a basic HTTP `/v1/responses` request works with the default disabled mode.
+2. Restart with `chatmock serve --responses-websocket-upstream` and confirm the same HTTP `/v1/responses` request still works with the bridge enabled.
+3. In enabled mode, send an HTTP follow-up `/v1/responses` request and confirm `previous_response_id` behaviour is unchanged.
+4. In enabled mode, if you intentionally break websocket upstream connectivity, confirm the request fails clearly instead of silently succeeding through the legacy HTTP POST upstream path.
 
 </details>
 
