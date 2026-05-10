@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
-import ssl
 from typing import Any, Dict
 
-import certifi
 from flask import current_app, request
 from flask_sock import Sock
-from websockets.sync.client import connect as websocket_connect
 from websockets.exceptions import ConnectionClosed
 
 from .responses_api import (
@@ -21,7 +17,7 @@ from .session import (
     note_responses_stream_event,
     prepare_responses_request_for_session,
 )
-from .upstream import build_upstream_headers, build_upstream_websocket_url
+from .upstream import build_upstream_headers, build_upstream_websocket_url, connect_upstream_websocket
 from .utils import get_effective_chatgpt_auth
 
 
@@ -47,24 +43,6 @@ def _is_terminal_event(event: Any) -> bool:
         return False
     kind = event.get("type")
     return kind in ("response.completed", "response.failed", "error")
-
-
-def _build_websocket_ssl_context() -> ssl.SSLContext:
-    cafile = (
-        os.getenv("CODEX_CA_CERTIFICATE")
-        or os.getenv("SSL_CERT_FILE")
-        or certifi.where()
-    )
-    return ssl.create_default_context(cafile=cafile)
-
-
-def connect_upstream_websocket(url: str, headers: Dict[str, str]):
-    return websocket_connect(
-        url,
-        additional_headers=headers,
-        open_timeout=15,
-        ssl=_build_websocket_ssl_context(),
-    )
 
 
 def register_websocket_routes(sock: Sock) -> None:

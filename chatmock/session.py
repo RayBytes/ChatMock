@@ -281,8 +281,12 @@ def note_responses_final_response(session_id: str, response_obj: Dict[str, Any])
             return
 
         response_id = response_obj.get("id") if isinstance(response_obj.get("id"), str) else None
+        if not response_id:
+            response_id = state.inflight_response_id
         output = response_obj.get("output")
-        output_items = [copy.deepcopy(item) for item in output if isinstance(item, dict)] if isinstance(output, list) else []
+        output_items: List[Dict[str, Any]] = copy.deepcopy(state.inflight_response_items)
+        if isinstance(output, list) and output:
+            output_items = [copy.deepcopy(item) for item in output if isinstance(item, dict)]
         if state.inflight_track_result and state.inflight_request_payload is not None and response_id:
             state.last_request_payload = copy.deepcopy(state.inflight_request_payload)
             state.last_response_id = response_id

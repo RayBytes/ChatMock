@@ -621,6 +621,14 @@ def responses_create() -> Response:
     stream_req = bool(prepared.payload.get("stream", False))
     upstream_payload = dict(prepared.payload)
     upstream_payload["stream"] = True
+    if bool(current_app.config.get("RESPONSES_WEBSOCKET_UPSTREAM")):
+        return responses_websocket_bridge.send_responses_request_via_websocket(
+            payload=upstream_payload,
+            session_id=normalized.session_id,
+            stream=stream_req,
+            verbose=verbose,
+        )
+
     upstream, error_resp = start_upstream_raw_request(
         upstream_payload,
         session_id=normalized.session_id,

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
+import ssl
 import time
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse, urlunparse
 
+import certifi
 import requests
 from flask import Response, current_app, jsonify, make_response
+from websockets.sync.client import connect as websocket_connect
 
 from .config import CHATGPT_RESPONSES_URL
 from .http import build_cors_headers
@@ -179,3 +183,21 @@ def build_upstream_websocket_url() -> str:
     elif scheme == "http":
         parsed = parsed._replace(scheme="ws")
     return urlunparse(parsed)
+
+
+def build_upstream_websocket_ssl_context() -> ssl.SSLContext:
+    cafile = (
+        os.getenv("CODEX_CA_CERTIFICATE")
+        or os.getenv("SSL_CERT_FILE")
+        or certifi.where()
+    )
+    return ssl.create_default_context(cafile=cafile)
+
+
+def connect_upstream_websocket(url: str, headers: Dict[str, str]):
+    return websocket_connect(
+        url,
+        additional_headers=headers,
+        open_timeout=15,
+        ssl=build_upstream_websocket_ssl_context(),
+    )

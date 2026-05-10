@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import socket
 import threading
@@ -7,8 +8,9 @@ import time
 import unittest
 from unittest.mock import patch
 
+from chatmock import responses_websocket_bridge
 from chatmock.app import create_app
-from chatmock.session import note_responses_final_response, reset_session_state
+from chatmock.session import reset_session_state
 from flask import Response
 from websockets.sync.client import connect as ws_connect
 
@@ -785,46 +787,65 @@ class ResponsesWebsocketUpstreamContractTests(unittest.TestCase):
     def test_enabled_mode_keeps_http_previous_response_id_disabled(self) -> None:
         app = create_app(responses_websocket_upstream=True)
         client = app.test_client()
-        bridge_calls: list[dict[str, object]] = []
-        bridge_bodies = [
-            {
-                "id": "resp_ws_1",
-                "object": "response",
-                "status": "completed",
-                "output": [
-                    {
-                        "type": "message",
-                        "role": "assistant",
-                        "id": "msg_1",
-                        "content": [{"type": "output_text", "text": "assistant output"}],
-                    }
-                ],
-            },
-            {
-                "id": "resp_ws_2",
-                "object": "response",
-                "status": "completed",
-                "output": [],
-            },
-        ]
+        class FakeUpstreamWebsocket:
+            def __init__(self, messages: list[str]) -> None:
+                self.sent: list[str] = []
+                self._messages = list(messages)
 
-        def bridge_side_effect(*, payload, session_id, stream, verbose=False):
-            body = bridge_bodies[len(bridge_calls)]
-            note_responses_final_response(session_id, body)
-            bridge_calls.append(
-                {
-                    "payload": payload,
-                    "session_id": session_id,
-                    "stream": stream,
-                    "verbose": verbose,
-                }
-            )
-            return make_json_response(body)
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                return None
+
+        first_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps({"type": "response.created", "response": {"id": "resp_ws_1", "object": "response", "status": "in_progress"}}),
+                json.dumps(
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_ws_1",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [
+                                {
+                                    "type": "message",
+                                    "role": "assistant",
+                                    "id": "msg_1",
+                                    "content": [{"type": "output_text", "text": "assistant output"}],
+                                }
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+        second_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps({"type": "response.created", "response": {"id": "resp_ws_2", "object": "response", "status": "in_progress"}}),
+                json.dumps(
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_ws_2",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    }
+                ),
+            ]
+        )
 
         with (
+            patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct")),
             patch(
-                "chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket",
-                side_effect=bridge_side_effect,
+                "chatmock.responses_websocket_bridge.connect_upstream_websocket",
+                side_effect=[first_upstream, second_upstream],
             ),
             patch(
                 "chatmock.routes_openai.start_upstream_raw_request",
@@ -859,9 +880,7 @@ class ResponsesWebsocketUpstreamContractTests(unittest.TestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
-        self.assertEqual(len(bridge_calls), 2)
-        second_payload = bridge_calls[1]["payload"]
-        self.assertFalse(bridge_calls[1]["stream"])
+        second_payload = json.loads(second_upstream.sent[0])
         self.assertNotIn("previous_response_id", second_payload)
         self.assertEqual(
             second_payload["input"],
@@ -966,6 +985,105 @@ class ResponsesWebsocketUpstreamContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(body["error"]["message"], "Upstream websocket event payload was not a JSON object")
         mock_bridge.assert_called_once()
+
+
+class ResponsesWebsocketBridgeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_session_state()
+        self.app = create_app()
+
+    def test_encode_sse_event_avoids_python_312_only_f_string_form(self) -> None:
+        source = inspect.getsource(responses_websocket_bridge._encode_sse_event)
+        self.assertNotIn('return f"data: {json.dumps(', source)
+        self.assertEqual(
+            responses_websocket_bridge._encode_sse_event({"type": "response.completed", "response": {"id": "resp_ws_1"}}),
+            b'data: {"type":"response.completed","response":{"id":"resp_ws_1"}}\n\n',
+        )
+
+    def test_parse_upstream_websocket_event_rejects_non_object_payload(self) -> None:
+        with self.assertRaisesRegex(
+            responses_websocket_bridge.ResponsesWebsocketBridgeProtocolError,
+            "Upstream websocket event payload was not a JSON object",
+        ):
+            responses_websocket_bridge.parse_upstream_websocket_event("[]")
+
+    def test_parse_upstream_websocket_event_requires_response_object_for_completed(self) -> None:
+        with self.assertRaisesRegex(
+            responses_websocket_bridge.ResponsesWebsocketBridgeProtocolError,
+            "Upstream websocket response.completed event is missing a response object",
+        ):
+            responses_websocket_bridge.parse_upstream_websocket_event('{"type":"response.completed"}')
+
+    @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
+    @patch("chatmock.responses_websocket_bridge.note_responses_final_response")
+    def test_bridge_aggregates_completed_response_for_non_stream_http_clients(self, mock_note_final_response, mock_connect, _mock_auth) -> None:
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.sent: list[str] = []
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_1", "object": "response", "status": "in_progress"}}),
+                    json.dumps({"type": "response.completed", "response": {"id": "resp_ws_1", "object": "response", "status": "completed", "output": []}}),
+                ]
+
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                return None
+
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
+
+        with self.app.test_request_context("/v1/responses", method="POST"):
+            response = responses_websocket_bridge.send_responses_request_via_websocket(
+                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                session_id="session-fixed",
+                stream=False,
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], "resp_ws_1")
+        self.assertEqual(json.loads(fake_upstream.sent[0])["model"], "gpt-5.4")
+        mock_note_final_response.assert_called_once_with("session-fixed", body)
+
+    @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
+    def test_bridge_translates_upstream_events_to_sse_for_streaming_http_clients(self, mock_connect, _mock_auth) -> None:
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_1"}}),
+                    json.dumps({"type": "response.output_text.delta", "delta": "hello"}),
+                    json.dumps({"type": "response.completed", "response": {"id": "resp_ws_1", "output": []}}),
+                ]
+
+            def send(self, message: str) -> None:
+                return None
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                return None
+
+        mock_connect.return_value = FakeUpstreamWebsocket()
+
+        with self.app.test_request_context("/v1/responses", method="POST"):
+            response = responses_websocket_bridge.send_responses_request_via_websocket(
+                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                session_id="session-fixed",
+                stream=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content_type.startswith("text/event-stream"))
+        self.assertIn("response.output_text.delta", response.get_data(as_text=True))
+        self.assertIn("data: [DONE]", response.get_data(as_text=True))
 
 
 if __name__ == "__main__":
