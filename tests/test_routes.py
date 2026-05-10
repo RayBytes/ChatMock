@@ -54,6 +54,13 @@ class RouteTests(unittest.TestCase):
         self.app = create_app()
         self.client = self.app.test_client()
 
+    def test_create_app_defaults_responses_websocket_upstream_disabled(self) -> None:
+        self.assertFalse(self.app.config["RESPONSES_WEBSOCKET_UPSTREAM"])
+
+    def test_create_app_can_enable_responses_websocket_upstream(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        self.assertTrue(app.config["RESPONSES_WEBSOCKET_UPSTREAM"])
+
     def test_openai_models_list(self) -> None:
         response = self.client.get("/v1/models")
         body = response.get_json()
