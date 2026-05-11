@@ -89,12 +89,12 @@ def normalize_responses_payload(
     normalized = dict(payload)
     normalized["model"] = normalized_model
     normalized.pop("max_output_tokens", None)
+    normalized.pop("truncation", None)
 
     if "input" in normalized:
         normalized["input"] = canonicalize_responses_input(normalized.get("input"))
 
-    if "store" not in normalized:
-        normalized["store"] = False
+    normalized["store"] = False
 
     instructions = normalized.get("instructions")
     if not isinstance(instructions, str) or not instructions.strip():
