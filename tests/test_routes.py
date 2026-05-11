@@ -880,7 +880,13 @@ class ResponsesWebsocketUpstreamContractTests(unittest.TestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
+        first_payload = json.loads(first_upstream.sent[0])
+        self.assertEqual(first_payload["type"], "response.create")
+        self.assertEqual(first_payload["model"], "gpt-5.4")
+        self.assertNotIn("previous_response_id", first_payload)
         second_payload = json.loads(second_upstream.sent[0])
+        self.assertEqual(second_payload["type"], "response.create")
+        self.assertEqual(second_payload["model"], "gpt-5.4")
         self.assertNotIn("previous_response_id", second_payload)
         self.assertEqual(
             second_payload["input"],
@@ -1013,6 +1019,63 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
             "Upstream websocket response.completed event is missing a response object",
         ):
             responses_websocket_bridge.parse_upstream_websocket_event('{"type":"response.completed"}')
+
+    def test_build_upstream_request_event_keeps_existing_response_create_payload(self) -> None:
+        payload = {"type": "response.create", "model": "gpt-5.4", "input": "hello", "stream": True}
+
+        self.assertIs(
+            responses_websocket_bridge._build_upstream_request_event(payload),
+            payload,
+        )
+
+    @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
+    def test_bridge_promotes_plain_http_payload_to_top_level_response_create_fields(self, mock_connect, _mock_auth) -> None:
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.sent: list[str] = []
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_1", "object": "response", "status": "in_progress"}}),
+                    json.dumps({"type": "response.completed", "response": {"id": "resp_ws_1", "object": "response", "status": "completed", "output": []}}),
+                ]
+
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                return None
+
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
+        payload = {
+            "model": "gpt-5.4",
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "hello"}],
+                }
+            ],
+            "stream": True,
+        }
+
+        with self.app.test_request_context("/v1/responses", method="POST"):
+            response = responses_websocket_bridge.send_responses_request_via_websocket(
+                payload=payload,
+                session_id="session-fixed",
+                stream=False,
+            )
+
+        outbound = json.loads(fake_upstream.sent[0])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(outbound["type"], "response.create")
+        self.assertEqual(outbound["model"], payload["model"])
+        self.assertEqual(outbound["input"], payload["input"])
+        self.assertTrue(outbound["stream"])
+        self.assertNotIn("response", outbound)
 
     @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")

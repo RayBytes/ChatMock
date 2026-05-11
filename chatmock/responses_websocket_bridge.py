@@ -107,10 +107,17 @@ def _encode_sse_event(event: Dict[str, Any]) -> bytes:
     return ("data: " + payload + "\n\n").encode("utf-8")
 
 
+def _build_upstream_request_event(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if payload.get("type") == "response.create":
+        return payload
+    return {"type": "response.create", **payload}
+
+
 def _send_upstream_request(upstream_ws, payload: Dict[str, Any], *, verbose: bool) -> None:
+    request_event = _build_upstream_request_event(payload)
     if verbose:
-        _log_json("OUTBOUND >> ChatGPT Responses WS payload", payload)
-    upstream_ws.send(json.dumps(payload))
+        _log_json("OUTBOUND >> ChatGPT Responses WS payload", request_event)
+    upstream_ws.send(json.dumps(request_event))
 
 
 def _iter_streaming_events(upstream_ws, *, session_id: str, verbose: bool):
