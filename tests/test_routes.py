@@ -1128,6 +1128,67 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
         self.app.config["RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL"] = True
         self.client = self.app.test_client()
 
+    def test_stateful_mode_enables_route_level_previous_response_id_policy(self) -> None:
+        prepared_payload = {
+            "model": "gpt-5.4",
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "second"}],
+                }
+            ],
+            "instructions": "base instructions",
+            "reasoning": {"effort": "medium", "summary": "auto"},
+            "include": ["reasoning.encrypted_content"],
+            "store": False,
+            "prompt_cache_key": "session-fixed",
+            "previous_response_id": "resp_stateful_1",
+        }
+
+        with (
+            patch(
+                "chatmock.routes_openai.prepare_responses_request_for_session",
+                return_value=SimpleNamespace(payload=prepared_payload, session_id="session-fixed"),
+            ) as mock_prepare,
+            patch(
+                "chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket"
+            ) as mock_bridge,
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            mock_bridge.return_value = make_json_response(
+                {
+                    "id": "resp_ws_stateful_nonstream",
+                    "object": "response",
+                    "status": "completed",
+                    "output": [],
+                }
+            )
+
+            response = self.client.post(
+                "/v1/responses",
+                json={
+                    "model": "gpt-5.4",
+                    "previous_response_id": "resp_client_supplied",
+                    "input": "hello",
+                },
+                headers={"X-Session-Id": "session-fixed"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        mock_prepare.assert_called_once()
+        self.assertEqual(mock_prepare.call_args.args[0], "session-fixed")
+        self.assertTrue(mock_prepare.call_args.kwargs["allow_previous_response_id"])
+        self.assertEqual(
+            mock_bridge.call_args.kwargs["payload"]["previous_response_id"],
+            "resp_stateful_1",
+        )
+
     def test_stateful_mode_reuses_retained_websocket_for_non_stream_follow_up(self) -> None:
         fake_upstream = FakeUpstreamWebsocket(
             [
@@ -1431,6 +1492,36 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
                 "/v1/responses",
                 json={"model": "gpt-5.4", "input": "hello"},
                 headers={"X-Session-Id": "   "},
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("X-Session-Id", body["error"]["message"])
+
+    def test_stateful_mode_rejects_missing_explicit_session_id_before_any_transport_layer(self) -> None:
+        with (
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+            patch(
+                "chatmock.responses_websocket_bridge.get_effective_chatgpt_auth",
+                side_effect=AssertionError(
+                    "Stateful missing session-id requests must be rejected before bridge auth lookup"
+                ),
+            ),
+            patch(
+                "chatmock.responses_websocket_bridge.connect_upstream_websocket",
+                side_effect=AssertionError(
+                    "Stateful missing session-id requests must be rejected before websocket connect"
+                ),
+            ),
+        ):
+            response = self.client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello"},
             )
 
         body = response.get_json()

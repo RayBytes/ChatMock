@@ -21,7 +21,13 @@ def create_app(
     expose_reasoning_models: bool = False,
     default_web_search: bool = False,
     responses_websocket_upstream: bool = False,
+    responses_websocket_upstream_stateful: bool = False,
 ) -> Flask:
+    if bool(responses_websocket_upstream_stateful) and not bool(responses_websocket_upstream):
+        raise ValueError(
+            "RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL requires RESPONSES_WEBSOCKET_UPSTREAM"
+        )
+
     app = Flask(__name__)
 
     app.config.update(
@@ -37,6 +43,7 @@ def create_app(
         EXPOSE_REASONING_MODELS=bool(expose_reasoning_models),
         DEFAULT_WEB_SEARCH=bool(default_web_search),
         RESPONSES_WEBSOCKET_UPSTREAM=bool(responses_websocket_upstream),
+        RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL=bool(responses_websocket_upstream_stateful),
     )
 
     @app.get("/")

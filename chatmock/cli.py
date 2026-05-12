@@ -272,6 +272,7 @@ def cmd_serve(
     expose_reasoning_models: bool,
     default_web_search: bool,
     responses_websocket_upstream: bool,
+    responses_websocket_upstream_stateful: bool,
 ) -> int:
     app = create_app(
         verbose=verbose,
@@ -284,6 +285,7 @@ def cmd_serve(
         expose_reasoning_models=expose_reasoning_models,
         default_web_search=default_web_search,
         responses_websocket_upstream=responses_websocket_upstream,
+        responses_websocket_upstream_stateful=responses_websocket_upstream_stateful,
     )
 
     app.run(host=host, use_reloader=False, port=port, threaded=True)
@@ -367,6 +369,17 @@ def main() -> None:
             "Also configurable via CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM."
         ),
     )
+    p_serve.add_argument(
+        "--responses-websocket-upstream-stateful",
+        action=argparse.BooleanOptionalAction,
+        default=(os.getenv("CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL") or "").strip().lower()
+        in ("1", "true", "yes", "on"),
+        help=(
+            "Retain HTTP websocket-bridge follow-up state across requests (off by default). "
+            "Requires --responses-websocket-upstream. Also configurable via "
+            "CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL."
+        ),
+    )
 
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
     p_info.add_argument("--json", action="store_true", help="Output raw auth.json contents")
@@ -390,6 +403,7 @@ def main() -> None:
                 expose_reasoning_models=args.expose_reasoning_models,
                 default_web_search=args.enable_web_search,
                 responses_websocket_upstream=args.responses_websocket_upstream,
+                responses_websocket_upstream_stateful=args.responses_websocket_upstream_stateful,
             )
         )
     elif args.command == "info":

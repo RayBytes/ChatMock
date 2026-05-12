@@ -43,9 +43,32 @@ from .utils import (
 
 openai_bp = Blueprint("openai", __name__)
 
-# HTTP /v1/responses stays transport-only. Only the frontend websocket route
-# opts into previous_response_id reuse semantics through session.py.
-HTTP_RESPONSES_ALLOW_PREVIOUS_RESPONSE_ID = False
+
+def _stateful_http_responses_bridge_enabled() -> bool:
+    # Ordinary HTTP and the one-shot bridge stay stateless. The opt-in stateful
+    # bridge is the only HTTP branch that enables previous_response_id reuse.
+    return bool(current_app.config.get("RESPONSES_WEBSOCKET_UPSTREAM")) and bool(
+        current_app.config.get("RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL")
+    )
+
+
+def _error_json_response(message: str, status_code: int) -> Response:
+    resp = make_response(jsonify({"error": {"message": message}}), status_code)
+    for k, v in build_cors_headers().items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
+def _require_explicit_stateful_http_session_id() -> tuple[str | None, Response | None]:
+    client_session_id = extract_client_session_id(request.headers)
+    if isinstance(client_session_id, str):
+        client_session_id = client_session_id.strip()
+    if client_session_id:
+        return client_session_id, None
+    return None, _error_json_response(
+        "Stateful HTTP websocket bridge mode requires a non-empty X-Session-Id or session_id header.",
+        400,
+    )
 
 
 def _log_json(prefix: str, payload: Any) -> None:
@@ -579,6 +602,7 @@ def completions() -> Response:
 @openai_bp.route("/v1/responses", methods=["POST"])
 def responses_create() -> Response:
     verbose = bool(current_app.config.get("VERBOSE"))
+    stateful_http_bridge_enabled = _stateful_http_responses_bridge_enabled()
     raw = request.get_data(cache=True, as_text=True) or ""
     if verbose:
         try:
@@ -600,11 +624,22 @@ def responses_create() -> Response:
             _log_json("OUT POST /v1/responses", err)
         return jsonify(err), 400
 
+    client_session_id = extract_client_session_id(request.headers)
+    if stateful_http_bridge_enabled:
+        client_session_id, error_resp = _require_explicit_stateful_http_session_id()
+        if error_resp is not None:
+            if verbose:
+                _log_json(
+                    "OUT POST /v1/responses",
+                    {"error": {"message": error_resp.get_json()["error"]["message"]}},
+                )
+            return error_resp
+
     try:
         normalized = normalize_responses_payload(
             payload,
             config=current_app.config,
-            client_session_id=extract_client_session_id(request.headers),
+            client_session_id=client_session_id,
         )
     except ResponsesRequestError as exc:
         err: Dict[str, Any] = {"error": {"message": str(exc)}}
@@ -620,7 +655,7 @@ def responses_create() -> Response:
     prepared = prepare_responses_request_for_session(
         normalized.session_id,
         normalized.payload,
-        allow_previous_response_id=HTTP_RESPONSES_ALLOW_PREVIOUS_RESPONSE_ID,
+        allow_previous_response_id=stateful_http_bridge_enabled,
     )
     stream_req = bool(prepared.payload.get("stream", False))
     upstream_request_payload = dict(prepared.payload)
