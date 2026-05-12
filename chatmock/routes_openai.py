@@ -43,6 +43,10 @@ from .utils import (
 
 openai_bp = Blueprint("openai", __name__)
 
+# HTTP /v1/responses stays transport-only. Only the frontend websocket route
+# opts into previous_response_id reuse semantics through session.py.
+HTTP_RESPONSES_ALLOW_PREVIOUS_RESPONSE_ID = False
+
 
 def _log_json(prefix: str, payload: Any) -> None:
     try:
@@ -616,21 +620,22 @@ def responses_create() -> Response:
     prepared = prepare_responses_request_for_session(
         normalized.session_id,
         normalized.payload,
-        allow_previous_response_id=False,
+        allow_previous_response_id=HTTP_RESPONSES_ALLOW_PREVIOUS_RESPONSE_ID,
     )
     stream_req = bool(prepared.payload.get("stream", False))
-    upstream_payload = dict(prepared.payload)
-    upstream_payload["stream"] = True
+    upstream_request_payload = dict(prepared.payload)
+    upstream_request_payload["stream"] = True
     if bool(current_app.config.get("RESPONSES_WEBSOCKET_UPSTREAM")):
+        # The HTTP bridge owns one upstream websocket per HTTP request.
         return responses_websocket_bridge.send_responses_request_via_websocket(
-            payload=upstream_payload,
+            payload=upstream_request_payload,
             session_id=normalized.session_id,
             stream=stream_req,
             verbose=verbose,
         )
 
     upstream, error_resp = start_upstream_raw_request(
-        upstream_payload,
+        upstream_request_payload,
         session_id=normalized.session_id,
         stream=True,
     )

@@ -20,6 +20,13 @@ class ResponsesWebsocketBridgeProtocolError(ValueError):
     pass
 
 
+def _close_request_upstream_websocket(upstream_ws) -> None:
+    try:
+        upstream_ws.close()
+    except Exception:
+        pass
+
+
 def _log_json(prefix: str, payload: Any) -> None:
     try:
         print(f"{prefix}\n{json.dumps(payload, indent=2, ensure_ascii=False)}")
@@ -144,10 +151,7 @@ def _iter_streaming_events(upstream_ws, *, session_id: str, verbose: bool):
             if _terminal_event(event):
                 return
     finally:
-        try:
-            upstream_ws.close()
-        except Exception:
-            pass
+        _close_request_upstream_websocket(upstream_ws)
 
 
 def _collect_response(upstream_ws, *, session_id: str, verbose: bool) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None, int]:
@@ -179,10 +183,7 @@ def _collect_response(upstream_ws, *, session_id: str, verbose: bool) -> tuple[D
         clear_responses_reuse_state(session_id)
         return None, {"error": {"message": str(exc)}}, 502
     finally:
-        try:
-            upstream_ws.close()
-        except Exception:
-            pass
+        _close_request_upstream_websocket(upstream_ws)
 
 
 def send_responses_request_via_websocket(
@@ -192,6 +193,8 @@ def send_responses_request_via_websocket(
     stream: bool,
     verbose: bool = False,
 ) -> Response:
+    # HTTP bridge mode is transport-only: one HTTP request owns one upstream
+    # websocket connection, while session.py remains the only reuse-state owner.
     access_token, account_id = get_effective_chatgpt_auth()
     if not access_token or not account_id:
         clear_responses_reuse_state(session_id)
@@ -225,10 +228,7 @@ def send_responses_request_via_websocket(
         _send_upstream_request(upstream_ws, payload, verbose=verbose)
     except Exception as exc:
         clear_responses_reuse_state(session_id)
-        try:
-            upstream_ws.close()
-        except Exception:
-            pass
+        _close_request_upstream_websocket(upstream_ws)
         return _json_response(
             {"error": {"message": f"Upstream websocket request send failed: {exc}"}},
             status_code=502,
