@@ -182,10 +182,14 @@ def prepare_responses_request_for_session(
 
         if explicit_previous_response_id:
             _clear_reuse_state(state)
-            return PreparedResponsesRequest(
-                payload=outbound_payload,
-                session_id=session_id,
-            )
+            if allow_previous_response_id:
+                return PreparedResponsesRequest(
+                    payload=outbound_payload,
+                    session_id=session_id,
+                )
+
+            full_payload.pop("previous_response_id", None)
+            outbound_payload.pop("previous_response_id", None)
 
         request_input = _input_list(full_payload)
         if (

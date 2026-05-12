@@ -135,7 +135,6 @@ def _iter_streaming_events(upstream_ws, *, session_id: str, verbose: bool):
                 if verbose:
                     _log_json("STREAM OUT /v1/responses (bridge error)", error_event)
                 yield _encode_sse_event(error_event)
-                yield b"data: [DONE]\n\n"
                 return
 
             if verbose:
@@ -143,7 +142,6 @@ def _iter_streaming_events(upstream_ws, *, session_id: str, verbose: bool):
             note_responses_stream_event(session_id, event)
             yield _encode_sse_event(event)
             if _terminal_event(event):
-                yield b"data: [DONE]\n\n"
                 return
     finally:
         try:

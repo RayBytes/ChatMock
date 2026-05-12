@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from chatmock import responses_websocket_bridge
 from chatmock.app import create_app
+from chatmock.responses_api import normalize_responses_payload
 from chatmock.session import reset_session_state
 from flask import Response
 from websockets.sync.client import connect as ws_connect
@@ -64,6 +65,22 @@ class RouteTests(unittest.TestCase):
         reset_session_state()
         self.app = create_app()
         self.client = self.app.test_client()
+
+    def test_normalize_responses_payload_defaults_store_false_when_omitted(self) -> None:
+        normalized = normalize_responses_payload(
+            {"model": "gpt-5.4", "input": "hello"},
+            config=self.app.config,
+        )
+
+        self.assertEqual(normalized.payload["store"], False)
+
+    def test_normalize_responses_payload_forces_store_false_when_explicit_true(self) -> None:
+        normalized = normalize_responses_payload(
+            {"model": "gpt-5.4", "input": "hello", "store": True},
+            config=self.app.config,
+        )
+
+        self.assertEqual(normalized.payload["store"], False)
 
     def test_create_app_defaults_responses_websocket_upstream_disabled(self) -> None:
         self.assertFalse(self.app.config["RESPONSES_WEBSOCKET_UPSTREAM"])
@@ -273,6 +290,39 @@ class RouteTests(unittest.TestCase):
         self.assertIsInstance(outbound_payload["prompt_cache_key"], str)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_forces_explicit_store_true_to_false(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_store", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_store",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt5.4-mini", "input": "hello", "store": True},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["store"], False)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
         app = create_app(debug_model="gpt-5.4")
         client = app.test_client()
@@ -387,6 +437,7 @@ class RouteTests(unittest.TestCase):
             "/v1/responses",
             json={
                 "model": "gpt-5.4",
+                "previous_response_id": "resp_client_supplied",
                 "input": [
                     {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
                     {"type": "message", "role": "assistant", "id": "msg_1", "content": [{"type": "output_text", "text": "assistant output"}]},
@@ -1143,10 +1194,47 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
                 stream=True,
             )
 
+        body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.content_type.startswith("text/event-stream"))
-        self.assertIn("response.output_text.delta", response.get_data(as_text=True))
-        self.assertIn("data: [DONE]", response.get_data(as_text=True))
+        self.assertIn("response.output_text.delta", body)
+        self.assertIn('data: {"type":"response.completed","response":{"id":"resp_ws_1","output":[]}}', body)
+        self.assertNotIn("data: [DONE]", body)
+
+    @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
+    def test_bridge_stops_after_protocol_error_event_without_done_sentinel(self, mock_connect, _mock_auth) -> None:
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_1"}}),
+                    json.dumps({"type": "response.completed"}),
+                ]
+
+            def send(self, message: str) -> None:
+                return None
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                return None
+
+        mock_connect.return_value = FakeUpstreamWebsocket()
+
+        with self.app.test_request_context("/v1/responses", method="POST"):
+            response = responses_websocket_bridge.send_responses_request_via_websocket(
+                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                session_id="session-fixed",
+                stream=True,
+            )
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content_type.startswith("text/event-stream"))
+        self.assertIn('data: {"type":"response.created","response":{"id":"resp_ws_1"}}', body)
+        self.assertIn('data: {"type":"error","status_code":502,"error":{"message":"Upstream websocket response.completed event is missing a response object"}}', body)
+        self.assertNotIn("data: [DONE]", body)
 
 
 if __name__ == "__main__":
