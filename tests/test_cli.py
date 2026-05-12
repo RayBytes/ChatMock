@@ -48,3 +48,42 @@ class CLIServeFlagTests(unittest.TestCase):
                     env={"CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM": env_value},
                 )
                 self.assertFalse(kwargs["responses_websocket_upstream"])
+
+    def test_serve_defaults_responses_websocket_upstream_stateful_disabled(self) -> None:
+        kwargs = self._run_main(["chatmock", "serve"])
+        self.assertFalse(kwargs["responses_websocket_upstream_stateful"])
+
+    def test_serve_can_enable_responses_websocket_upstream_stateful(self) -> None:
+        kwargs = self._run_main(
+            [
+                "chatmock",
+                "serve",
+                "--responses-websocket-upstream",
+                "--responses-websocket-upstream-stateful",
+            ]
+        )
+        self.assertTrue(kwargs["responses_websocket_upstream"])
+        self.assertTrue(kwargs["responses_websocket_upstream_stateful"])
+
+    def test_serve_can_explicitly_disable_responses_websocket_upstream_stateful(self) -> None:
+        kwargs = self._run_main(
+            ["chatmock", "serve", "--no-responses-websocket-upstream-stateful"],
+            env={"CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL": "true"},
+        )
+        self.assertFalse(kwargs["responses_websocket_upstream_stateful"])
+
+    def test_serve_uses_env_to_enable_responses_websocket_upstream_stateful(self) -> None:
+        kwargs = self._run_main(
+            ["chatmock", "serve"],
+            env={"CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL": "yes"},
+        )
+        self.assertTrue(kwargs["responses_websocket_upstream_stateful"])
+
+    def test_serve_env_falsey_values_do_not_enable_responses_websocket_upstream_stateful(self) -> None:
+        for env_value in ("false", "0"):
+            with self.subTest(env_value=env_value):
+                kwargs = self._run_main(
+                    ["chatmock", "serve"],
+                    env={"CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL": env_value},
+                )
+                self.assertFalse(kwargs["responses_websocket_upstream_stateful"])
