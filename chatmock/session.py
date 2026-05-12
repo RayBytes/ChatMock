@@ -21,6 +21,7 @@ _RESPONSES_ORDER: List[str] = []
 class PreparedResponsesRequest:
     payload: Dict[str, Any]
     session_id: str
+    explicit_previous_response_id: bool = False
 
 
 @dataclass
@@ -186,6 +187,7 @@ def prepare_responses_request_for_session(
                 return PreparedResponsesRequest(
                     payload=outbound_payload,
                     session_id=session_id,
+                    explicit_previous_response_id=True,
                 )
 
             full_payload.pop("previous_response_id", None)
@@ -218,6 +220,7 @@ def prepare_responses_request_for_session(
     return PreparedResponsesRequest(
         payload=outbound_payload,
         session_id=session_id,
+        explicit_previous_response_id=False,
     )
 
 

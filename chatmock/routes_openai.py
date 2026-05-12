@@ -667,6 +667,12 @@ def responses_create() -> Response:
             session_id=normalized.session_id,
             stream=stream_req,
             verbose=verbose,
+            stateful=stateful_http_bridge_enabled,
+            explicit_previous_response_id=getattr(
+                prepared,
+                "explicit_previous_response_id",
+                False,
+            ),
         )
 
     upstream, error_resp = start_upstream_raw_request(
