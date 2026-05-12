@@ -5,6 +5,7 @@ import json
 import socket
 import threading
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -804,6 +805,65 @@ class ResponsesWebsocketUpstreamContractTests(unittest.TestCase):
         self.assertTrue(mock_bridge.call_args.kwargs["payload"]["stream"])
         self.assertNotIn("previous_response_id", mock_bridge.call_args.kwargs["payload"])
 
+    def test_enabled_mode_keeps_route_level_previous_response_id_policy_disabled(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        client = app.test_client()
+        prepared_payload = {
+            "model": "gpt-5.4",
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "hello"}],
+                }
+            ],
+            "instructions": "base instructions",
+            "reasoning": {"effort": "medium", "summary": "auto"},
+            "include": ["reasoning.encrypted_content"],
+            "store": False,
+            "prompt_cache_key": "session-fixed",
+        }
+
+        with (
+            patch(
+                "chatmock.routes_openai.prepare_responses_request_for_session",
+                return_value=SimpleNamespace(payload=prepared_payload, session_id="session-fixed"),
+            ) as mock_prepare,
+            patch(
+                "chatmock.routes_openai.responses_websocket_bridge.send_responses_request_via_websocket"
+            ) as mock_bridge,
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            mock_bridge.return_value = make_json_response(
+                {
+                    "id": "resp_ws_nonstream",
+                    "object": "response",
+                    "status": "completed",
+                    "output": [],
+                }
+            )
+
+            response = client.post(
+                "/v1/responses",
+                json={
+                    "model": "gpt-5.4",
+                    "previous_response_id": "resp_client_supplied",
+                    "input": "hello",
+                },
+                headers={"X-Session-Id": "session-fixed"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        mock_prepare.assert_called_once()
+        self.assertEqual(mock_prepare.call_args.args[0], "session-fixed")
+        self.assertFalse(mock_prepare.call_args.kwargs["allow_previous_response_id"])
+        self.assertNotIn("previous_response_id", mock_bridge.call_args.kwargs["payload"])
+
     def test_enabled_mode_uses_websocket_bridge_for_streaming_requests(self) -> None:
         app = create_app(responses_websocket_upstream=True)
         client = app.test_client()
@@ -1135,6 +1195,7 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
         class FakeUpstreamWebsocket:
             def __init__(self) -> None:
                 self.sent: list[str] = []
+                self.close_calls = 0
                 self._messages = [
                     json.dumps({"type": "response.created", "response": {"id": "resp_ws_1", "object": "response", "status": "in_progress"}}),
                     json.dumps({"type": "response.completed", "response": {"id": "resp_ws_1", "object": "response", "status": "completed", "output": []}}),
@@ -1147,6 +1208,7 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
                 return self._messages.pop(0)
 
             def close(self) -> None:
+                self.close_calls += 1
                 return None
 
         fake_upstream = FakeUpstreamWebsocket()
@@ -1163,6 +1225,7 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(body["id"], "resp_ws_1")
         self.assertEqual(json.loads(fake_upstream.sent[0])["model"], "gpt-5.4")
+        self.assertEqual(fake_upstream.close_calls, 1)
         mock_note_final_response.assert_called_once_with("session-fixed", body)
 
     @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
@@ -1170,6 +1233,7 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
     def test_bridge_translates_upstream_events_to_sse_for_streaming_http_clients(self, mock_connect, _mock_auth) -> None:
         class FakeUpstreamWebsocket:
             def __init__(self) -> None:
+                self.close_calls = 0
                 self._messages = [
                     json.dumps({"type": "response.created", "response": {"id": "resp_ws_1"}}),
                     json.dumps({"type": "response.output_text.delta", "delta": "hello"}),
@@ -1183,9 +1247,11 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
                 return self._messages.pop(0)
 
             def close(self) -> None:
+                self.close_calls += 1
                 return None
 
-        mock_connect.return_value = FakeUpstreamWebsocket()
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
 
         with self.app.test_request_context("/v1/responses", method="POST"):
             response = responses_websocket_bridge.send_responses_request_via_websocket(
@@ -1198,6 +1264,7 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.content_type.startswith("text/event-stream"))
         self.assertIn("response.output_text.delta", body)
+        self.assertEqual(fake_upstream.close_calls, 1)
         self.assertIn('data: {"type":"response.completed","response":{"id":"resp_ws_1","output":[]}}', body)
         self.assertNotIn("data: [DONE]", body)
 
