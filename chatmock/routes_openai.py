@@ -673,6 +673,9 @@ def responses_create() -> Response:
                 "explicit_previous_response_id",
                 False,
             ),
+            max_retained_sessions=current_app.config.get(
+                "RESPONSES_WEBSOCKET_UPSTREAM_MAX_RETAINED_SESSIONS"
+            ),
         )
 
     upstream, error_resp = start_upstream_raw_request(

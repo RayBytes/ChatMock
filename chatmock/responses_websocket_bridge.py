@@ -213,6 +213,7 @@ def _collect_response(
     retained_lease: RetainedUpstreamWebsocketLease | None = None,
 ) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None, int]:
     response_obj: Dict[str, Any] | None = None
+    completed_output_items: list[Dict[str, Any]] = []
     retain_upstream = retained_lease is not None
     try:
         while True:
@@ -223,6 +224,11 @@ def _collect_response(
             event_type = event.get("type")
             if event_type != "response.completed":
                 note_responses_stream_event(session_id, event)
+
+            if event_type == "response.output_item.done":
+                item = event.get("item")
+                if isinstance(item, dict):
+                    completed_output_items.append(item)
 
             response = event.get("response")
             if isinstance(response, dict):
@@ -240,6 +246,10 @@ def _collect_response(
                 status_code = event.get("status_code") if isinstance(event.get("status_code"), int) else 502
                 return None, {"error": error}, status_code
             if event_type == "response.completed":
+                if isinstance(response_obj, dict):
+                    output = response_obj.get("output")
+                    if (not isinstance(output, list) or not output) and completed_output_items:
+                        response_obj = {**response_obj, "output": completed_output_items}
                 return response_obj, None, 200
     except ResponsesWebsocketBridgeProtocolError as exc:
         clear_responses_reuse_state(session_id)

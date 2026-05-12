@@ -183,6 +183,7 @@ def aggregate_response_from_sse(
 ) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
     response_obj: Dict[str, Any] | None = None
     error_obj: Dict[str, Any] | None = None
+    completed_output_items: list[Dict[str, Any]] = []
     try:
         for evt in iter_sse_event_payloads(upstream):
             if callable(on_event):
@@ -194,6 +195,10 @@ def aggregate_response_from_sse(
             if isinstance(response, dict):
                 response_obj = response
             kind = evt.get("type")
+            if kind == "response.output_item.done":
+                item = evt.get("item")
+                if isinstance(item, dict):
+                    completed_output_items.append(item)
             if kind == "response.failed":
                 if isinstance(response, dict) and isinstance(response.get("error"), dict):
                     error_obj = {"error": response.get("error")}
@@ -201,6 +206,10 @@ def aggregate_response_from_sse(
                     error_obj = {"error": {"message": "response.failed"}}
                 break
             if kind == "response.completed":
+                if isinstance(response_obj, dict):
+                    output = response_obj.get("output")
+                    if (not isinstance(output, list) or not output) and completed_output_items:
+                        response_obj = {**response_obj, "output": completed_output_items}
                 break
     finally:
         upstream.close()

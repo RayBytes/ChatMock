@@ -309,6 +309,61 @@ class RouteTests(unittest.TestCase):
         self.assertIsInstance(outbound_payload["prompt_cache_key"], str)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_backfills_completed_response_output_from_output_item_done_events(
+        self,
+        mock_start,
+    ) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_output_backfill", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "type": "message",
+                            "role": "assistant",
+                            "id": "msg_output_backfill",
+                            "content": [{"type": "output_text", "text": "assistant output"}],
+                        },
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_output_backfill",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt5.4-mini", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "id": "msg_output_backfill",
+                    "content": [{"type": "output_text", "text": "assistant output"}],
+                }
+            ],
+        )
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_forces_explicit_store_true_to_false(self, mock_start) -> None:
         mock_start.return_value = (
             FakeUpstream(
@@ -1622,6 +1677,100 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
         self.assertEqual(second.status_code, 409)
         self.assertIn("already in progress", second.get_json()["error"]["message"])
 
+    def test_stateful_mode_applies_route_level_retained_session_capacity_limit(self) -> None:
+        first_request_started = threading.Event()
+        release_first_request = threading.Event()
+        first_response: dict[str, Response] = {}
+        thread_errors: list[BaseException] = []
+        self.app.config["RESPONSES_WEBSOCKET_UPSTREAM_MAX_RETAINED_SESSIONS"] = 1
+
+        class BlockingUpstreamWebsocket(FakeUpstreamWebsocket):
+            def __init__(self) -> None:
+                super().__init__(
+                    [
+                        json.dumps({"type": "response.created", "response": {"id": "resp_stateful_capacity_1"}}),
+                        json.dumps(
+                            {
+                                "type": "response.completed",
+                                "response": {"id": "resp_stateful_capacity_1", "output": []},
+                            }
+                        ),
+                    ]
+                )
+                self._blocked = False
+
+            def recv(self) -> str:
+                if not self._blocked:
+                    self._blocked = True
+                    first_request_started.set()
+                    if not release_first_request.wait(timeout=2):
+                        raise AssertionError("First stateful request did not reach the blocking point")
+                return super().recv()
+
+        second_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps({"type": "response.created", "response": {"id": "resp_stateful_capacity_2"}}),
+                json.dumps(
+                    {
+                        "type": "response.completed",
+                        "response": {"id": "resp_stateful_capacity_2", "output": []},
+                    }
+                ),
+            ]
+        )
+
+        def send_first_request() -> None:
+            try:
+                with self.app.test_client() as client:
+                    first_response["response"] = client.post(
+                        "/v1/responses",
+                        json={"model": "gpt-5.4", "input": "hello"},
+                        headers={"X-Session-Id": "session-1"},
+                    )
+            except BaseException as exc:  # pragma: no cover - assertion plumbing for the worker thread
+                thread_errors.append(exc)
+
+        with (
+            patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct")),
+            patch(
+                "chatmock.responses_websocket_bridge.connect_upstream_websocket",
+                side_effect=[BlockingUpstreamWebsocket(), second_upstream],
+            ) as mock_connect,
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            first_thread = threading.Thread(target=send_first_request)
+            first_thread.start()
+            self.assertTrue(
+                first_request_started.wait(timeout=1),
+                "First stateful request did not block before issuing the capacity request",
+            )
+
+            second = self.client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "second"},
+                headers={"X-Session-Id": "session-2"},
+            )
+
+            release_first_request.set()
+            first_thread.join(timeout=2)
+
+        if thread_errors:
+            raise thread_errors[0]
+
+        self.assertFalse(first_thread.is_alive(), "First stateful request thread did not finish")
+        self.assertEqual(first_response["response"].status_code, 200)
+        self.assertEqual(second.status_code, 503)
+        self.assertEqual(
+            second.get_json()["error"]["message"],
+            "Too many retained upstream websocket sessions are active right now.",
+        )
+        self.assertEqual(mock_connect.call_count, 1)
+
     def test_stateful_mode_requires_websocket_upstream_at_startup(self) -> None:
         with self.assertRaisesRegex(
             ValueError,
@@ -1755,6 +1904,81 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(body["id"], "resp_ws_1")
         self.assertEqual(json.loads(fake_upstream.sent[0])["model"], "gpt-5.4")
+        self.assertEqual(fake_upstream.close_calls, 1)
+        mock_note_final_response.assert_called_once_with("session-fixed", body)
+
+    @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
+    @patch("chatmock.responses_websocket_bridge.note_responses_final_response")
+    def test_bridge_backfills_completed_response_output_from_output_item_done_events(
+        self,
+        mock_note_final_response,
+        mock_connect,
+        _mock_auth,
+    ) -> None:
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.sent: list[str] = []
+                self.close_calls = 0
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_1", "object": "response", "status": "in_progress"}}),
+                    json.dumps(
+                        {
+                            "type": "response.output_item.done",
+                            "item": {
+                                "type": "message",
+                                "role": "assistant",
+                                "id": "msg_ws_1",
+                                "content": [{"type": "output_text", "text": "assistant output"}],
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "response.completed",
+                            "response": {
+                                "id": "resp_ws_1",
+                                "object": "response",
+                                "status": "completed",
+                                "output": [],
+                            },
+                        }
+                    ),
+                ]
+
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                self.close_calls += 1
+                return None
+
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
+
+        with self.app.test_request_context("/v1/responses", method="POST"):
+            response = responses_websocket_bridge.send_responses_request_via_websocket(
+                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                session_id="session-fixed",
+                stream=False,
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "id": "msg_ws_1",
+                    "content": [{"type": "output_text", "text": "assistant output"}],
+                }
+            ],
+        )
         self.assertEqual(fake_upstream.close_calls, 1)
         mock_note_final_response.assert_called_once_with("session-fixed", body)
 

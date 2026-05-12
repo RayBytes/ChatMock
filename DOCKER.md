@@ -29,35 +29,47 @@ Set options in `.env` or pass environment variables:
 - `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS`: `true|false` to add reasoning model variants to `/v1/models`
 - `CHATGPT_LOCAL_ENABLE_WEB_SEARCH`: `true|false` to enable default web search tool
 - `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM`: `true|false` to opt into websocket upstream transport for HTTP `/v1/responses` (default `false`)
+- `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL`: `true|false` to retain HTTP `/v1/responses` follow-up state across requests; requires `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true` (default `false`)
 
 ## `/v1/responses` websocket upstream
 Set `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true` to opt into websocket upstream transport for HTTP `/v1/responses` only.
 
 - The client-facing request still uses HTTP.
-- HTTP follow-up requests still do not use `previous_response_id` in this mode.
-- ChatMock does not reuse an upstream websocket across separate HTTP requests.
+- With only `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true`, HTTP follow-up requests stay one-shot. ChatMock does not reuse an upstream websocket across separate HTTP requests and does not automatically reuse `previous_response_id`.
+- Set `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL=true` as well to enable the stateful bridge mode. This mode requires websocket-upstream mode; it is not valid on its own.
+- Stateful HTTP requests must include a non-empty `X-Session-Id` or `session_id` header. Reuse is keyed by that explicit session id.
+- In stateful mode, streaming HTTP `/v1/responses` are buffered inside ChatMock until the upstream response completes, then returned as SSE. Clients do not receive incremental SSE delivery in that mode.
+- Retained websocket ownership is process-local only. There is no shared registry across workers, containers, or processes, so follow-up requests must keep hitting the same ChatMock process.
 - If the websocket upstream path fails, the request fails clearly instead of silently falling back to the legacy HTTP POST upstream transport.
+- Rollback is immediate: set `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL=false` or unset it, and ChatMock returns to the existing one-shot bridge behavior.
 
 ## Logs
 Set `VERBOSE=true` to include extra logging for troubleshooting upstream or chat app requests. Please include and use these logs when submitting bug reports.
 
 ## Manual verification
-Disabled mode (`CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=false` or unset):
+Default-off regression check (`CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true` and `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL=false` or unset):
 
 ```bash
 curl -s http://localhost:8000/v1/responses \
    -H 'Content-Type: application/json' \
-   -d '{"model":"gpt-5.4","input":"Hello world!"}' | jq .
+   -H 'X-Session-Id: docs-regression' \
+   -d '{"model":"gpt-5.4","input":"Remember the token ALPHA-42."}' | jq .
+
+curl -s http://localhost:8000/v1/responses \
+   -H 'Content-Type: application/json' \
+   -H 'X-Session-Id: docs-regression' \
+   -d '{"model":"gpt-5.4","input":"What token did I ask you to remember?"}' | jq .
 ```
 
-Confirm the default HTTP `/v1/responses` path works with the mode disabled.
+Confirm the second response behaves like a fresh one-shot request rather than continuing the first turn.
 
-Enabled mode (`CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true`):
+Stateful mode (`CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true` and `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL=true`):
 
 1. Restart `chatmock` after changing the environment variable, then rerun the same HTTP `/v1/responses` request.
-2. Confirm the request still works with the websocket bridge enabled.
-3. Send an HTTP follow-up `/v1/responses` request and confirm `previous_response_id` behaviour is unchanged.
-4. If you intentionally break websocket upstream connectivity, confirm the request fails clearly instead of silently succeeding through the legacy HTTP POST upstream path.
+2. Send both requests with the same non-empty `X-Session-Id` or `session_id` header.
+3. Confirm the second response continues the conversation and can answer with `ALPHA-42`.
+4. Keep both requests on the same ChatMock process; cross-worker or shared-registry follow-up reuse is not supported.
+5. If you intentionally break websocket upstream connectivity, confirm the request fails clearly instead of silently succeeding through the legacy HTTP POST upstream path.
 
 ## Test
 
