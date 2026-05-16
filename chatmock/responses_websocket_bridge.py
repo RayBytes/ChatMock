@@ -57,6 +57,18 @@ def _json_response(body: Dict[str, Any], *, status_code: int) -> Response:
     return _with_cors(make_response(jsonify(body), status_code))
 
 
+def _previous_response_not_found_error(response_marker: str | None) -> Dict[str, Any]:
+    message = "No response found for previous_response_id."
+    if response_marker:
+        message = f"No response found for previous_response_id {response_marker}."
+    return {
+        "error": {
+            "message": message,
+            "code": "previous_response_not_found",
+        }
+    }
+
+
 def _sse_response(payload_iter) -> Response:
     response = Response(
         payload_iter,
@@ -69,6 +81,10 @@ def _sse_response(payload_iter) -> Response:
 
 def _terminal_event(event: Dict[str, Any]) -> bool:
     return event.get("type") in ("response.completed", "response.failed", "error")
+
+
+def _has_previous_response_not_found_code(error: Dict[str, Any] | None) -> bool:
+    return isinstance(error, dict) and error.get("code") == "previous_response_not_found"
 
 
 def parse_upstream_websocket_event(message: Any) -> Dict[str, Any]:
@@ -223,6 +239,7 @@ def _collect_response(
     session_id: str,
     verbose: bool,
     retained_lease: RetainedUpstreamWebsocketLease | None = None,
+    response_marker: str | None = None,
 ) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None, int]:
     response_obj: Dict[str, Any] | None = None
     completed_output_items: list[Dict[str, Any]] = []
@@ -253,11 +270,15 @@ def _collect_response(
                 clear_responses_reuse_state(session_id)
                 retain_upstream = False
                 error = response.get("error") if isinstance(response.get("error"), dict) else {"message": "response.failed"}
+                if response_marker and _has_previous_response_not_found_code(error):
+                    return None, _previous_response_not_found_error(response_marker), 400
                 return None, {"error": error}, 502
             if event_type == "error":
                 clear_responses_reuse_state(session_id)
                 retain_upstream = False
                 error = event.get("error") if isinstance(event.get("error"), dict) else {"message": "Upstream websocket error"}
+                if response_marker and _has_previous_response_not_found_code(error):
+                    return None, _previous_response_not_found_error(response_marker), 400
                 status_code = event.get("status_code") if isinstance(event.get("status_code"), int) else 502
                 return None, {"error": error}, status_code
             if event_type == "response.completed":
@@ -269,6 +290,8 @@ def _collect_response(
     except ResponsesWebsocketBridgeProtocolError as exc:
         clear_responses_reuse_state(session_id)
         retain_upstream = False
+        if response_marker:
+            return None, _previous_response_not_found_error(response_marker), 400
         return None, {"error": {"message": str(exc)}}, 502
     finally:
         _release_upstream_websocket(
@@ -332,15 +355,7 @@ def send_responses_request_via_websocket(
         else:
             upstream_ws = _connect_upstream_websocket()
     except ResponsesWebsocketSessionNotFoundError:
-        return _json_response(
-            {
-                "error": {
-                    "message": f"No response found for previous_response_id {response_marker}.",
-                    "code": "previous_response_not_found",
-                }
-            },
-            status_code=400,
-        )
+        return _json_response(_previous_response_not_found_error(response_marker), status_code=400)
     except ResponsesWebsocketSessionConflictError as exc:
         return _json_response(
             {"error": {"message": str(exc)}},
@@ -380,6 +395,11 @@ def send_responses_request_via_websocket(
             retained_lease=retained_lease,
             retain=False,
         )
+        if response_marker:
+            return _json_response(
+                _previous_response_not_found_error(response_marker),
+                status_code=400,
+            )
         return _json_response(
             {"error": {"message": f"Upstream websocket request send failed: {exc}"}},
             status_code=502,
@@ -401,6 +421,7 @@ def send_responses_request_via_websocket(
         session_id=session_id,
         verbose=verbose,
         retained_lease=retained_lease,
+        response_marker=response_marker,
     )
     if error_obj is not None:
         return _json_response(error_obj, status_code=status_code)

@@ -2256,8 +2256,8 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
             )
 
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(second.status_code, 502)
-        self.assertIn("request send failed", second.get_json()["error"]["message"])
+        self.assertEqual(second.status_code, 400)
+        self.assertEqual(second.get_json()["error"]["code"], "previous_response_not_found")
         self.assertEqual(third.status_code, 400)
         self.assertEqual(third.get_json()["error"]["code"], "previous_response_not_found")
         self.assertEqual(mock_connect.call_count, 1)
@@ -2314,9 +2314,58 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
             )
 
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(second.status_code, 502)
+        self.assertEqual(second.status_code, 400)
+        self.assertEqual(second.get_json()["error"]["code"], "previous_response_not_found")
         self.assertEqual(third.status_code, 400)
         self.assertEqual(third.get_json()["error"]["code"], "previous_response_not_found")
+        self.assertEqual(mock_connect.call_count, 1)
+        self.assertEqual(first_upstream.close_calls, 1)
+
+    @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
+    def test_stateful_bridge_closed_retained_websocket_returns_previous_response_not_found(self, mock_connect, _mock_auth) -> None:
+        first_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps(
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_ws_stateful_closed_1", "object": "response", "status": "in_progress"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "response.completed",
+                        "response": {"id": "resp_ws_stateful_closed_1", "object": "response", "status": "completed", "output": []},
+                    }
+                ),
+            ]
+        )
+        mock_connect.return_value = first_upstream
+
+        with self.app.test_request_context("/v1/responses", method="POST"):
+            first = responses_websocket_bridge.send_responses_request_via_websocket(
+                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                session_id="session-fixed",
+                stream=False,
+                stateful=True,
+            )
+            first_upstream.closed = True
+            second = responses_websocket_bridge.send_responses_request_via_websocket(
+                payload={
+                    "type": "response.create",
+                    "model": "gpt-5.4",
+                    "stream": True,
+                    "previous_response_id": "resp_ws_stateful_closed_1",
+                },
+                session_id="session-fixed",
+                stream=False,
+                stateful=True,
+                explicit_previous_response_id=True,
+            )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 400)
+        self.assertEqual(second.get_json()["error"]["code"], "previous_response_not_found")
         self.assertEqual(mock_connect.call_count, 1)
         self.assertEqual(first_upstream.close_calls, 1)
 
