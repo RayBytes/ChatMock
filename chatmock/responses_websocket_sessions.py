@@ -19,9 +19,13 @@ class ResponsesWebsocketSessionCapacityError(RuntimeError):
     pass
 
 
+class ResponsesWebsocketSessionNotFoundError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class RetainedUpstreamWebsocketLease:
-    session_id: str
+    response_id: str | None
     upstream_ws: Any
     created: bool
 
@@ -34,6 +38,7 @@ class _RetainedUpstreamWebsocketEntry:
 
 
 _SESSIONS: OrderedDict[str, _RetainedUpstreamWebsocketEntry] = OrderedDict()
+_ANONYMOUS_LEASES: dict[int, Any] = {}
 
 
 def _close_upstream_websocket(upstream_ws: Any) -> None:
@@ -63,29 +68,33 @@ def _is_upstream_websocket_marked_closed(upstream_ws: Any) -> bool:
     return False
 
 
-def _close_entry_locked(session_id: str) -> None:
-    entry = _SESSIONS.pop(session_id, None)
+def _close_entry_locked(response_id: str) -> None:
+    entry = _SESSIONS.pop(response_id, None)
     if entry is None:
         return
     _close_upstream_websocket(entry.upstream_ws)
 
 
 def _evict_closed_entries_locked() -> None:
-    for session_id, entry in list(_SESSIONS.items()):
+    for response_id, entry in list(_SESSIONS.items()):
         if entry.in_use:
             continue
         if _is_upstream_websocket_marked_closed(entry.upstream_ws):
-            _close_entry_locked(session_id)
+            _close_entry_locked(response_id)
+
+
+def _active_session_count_locked() -> int:
+    return len(_SESSIONS) + len(_ANONYMOUS_LEASES)
 
 
 def _evict_to_capacity_locked(max_sessions: int) -> None:
     _evict_closed_entries_locked()
-    while len(_SESSIONS) >= max_sessions:
+    while _active_session_count_locked() >= max_sessions:
         evicted = False
-        for session_id, entry in list(_SESSIONS.items()):
+        for response_id, entry in list(_SESSIONS.items()):
             if entry.in_use:
                 continue
-            _close_entry_locked(session_id)
+            _close_entry_locked(response_id)
             evicted = True
             break
         if not evicted:
@@ -94,45 +103,56 @@ def _evict_to_capacity_locked(max_sessions: int) -> None:
             )
 
 
+def _normalize_response_id(response_id: str | None) -> str | None:
+    if not isinstance(response_id, str):
+        return None
+    normalized = response_id.strip()
+    return normalized or None
+
+
 def acquire_retained_upstream_websocket(
-    session_id: str,
+    response_id: str | None,
     create_upstream_websocket: Callable[[], Any],
     *,
     max_sessions: int = DEFAULT_MAX_RETAINED_UPSTREAM_WEBSOCKETS,
 ) -> RetainedUpstreamWebsocketLease:
     effective_max_sessions = _normalize_max_sessions(max_sessions)
     now = time.monotonic()
+    normalized_response_id = _normalize_response_id(response_id)
 
     with _LOCK:
-        entry = _SESSIONS.get(session_id)
+        entry = None
+        if normalized_response_id is not None:
+            entry = _SESSIONS.get(normalized_response_id)
         if entry is not None:
             if entry.in_use:
                 raise ResponsesWebsocketSessionConflictError(
-                    f"A stateful HTTP websocket bridge request for session '{session_id}' is already in progress."
+                    f"A stateful HTTP websocket bridge request for response '{normalized_response_id}' is already in progress."
                 )
             if _is_upstream_websocket_marked_closed(entry.upstream_ws):
-                _close_entry_locked(session_id)
+                _close_entry_locked(normalized_response_id)
                 entry = None
+
+        if entry is None and normalized_response_id is not None:
+            raise ResponsesWebsocketSessionNotFoundError(
+                f"No retained upstream websocket exists for response '{normalized_response_id}'."
+            )
 
         if entry is None:
             _evict_to_capacity_locked(effective_max_sessions)
             upstream_ws = create_upstream_websocket()
-            _SESSIONS[session_id] = _RetainedUpstreamWebsocketEntry(
-                upstream_ws=upstream_ws,
-                in_use=True,
-                last_used=now,
-            )
+            _ANONYMOUS_LEASES[id(upstream_ws)] = upstream_ws
             return RetainedUpstreamWebsocketLease(
-                session_id=session_id,
+                response_id=None,
                 upstream_ws=upstream_ws,
                 created=True,
             )
 
         entry.in_use = True
         entry.last_used = now
-        _SESSIONS.move_to_end(session_id)
+        _SESSIONS.move_to_end(normalized_response_id)
         return RetainedUpstreamWebsocketLease(
-            session_id=session_id,
+            response_id=normalized_response_id,
             upstream_ws=entry.upstream_ws,
             created=False,
         )
@@ -142,29 +162,58 @@ def release_retained_upstream_websocket(
     lease: RetainedUpstreamWebsocketLease,
     *,
     retain: bool,
+    response_id: str | None = None,
 ) -> None:
+    retained_response_id = _normalize_response_id(response_id) or lease.response_id
     with _LOCK:
-        entry = _SESSIONS.get(lease.session_id)
+        anonymous_upstream = _ANONYMOUS_LEASES.pop(id(lease.upstream_ws), None)
+        if anonymous_upstream is not None:
+            if retain and retained_response_id and not _is_upstream_websocket_marked_closed(lease.upstream_ws):
+                _SESSIONS[retained_response_id] = _RetainedUpstreamWebsocketEntry(
+                    upstream_ws=lease.upstream_ws,
+                    in_use=False,
+                    last_used=time.monotonic(),
+                )
+                _SESSIONS.move_to_end(retained_response_id)
+                return
+            _close_upstream_websocket(lease.upstream_ws)
+            return
+
+        if lease.response_id is None:
+            if not retain:
+                _close_upstream_websocket(lease.upstream_ws)
+            return
+
+        entry = _SESSIONS.get(lease.response_id)
         if entry is None or entry.upstream_ws is not lease.upstream_ws:
             if not retain:
                 _close_upstream_websocket(lease.upstream_ws)
             return
 
-        if retain and not _is_upstream_websocket_marked_closed(entry.upstream_ws):
+        if retain and retained_response_id and not _is_upstream_websocket_marked_closed(entry.upstream_ws):
+            if retained_response_id != lease.response_id:
+                _SESSIONS.pop(lease.response_id, None)
+                _SESSIONS[retained_response_id] = entry
             entry.in_use = False
             entry.last_used = time.monotonic()
-            _SESSIONS.move_to_end(lease.session_id)
+            _SESSIONS.move_to_end(retained_response_id)
             return
 
-        _close_entry_locked(lease.session_id)
+        _close_entry_locked(lease.response_id)
 
 
-def evict_retained_upstream_websocket(session_id: str) -> None:
+def evict_retained_upstream_websocket(response_id: str | None) -> None:
+    normalized_response_id = _normalize_response_id(response_id)
+    if normalized_response_id is None:
+        return
     with _LOCK:
-        _close_entry_locked(session_id)
+        _close_entry_locked(normalized_response_id)
 
 
 def reset_retained_upstream_websocket_sessions() -> None:
     with _LOCK:
-        for session_id in list(_SESSIONS.keys()):
-            _close_entry_locked(session_id)
+        for response_id in list(_SESSIONS.keys()):
+            _close_entry_locked(response_id)
+        for upstream_ws in list(_ANONYMOUS_LEASES.values()):
+            _close_upstream_websocket(upstream_ws)
+        _ANONYMOUS_LEASES.clear()

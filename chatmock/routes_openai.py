@@ -59,18 +59,6 @@ def _error_json_response(message: str, status_code: int) -> Response:
     return resp
 
 
-def _require_explicit_stateful_http_session_id() -> tuple[str | None, Response | None]:
-    client_session_id = extract_client_session_id(request.headers)
-    if isinstance(client_session_id, str):
-        client_session_id = client_session_id.strip()
-    if client_session_id:
-        return client_session_id, None
-    return None, _error_json_response(
-        "Stateful HTTP websocket bridge mode requires a non-empty X-Session-Id or session_id header.",
-        400,
-    )
-
-
 def _log_json(prefix: str, payload: Any) -> None:
     try:
         print(f"{prefix}\n{json.dumps(payload, indent=2, ensure_ascii=False)}")
@@ -625,15 +613,6 @@ def responses_create() -> Response:
         return jsonify(err), 400
 
     client_session_id = extract_client_session_id(request.headers)
-    if stateful_http_bridge_enabled:
-        client_session_id, error_resp = _require_explicit_stateful_http_session_id()
-        if error_resp is not None:
-            if verbose:
-                _log_json(
-                    "OUT POST /v1/responses",
-                    {"error": {"message": error_resp.get_json()["error"]["message"]}},
-                )
-            return error_resp
 
     try:
         normalized = normalize_responses_payload(
@@ -652,13 +631,27 @@ def responses_create() -> Response:
     if normalized.service_tier_resolution.warning_message and verbose:
         print(f"[FastMode] {normalized.service_tier_resolution.warning_message}")
 
-    prepared = prepare_responses_request_for_session(
-        normalized.session_id,
-        normalized.payload,
-        allow_previous_response_id=stateful_http_bridge_enabled,
+    explicit_previous_response_id = (
+        isinstance(normalized.payload.get("previous_response_id"), str)
+        and bool(normalized.payload.get("previous_response_id").strip())
     )
-    stream_req = bool(prepared.payload.get("stream", False))
-    upstream_request_payload = dict(prepared.payload)
+    if stateful_http_bridge_enabled:
+        prepared_payload = dict(normalized.payload)
+        if not explicit_previous_response_id:
+            prepared_payload.pop("previous_response_id", None)
+    else:
+        prepared = prepare_responses_request_for_session(
+            normalized.session_id,
+            normalized.payload,
+            allow_previous_response_id=False,
+        )
+        prepared_payload = dict(prepared.payload)
+        explicit_previous_response_id = bool(
+            getattr(prepared, "explicit_previous_response_id", False)
+        )
+
+    stream_req = bool(prepared_payload.get("stream", False))
+    upstream_request_payload = dict(prepared_payload)
     upstream_request_payload["stream"] = True
     if bool(current_app.config.get("RESPONSES_WEBSOCKET_UPSTREAM")):
         # The HTTP bridge owns one upstream websocket per HTTP request.
@@ -668,11 +661,7 @@ def responses_create() -> Response:
             stream=stream_req,
             verbose=verbose,
             stateful=stateful_http_bridge_enabled,
-            explicit_previous_response_id=getattr(
-                prepared,
-                "explicit_previous_response_id",
-                False,
-            ),
+            explicit_previous_response_id=explicit_previous_response_id,
             max_retained_sessions=current_app.config.get(
                 "RESPONSES_WEBSOCKET_UPSTREAM_MAX_RETAINED_SESSIONS"
             ),

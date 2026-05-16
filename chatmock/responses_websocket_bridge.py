@@ -11,6 +11,7 @@ from .responses_websocket_sessions import (
     DEFAULT_MAX_RETAINED_UPSTREAM_WEBSOCKETS,
     ResponsesWebsocketSessionCapacityError,
     ResponsesWebsocketSessionConflictError,
+    ResponsesWebsocketSessionNotFoundError,
     RetainedUpstreamWebsocketLease,
     acquire_retained_upstream_websocket,
     evict_retained_upstream_websocket,
@@ -141,11 +142,16 @@ def _release_upstream_websocket(
     *,
     retained_lease: RetainedUpstreamWebsocketLease | None,
     retain: bool,
+    response_id: str | None = None,
 ) -> None:
     if retained_lease is None:
         _close_request_upstream_websocket(upstream_ws)
         return
-    release_retained_upstream_websocket(retained_lease, retain=retain)
+    release_retained_upstream_websocket(
+        retained_lease,
+        retain=retain,
+        response_id=response_id,
+    )
 
 
 def _iter_streaming_events(
@@ -156,6 +162,7 @@ def _iter_streaming_events(
     retained_lease: RetainedUpstreamWebsocketLease | None = None,
 ):
     retain_upstream = retained_lease is not None
+    retained_response_id: str | None = None
     released = False
     try:
         while True:
@@ -183,6 +190,9 @@ def _iter_streaming_events(
             if verbose:
                 _log_json("STREAM OUT /v1/responses (bridge event)", event)
             note_responses_stream_event(session_id, event)
+            response = event.get("response")
+            if isinstance(response, dict) and isinstance(response.get("id"), str):
+                retained_response_id = response.get("id")
             if event.get("type") in ("response.failed", "error"):
                 clear_responses_reuse_state(session_id)
                 retain_upstream = False
@@ -191,6 +201,7 @@ def _iter_streaming_events(
                     upstream_ws,
                     retained_lease=retained_lease,
                     retain=retain_upstream,
+                    response_id=retained_response_id,
                 )
                 released = True
             yield _encode_sse_event(event)
@@ -202,6 +213,7 @@ def _iter_streaming_events(
                 upstream_ws,
                 retained_lease=retained_lease,
                 retain=retain_upstream,
+                response_id=retained_response_id,
             )
 
 
@@ -215,6 +227,7 @@ def _collect_response(
     response_obj: Dict[str, Any] | None = None
     completed_output_items: list[Dict[str, Any]] = []
     retain_upstream = retained_lease is not None
+    retained_response_id: str | None = None
     try:
         while True:
             event = _recv_upstream_event(upstream_ws)
@@ -233,6 +246,8 @@ def _collect_response(
             response = event.get("response")
             if isinstance(response, dict):
                 response_obj = response
+                if isinstance(response.get("id"), str):
+                    retained_response_id = response.get("id")
 
             if event_type == "response.failed":
                 clear_responses_reuse_state(session_id)
@@ -260,6 +275,7 @@ def _collect_response(
             upstream_ws,
             retained_lease=retained_lease,
             retain=retain_upstream,
+            response_id=retained_response_id,
         )
 
 
@@ -273,26 +289,27 @@ def send_responses_request_via_websocket(
     explicit_previous_response_id: bool = False,
     max_retained_sessions: int = DEFAULT_MAX_RETAINED_UPSTREAM_WEBSOCKETS,
 ) -> Response:
-    # HTTP bridge mode is transport-only: one HTTP request owns one upstream
-    # websocket connection, while session.py remains the only reuse-state owner.
-    if stateful and explicit_previous_response_id:
-        evict_retained_upstream_websocket(session_id)
+    explicit_previous_response_id_value = payload.get("previous_response_id")
+    response_marker = (
+        explicit_previous_response_id_value.strip()
+        if stateful
+        and explicit_previous_response_id
+        and isinstance(explicit_previous_response_id_value, str)
+        and explicit_previous_response_id_value.strip()
+        else None
+    )
 
-    access_token, account_id = get_effective_chatgpt_auth()
-    if not access_token or not account_id:
-        if stateful:
-            evict_retained_upstream_websocket(session_id)
-        clear_responses_reuse_state(session_id)
-        return _json_response(
-            {
-                "error": {
-                    "message": "Missing ChatGPT credentials. Run 'python3 chatmock.py login' first.",
-                }
-            },
-            status_code=401,
-        )
+    access_token: str | None = None
+    account_id: str | None = None
 
     def _connect_upstream_websocket():
+        nonlocal access_token, account_id
+        if access_token is None or account_id is None:
+            access_token, account_id = get_effective_chatgpt_auth()
+        if not access_token or not account_id:
+            raise RuntimeError(
+                "Missing ChatGPT credentials. Run 'python3 chatmock.py login' first."
+            )
         return connect_upstream_websocket(
             build_upstream_websocket_url(),
             build_upstream_headers(
@@ -307,13 +324,23 @@ def send_responses_request_via_websocket(
     try:
         if stateful:
             retained_lease = acquire_retained_upstream_websocket(
-                session_id,
+                response_marker,
                 _connect_upstream_websocket,
                 max_sessions=max_retained_sessions,
             )
             upstream_ws = retained_lease.upstream_ws
         else:
             upstream_ws = _connect_upstream_websocket()
+    except ResponsesWebsocketSessionNotFoundError:
+        return _json_response(
+            {
+                "error": {
+                    "message": f"No response found for previous_response_id {response_marker}.",
+                    "code": "previous_response_not_found",
+                }
+            },
+            status_code=400,
+        )
     except ResponsesWebsocketSessionConflictError as exc:
         return _json_response(
             {"error": {"message": str(exc)}},
@@ -327,8 +354,18 @@ def send_responses_request_via_websocket(
         )
     except Exception as exc:
         clear_responses_reuse_state(session_id)
-        if stateful:
-            evict_retained_upstream_websocket(session_id)
+        if stateful and response_marker:
+            evict_retained_upstream_websocket(response_marker)
+        if not stateful and isinstance(exc, RuntimeError) and str(exc).startswith("Missing ChatGPT credentials"):
+            return _json_response(
+                {"error": {"message": str(exc)}},
+                status_code=401,
+            )
+        if stateful and isinstance(exc, RuntimeError) and str(exc).startswith("Missing ChatGPT credentials"):
+            return _json_response(
+                {"error": {"message": str(exc)}},
+                status_code=401,
+            )
         return _json_response(
             {"error": {"message": f"Upstream websocket connection failed: {exc}"}},
             status_code=502,

@@ -1725,12 +1725,15 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
             first = self.client.post(
                 "/v1/responses",
                 json={"model": "gpt-5.4", "input": "hello"},
-                headers={"X-Session-Id": "session-fixed"},
             )
             second = self.client.post(
                 "/v1/responses",
-                json={"model": "gpt-5.4", "input": "second", "stream": True},
-                headers={"X-Session-Id": "session-fixed"},
+                json={
+                    "model": "gpt-5.4",
+                    "input": "second",
+                    "stream": True,
+                    "previous_response_id": "resp_stream_characterization_1",
+                },
             )
 
         self.assertEqual(first.status_code, 200)
@@ -1740,10 +1743,10 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
         self.assertIn('"code":"previous_response_not_found"', payload)
         self.assertIn('"status_code":400', payload)
 
-    def test_stateful_mode_applies_route_level_retained_session_capacity_limit(self) -> None:
+    def test_stateful_mode_applies_route_level_retained_session_capacity_limit_without_headers(self) -> None:
         first_request_started = threading.Event()
         release_first_request = threading.Event()
-        first_response: dict[str, Response] = {}
+        first_response: dict[str, object] = {}
         thread_errors: list[BaseException] = []
         self.app.config["RESPONSES_WEBSOCKET_UPSTREAM_MAX_RETAINED_SESSIONS"] = 1
 
@@ -1788,7 +1791,6 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
                     first_response["response"] = client.post(
                         "/v1/responses",
                         json={"model": "gpt-5.4", "input": "hello"},
-                        headers={"X-Session-Id": "session-1"},
                     )
             except BaseException as exc:  # pragma: no cover - assertion plumbing for the worker thread
                 thread_errors.append(exc)
@@ -1816,7 +1818,6 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
             second = self.client.post(
                 "/v1/responses",
                 json={"model": "gpt-5.4", "input": "second"},
-                headers={"X-Session-Id": "session-2"},
             )
 
             release_first_request.set()
@@ -2194,7 +2195,7 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
 
     @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
-    def test_stateful_bridge_request_send_failure_evicts_retained_socket(self, mock_connect, _mock_auth) -> None:
+    def test_stateful_bridge_request_send_failure_invalidates_retained_marker(self, mock_connect, _mock_auth) -> None:
         class FakeUpstreamWebsocket:
             def __init__(self, response_id: str) -> None:
                 self.fail_send = False
@@ -2230,28 +2231,41 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
             )
             first_upstream.fail_send = True
             second = responses_websocket_bridge.send_responses_request_via_websocket(
-                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                payload={
+                    "type": "response.create",
+                    "model": "gpt-5.4",
+                    "stream": True,
+                    "previous_response_id": "resp_ws_stateful_1",
+                },
                 session_id="session-fixed",
                 stream=False,
                 stateful=True,
+                explicit_previous_response_id=True,
             )
             third = responses_websocket_bridge.send_responses_request_via_websocket(
-                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                payload={
+                    "type": "response.create",
+                    "model": "gpt-5.4",
+                    "stream": True,
+                    "previous_response_id": "resp_ws_stateful_1",
+                },
                 session_id="session-fixed",
                 stream=False,
                 stateful=True,
+                explicit_previous_response_id=True,
             )
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 502)
         self.assertIn("request send failed", second.get_json()["error"]["message"])
-        self.assertEqual(third.status_code, 200)
-        self.assertEqual(mock_connect.call_count, 2)
+        self.assertEqual(third.status_code, 400)
+        self.assertEqual(third.get_json()["error"]["code"], "previous_response_not_found")
+        self.assertEqual(mock_connect.call_count, 1)
         self.assertEqual(first_upstream.close_calls, 1)
 
     @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
-    def test_stateful_bridge_protocol_error_evicts_retained_socket(self, mock_connect, _mock_auth) -> None:
+    def test_stateful_bridge_protocol_error_invalidates_retained_marker(self, mock_connect, _mock_auth) -> None:
         first_upstream = FakeUpstreamWebsocket(
             [
                 json.dumps({"type": "response.created", "response": {"id": "resp_ws_stateful_1", "object": "response", "status": "in_progress"}}),
@@ -2275,22 +2289,35 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
                 stateful=True,
             )
             second = responses_websocket_bridge.send_responses_request_via_websocket(
-                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                payload={
+                    "type": "response.create",
+                    "model": "gpt-5.4",
+                    "stream": True,
+                    "previous_response_id": "resp_ws_stateful_1",
+                },
                 session_id="session-fixed",
                 stream=False,
                 stateful=True,
+                explicit_previous_response_id=True,
             )
             third = responses_websocket_bridge.send_responses_request_via_websocket(
-                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                payload={
+                    "type": "response.create",
+                    "model": "gpt-5.4",
+                    "stream": True,
+                    "previous_response_id": "resp_ws_stateful_1",
+                },
                 session_id="session-fixed",
                 stream=False,
                 stateful=True,
+                explicit_previous_response_id=True,
             )
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 502)
-        self.assertEqual(third.status_code, 200)
-        self.assertEqual(mock_connect.call_count, 2)
+        self.assertEqual(third.status_code, 400)
+        self.assertEqual(third.get_json()["error"]["code"], "previous_response_not_found")
+        self.assertEqual(mock_connect.call_count, 1)
         self.assertEqual(first_upstream.close_calls, 1)
 
 
