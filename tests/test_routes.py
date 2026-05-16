@@ -1513,7 +1513,16 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
 
         body = response.get_json()
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(body.get("code"), "previous_response_not_found")
+        self.assertEqual(
+            body.get("message"),
+            "No response found for previous_response_id resp_missing_stateful_marker.",
+        )
         self.assertEqual(body.get("error", {}).get("code"), "previous_response_not_found")
+        self.assertEqual(
+            body.get("error", {}).get("message"),
+            "No response found for previous_response_id resp_missing_stateful_marker.",
+        )
 
     def test_stateful_mode_returns_retryable_previous_response_not_found_for_lost_retained_socket(self) -> None:
         first_upstream = FakeUpstreamWebsocket(

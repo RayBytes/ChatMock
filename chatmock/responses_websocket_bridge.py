@@ -62,6 +62,8 @@ def _previous_response_not_found_error(response_marker: str | None) -> Dict[str,
     if response_marker:
         message = f"No response found for previous_response_id {response_marker}."
     return {
+        "code": "previous_response_not_found",
+        "message": message,
         "error": {
             "message": message,
             "code": "previous_response_not_found",
