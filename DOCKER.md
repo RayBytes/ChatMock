@@ -37,8 +37,11 @@ Set `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true` to opt into websocket upst
 - The client-facing request still uses HTTP.
 - With only `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true`, HTTP follow-up requests stay one-shot. ChatMock does not reuse an upstream websocket across separate HTTP requests and does not automatically reuse `previous_response_id`.
 - Set `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL=true` as well to enable the stateful bridge mode. This mode requires websocket-upstream mode; it is not valid on its own.
-- Stateful HTTP requests must include a non-empty `X-Session-Id` or `session_id` header. Reuse is keyed by that explicit session id.
-- In stateful mode, streaming HTTP `/v1/responses` are buffered inside ChatMock until the upstream response completes, then returned as SSE. Clients do not receive incremental SSE delivery in that mode.
+- In stateful mode, the first HTTP turn starts a new conversation. It does not require `previous_response_id`, and blank explicit `X-Session-Id` or `session_id` headers do not block that first-turn request.
+- Stateful follow-up turns continue by sending `previous_response_id`. ChatMock retains websocket ownership by response marker rather than by explicit session header.
+- Repeating the same follow-up marker is a deterministic conflict that returns HTTP `409`.
+- For non-streaming stateful HTTP requests, a stale marker or lost retained socket returns HTTP `400` with `error.code=previous_response_not_found`. Clients such as VS Code can retry without `previous_response_id`.
+- In stateful mode, streaming HTTP `/v1/responses` are buffered inside ChatMock until the upstream response completes, then returned as SSE. Invalid-marker parity is not provided in this change: the current behavior is HTTP `200` plus an SSE-embedded error characterization, not a pre-commit HTTP `400`.
 - Retained websocket ownership is process-local only. There is no shared registry across workers, containers, or processes, so follow-up requests must keep hitting the same ChatMock process.
 - If the websocket upstream path fails, the request fails clearly instead of silently falling back to the legacy HTTP POST upstream transport.
 - Rollback is immediate: set `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL=false` or unset it, and ChatMock returns to the existing one-shot bridge behavior.
@@ -65,11 +68,13 @@ Confirm the second response behaves like a fresh one-shot request rather than co
 
 Stateful mode (`CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true` and `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL=true`):
 
-1. Restart `chatmock` after changing the environment variable, then rerun the same HTTP `/v1/responses` request.
-2. Send both requests with the same non-empty `X-Session-Id` or `session_id` header.
-3. Confirm the second response continues the conversation and can answer with `ALPHA-42`.
-4. Keep both requests on the same ChatMock process; cross-worker or shared-registry follow-up reuse is not supported.
-5. If you intentionally break websocket upstream connectivity, confirm the request fails clearly instead of silently succeeding through the legacy HTTP POST upstream path.
+1. Restart `chatmock` after changing the environment variable, then send a first HTTP `/v1/responses` request without `previous_response_id`. Optionally send a blank `X-Session-Id` or `session_id` header and confirm it does not block the request.
+2. Send a second request with `previous_response_id` from the first turn and confirm the conversation continues and can answer with `ALPHA-42`.
+3. Repeat the same follow-up request for that marker and confirm the conflict is deterministic and returns HTTP `409`.
+4. For a non-streaming follow-up, force a stale marker or lost retained socket and confirm HTTP `400` with `error.code=previous_response_not_found`, so the client can retry without `previous_response_id`.
+5. For a streaming follow-up with an invalid marker, confirm the current limitation: HTTP `200` with an SSE-embedded error characterization, not a pre-commit HTTP `400`.
+6. Keep the follow-up requests on the same ChatMock process; cross-worker or shared-registry follow-up reuse is not supported.
+7. If you intentionally break websocket upstream connectivity, confirm the request fails clearly instead of silently succeeding through the legacy HTTP POST upstream path.
 
 ## Test
 

@@ -173,17 +173,24 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 - `--responses-websocket-upstream` enables a transport-only bridge for HTTP `/v1/responses`. The client still uses HTTP, but ChatMock sends the upstream request over websocket.
 - In transport-only mode, HTTP follow-up requests stay one-shot: ChatMock does not reuse an upstream websocket across requests and still does not reuse `previous_response_id` automatically.
 - `--responses-websocket-upstream-stateful` adds retained follow-up state on top of websocket-upstream mode. It requires `--responses-websocket-upstream` and startup fails if websocket-upstream mode is not also enabled.
-- In stateful mode, every stateful HTTP request must include a non-empty `X-Session-Id` or `session_id` header. Reuse is keyed by that explicit session id.
-- In stateful mode, streaming HTTP `/v1/responses` are buffered inside ChatMock until the upstream response completes, then returned as SSE. Clients do not receive incremental SSE delivery in that mode.
+- In stateful mode, the first HTTP turn starts a new conversation. It does not require `previous_response_id`, and blank explicit `X-Session-Id` or `session_id` headers do not block that first-turn request.
+- Stateful follow-up turns continue by sending `previous_response_id`. ChatMock retains websocket ownership by response marker rather than by explicit session header.
+- Repeating the same follow-up marker is a deterministic conflict that returns HTTP `409`.
+- For non-streaming stateful HTTP requests, a stale marker or lost retained socket returns HTTP `400` with `error.code=previous_response_not_found`. Clients such as VS Code can retry without `previous_response_id`.
+- In stateful mode, streaming HTTP `/v1/responses` are buffered inside ChatMock until the upstream response completes, then returned as SSE. Invalid-marker parity is not provided in this change: the current behavior is HTTP `200` plus an SSE-embedded error characterization, not a pre-commit HTTP `400`.
 - Stateful retained websocket ownership is process-local only. There is no cross-worker, cross-process, or shared-registry guarantee, so follow-up requests must reach the same ChatMock process.
 - If the websocket upstream path fails, the request fails clearly instead of silently falling back to the legacy HTTP POST upstream transport.
 - Rollback is a config change only: disable `--responses-websocket-upstream-stateful` and ChatMock returns to the existing one-shot websocket-bridge behavior.
 
 Manual verification:
-1. Default-off regression: start `chatmock serve --responses-websocket-upstream` without `--responses-websocket-upstream-stateful`, then send two HTTP `/v1/responses` requests with the same `X-Session-Id`. Example prompts: first `Remember the token ALPHA-42.`, then `What token did I ask you to remember?`. Confirm the second request behaves like a fresh one-shot request rather than a retained follow-up.
-2. Stateful mode: restart with both `--responses-websocket-upstream` and `--responses-websocket-upstream-stateful`, then send the same two HTTP `/v1/responses` requests with the same non-empty `X-Session-Id` (or `session_id`) header. Confirm the second request continues the conversation and can answer with `ALPHA-42`.
-3. For the stateful check, send the follow-up to the same ChatMock process. Multi-worker or shared-registry behavior is not provided.
-4. In either websocket-upstream mode, if you intentionally break websocket upstream connectivity, confirm the request fails clearly instead of silently succeeding through the legacy HTTP POST upstream path.
+1. Default-off regression: start `chatmock serve --responses-websocket-upstream` without `--responses-websocket-upstream-stateful`, then send two HTTP `/v1/responses` requests with the same optional `X-Session-Id`. Example prompts: first `Remember the token ALPHA-42.`, then `What token did I ask you to remember?`. Confirm the second request behaves like a fresh one-shot request rather than a retained follow-up.
+2. Stateful mode: restart with both `--responses-websocket-upstream` and `--responses-websocket-upstream-stateful`, then send a first HTTP `/v1/responses` request without `previous_response_id`. Optionally send a blank `X-Session-Id` or `session_id` header and confirm it does not block the request.
+3. Send a second request with `previous_response_id` from the first turn and confirm the conversation continues and can answer with `ALPHA-42`.
+4. Repeat the same follow-up request for that marker and confirm the conflict is deterministic and returns HTTP `409`.
+5. For a non-streaming follow-up, force a stale marker or lost retained socket and confirm HTTP `400` with `error.code=previous_response_not_found`, so the client can retry without `previous_response_id`.
+6. For a streaming follow-up with an invalid marker, confirm the current limitation: HTTP `200` with an SSE-embedded error characterization, not a pre-commit HTTP `400`.
+7. For the stateful checks, send the follow-up to the same ChatMock process. Multi-worker or shared-registry behavior is not provided.
+8. In either websocket-upstream mode, if you intentionally break websocket upstream connectivity, confirm the request fails clearly instead of silently succeeding through the legacy HTTP POST upstream path.
 
 </details>
 
