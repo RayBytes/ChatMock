@@ -968,6 +968,107 @@ class ResponsesWebsocketUpstreamContractTests(unittest.TestCase):
         self.assertTrue(mock_bridge.call_args.kwargs["stream"])
         self.assertTrue(mock_bridge.call_args.kwargs["payload"]["stream"])
 
+    def test_enabled_mode_streaming_completed_event_backfills_output_after_visible_delta(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        client = app.test_client()
+        fake_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps(
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_stream_terminal", "object": "response", "status": "in_progress"},
+                    }
+                ),
+                json.dumps({"type": "response.output_text.delta", "delta": "hello"}),
+                json.dumps(
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_stream_terminal",
+                            "object": "response",
+                            "status": "completed",
+                        },
+                    }
+                ),
+            ]
+        )
+
+        with (
+            patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct")),
+            patch("chatmock.responses_websocket_bridge.connect_upstream_websocket", return_value=fake_upstream),
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            response = client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello", "stream": True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content_type.startswith("text/event-stream"))
+        events = [
+            json.loads(line.removeprefix("data: "))
+            for line in response.get_data(as_text=True).splitlines()
+            if line.startswith("data: ")
+        ]
+        self.assertEqual(
+            [event["type"] for event in events],
+            ["response.created", "response.output_text.delta", "response.completed"],
+        )
+        self.assertEqual(events[1]["delta"], "hello")
+        self.assertIn("output", events[2]["response"])
+        self.assertIsInstance(events[2]["response"]["output"], list)
+
+    def test_enabled_mode_non_stream_completed_response_backfills_output_after_delta_only_upstream(self) -> None:
+        app = create_app(responses_websocket_upstream=True)
+        client = app.test_client()
+        fake_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps(
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_nonstream_terminal", "object": "response", "status": "in_progress"},
+                    }
+                ),
+                json.dumps({"type": "response.output_text.delta", "delta": "hello"}),
+                json.dumps(
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_nonstream_terminal",
+                            "object": "response",
+                            "status": "completed",
+                        },
+                    }
+                ),
+            ]
+        )
+
+        with (
+            patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct")),
+            patch("chatmock.responses_websocket_bridge.connect_upstream_websocket", return_value=fake_upstream),
+            patch(
+                "chatmock.routes_openai.start_upstream_raw_request",
+                side_effect=AssertionError(
+                    "HTTP upstream transport should not be used when websocket upstream mode is enabled"
+                ),
+            ),
+        ):
+            response = client.post(
+                "/v1/responses",
+                json={"model": "gpt-5.4", "input": "hello"},
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], "resp_nonstream_terminal")
+        self.assertIn("output", body)
+        self.assertIsInstance(body["output"], list)
+
     def test_enabled_mode_keeps_http_previous_response_id_disabled(self) -> None:
         app = create_app(responses_websocket_upstream=True)
         client = app.test_client()
