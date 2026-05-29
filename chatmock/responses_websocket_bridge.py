@@ -155,6 +155,31 @@ def _send_upstream_request(upstream_ws, payload: Dict[str, Any], *, verbose: boo
     upstream_ws.send(json.dumps(request_event))
 
 
+def _normalize_completed_response_event(
+    event: Dict[str, Any],
+    *,
+    completed_output_items: list[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if event.get("type") != "response.completed":
+        return event
+
+    response = event.get("response")
+    if not isinstance(response, dict):
+        return event
+
+    if isinstance(response.get("output"), list):
+        return event
+
+    normalized_output = completed_output_items if completed_output_items else []
+    return {
+        **event,
+        "response": {
+            **response,
+            "output": normalized_output,
+        },
+    }
+
+
 def _release_upstream_websocket(
     upstream_ws,
     *,
@@ -179,6 +204,7 @@ def _iter_streaming_events(
     verbose: bool,
     retained_lease: RetainedUpstreamWebsocketLease | None = None,
 ):
+    completed_output_items: list[Dict[str, Any]] = []
     retain_upstream = retained_lease is not None
     retained_response_id: str | None = None
     released = False
@@ -204,6 +230,17 @@ def _iter_streaming_events(
                 released = True
                 yield _encode_sse_event(error_event)
                 return
+
+            event_type = event.get("type")
+            if event_type == "response.output_item.done":
+                item = event.get("item")
+                if isinstance(item, dict):
+                    completed_output_items.append(item)
+            elif event_type == "response.completed":
+                event = _normalize_completed_response_event(
+                    event,
+                    completed_output_items=completed_output_items,
+                )
 
             if verbose:
                 _log_json("STREAM OUT /v1/responses (bridge event)", event)
@@ -250,17 +287,22 @@ def _collect_response(
     try:
         while True:
             event = _recv_upstream_event(upstream_ws)
-            if verbose:
-                _log_json("STREAM OUT /v1/responses (bridge event)", event)
-
             event_type = event.get("type")
-            if event_type != "response.completed":
-                note_responses_stream_event(session_id, event)
-
             if event_type == "response.output_item.done":
                 item = event.get("item")
                 if isinstance(item, dict):
                     completed_output_items.append(item)
+            elif event_type == "response.completed":
+                event = _normalize_completed_response_event(
+                    event,
+                    completed_output_items=completed_output_items,
+                )
+
+            if verbose:
+                _log_json("STREAM OUT /v1/responses (bridge event)", event)
+
+            if event_type != "response.completed":
+                note_responses_stream_event(session_id, event)
 
             response = event.get("response")
             if isinstance(response, dict):
@@ -284,10 +326,6 @@ def _collect_response(
                 status_code = event.get("status_code") if isinstance(event.get("status_code"), int) else 502
                 return None, {"error": error}, status_code
             if event_type == "response.completed":
-                if isinstance(response_obj, dict):
-                    output = response_obj.get("output")
-                    if (not isinstance(output, list) or not output) and completed_output_items:
-                        response_obj = {**response_obj, "output": completed_output_items}
                 return response_obj, None, 200
     except ResponsesWebsocketBridgeProtocolError as exc:
         clear_responses_reuse_state(session_id)
