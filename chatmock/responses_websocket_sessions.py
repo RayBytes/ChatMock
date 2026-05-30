@@ -37,8 +37,15 @@ class _RetainedUpstreamWebsocketEntry:
     last_used: float
 
 
+@dataclass(frozen=True)
+class _PendingUpstreamWebsocketReservation:
+    token: object
+    last_used: float
+
+
 _SESSIONS: OrderedDict[str, _RetainedUpstreamWebsocketEntry] = OrderedDict()
 _ANONYMOUS_LEASES: dict[int, Any] = {}
+_PENDING_ANONYMOUS_RESERVATIONS: dict[int, _PendingUpstreamWebsocketReservation] = {}
 
 
 def _close_upstream_websocket(upstream_ws: Any) -> None:
@@ -84,7 +91,11 @@ def _evict_closed_entries_locked() -> None:
 
 
 def _active_session_count_locked() -> int:
-    return len(_SESSIONS) + len(_ANONYMOUS_LEASES)
+    return (
+        len(_SESSIONS)
+        + len(_ANONYMOUS_LEASES)
+        + len(_PENDING_ANONYMOUS_RESERVATIONS)
+    )
 
 
 def _evict_to_capacity_locked(max_sessions: int) -> None:
@@ -119,6 +130,7 @@ def acquire_retained_upstream_websocket(
     effective_max_sessions = _normalize_max_sessions(max_sessions)
     now = time.monotonic()
     normalized_response_id = _normalize_response_id(response_id)
+    reservation_token: object | None = None
 
     with _LOCK:
         entry = None
@@ -140,21 +152,38 @@ def acquire_retained_upstream_websocket(
 
         if entry is None:
             _evict_to_capacity_locked(effective_max_sessions)
-            upstream_ws = create_upstream_websocket()
-            _ANONYMOUS_LEASES[id(upstream_ws)] = upstream_ws
+            reservation_token = object()
+            _PENDING_ANONYMOUS_RESERVATIONS[id(reservation_token)] = _PendingUpstreamWebsocketReservation(
+                token=reservation_token,
+                last_used=now,
+            )
+        else:
+            entry.in_use = True
+            entry.last_used = now
+            _SESSIONS.move_to_end(normalized_response_id)
             return RetainedUpstreamWebsocketLease(
-                response_id=None,
-                upstream_ws=upstream_ws,
-                created=True,
+                response_id=normalized_response_id,
+                upstream_ws=entry.upstream_ws,
+                created=False,
             )
 
-        entry.in_use = True
-        entry.last_used = now
-        _SESSIONS.move_to_end(normalized_response_id)
+    if reservation_token is None:
+        raise RuntimeError("Anonymous upstream websocket reservation was not created.")
+
+    try:
+        upstream_ws = create_upstream_websocket()
+    except Exception:
+        with _LOCK:
+            _PENDING_ANONYMOUS_RESERVATIONS.pop(id(reservation_token), None)
+        raise
+
+    with _LOCK:
+        _PENDING_ANONYMOUS_RESERVATIONS.pop(id(reservation_token), None)
+        _ANONYMOUS_LEASES[id(upstream_ws)] = upstream_ws
         return RetainedUpstreamWebsocketLease(
-            response_id=normalized_response_id,
-            upstream_ws=entry.upstream_ws,
-            created=False,
+            response_id=None,
+            upstream_ws=upstream_ws,
+            created=True,
         )
 
 
@@ -217,3 +246,4 @@ def reset_retained_upstream_websocket_sessions() -> None:
         for upstream_ws in list(_ANONYMOUS_LEASES.values()):
             _close_upstream_websocket(upstream_ws)
         _ANONYMOUS_LEASES.clear()
+        _PENDING_ANONYMOUS_RESERVATIONS.clear()
