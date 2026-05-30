@@ -533,6 +533,109 @@ class RouteTests(unittest.TestCase):
             ],
         )
 
+    @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.websocket_routes.connect_upstream_websocket")
+    def test_responses_websocket_keeps_explicit_empty_output_authoritative_for_follow_up_contract(self, mock_connect, _mock_auth) -> None:
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.sent: list[str] = []
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_contract_1"}}),
+                    json.dumps(
+                        {
+                            "type": "response.output_item.done",
+                            "item": {
+                                "type": "message",
+                                "role": "assistant",
+                                "id": "msg_contract_1",
+                                "content": [{"type": "output_text", "text": "assistant output"}],
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "response.completed",
+                            "response": {"id": "resp_contract_1", "output": []},
+                        }
+                    ),
+                    json.dumps({"type": "response.created", "response": {"id": "resp_contract_2"}}),
+                    json.dumps({"type": "response.completed", "response": {"id": "resp_contract_2", "output": []}}),
+                ]
+
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                return None
+
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
+
+        app = create_app()
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+        sock.close()
+
+        server_thread = threading.Thread(
+            target=app.run,
+            kwargs={
+                "host": host,
+                "port": port,
+                "use_reloader": False,
+                "threaded": True,
+            },
+            daemon=True,
+        )
+        server_thread.start()
+        time.sleep(0.5)
+
+        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+            client.send(json.dumps({"type": "response.create", "model": "gpt-5.4", "input": "hello"}))
+            client.recv()
+            client.recv()
+            client.recv()
+            client.send(
+                json.dumps(
+                    {
+                        "type": "response.create",
+                        "model": "gpt-5.4",
+                        "input": [
+                            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+                            {
+                                "type": "message",
+                                "role": "assistant",
+                                "id": "msg_contract_1",
+                                "content": [{"type": "output_text", "text": "assistant output"}],
+                            },
+                            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+                        ],
+                    }
+                )
+            )
+            client.recv()
+            client.recv()
+
+        follow_up = json.loads(fake_upstream.sent[1])
+        self.assertNotIn("previous_response_id", follow_up)
+        self.assertEqual(
+            follow_up["input"],
+            [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "id": "msg_contract_1",
+                    "content": [{"type": "output_text", "text": "assistant output"}],
+                },
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+            ],
+        )
+
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_falls_back_to_full_create_when_non_input_fields_change(self, mock_start) -> None:
         mock_start.side_effect = [
@@ -2195,6 +2298,79 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
         self.assertEqual(fake_upstream.close_calls, 1)
         self.assertIn('data: {"type":"response.completed","response":{"id":"resp_ws_1","output":[]}}', body)
         self.assertNotIn("data: [DONE]", body)
+
+    @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
+    def test_stateful_bridge_streaming_returns_response_before_terminal_event_contract(self, mock_connect, _mock_auth) -> None:
+        first_event_received = threading.Event()
+        allow_terminal_event = threading.Event()
+        response_ready = threading.Event()
+        response_holder: dict[str, Response] = {}
+        thread_errors: list[BaseException] = []
+
+        class BlockingUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.close_calls = 0
+                self._recv_index = 0
+
+            def send(self, message: str) -> None:
+                return None
+
+            def recv(self) -> str:
+                if self._recv_index == 0:
+                    self._recv_index += 1
+                    first_event_received.set()
+                    return json.dumps({"type": "response.created", "response": {"id": "resp_stateful_stream_contract_1"}})
+                if not allow_terminal_event.wait(timeout=2):
+                    raise AssertionError("Stateful streaming contract test never released the terminal event")
+                self._recv_index += 1
+                return json.dumps(
+                    {
+                        "type": "response.completed",
+                        "response": {"id": "resp_stateful_stream_contract_1", "output": []},
+                    }
+                )
+
+            def close(self) -> None:
+                self.close_calls += 1
+                return None
+
+        def invoke_bridge() -> None:
+            try:
+                with self.app.test_request_context("/v1/responses", method="POST"):
+                    response_holder["response"] = responses_websocket_bridge.send_responses_request_via_websocket(
+                        payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                        session_id="session-stateful-stream-contract",
+                        stream=True,
+                        stateful=True,
+                    )
+                response_ready.set()
+            except BaseException as exc:  # pragma: no cover - assertion plumbing for the worker thread
+                thread_errors.append(exc)
+                response_ready.set()
+
+        mock_connect.return_value = BlockingUpstreamWebsocket()
+
+        worker = threading.Thread(target=invoke_bridge)
+        worker.start()
+        try:
+            self.assertTrue(
+                first_event_received.wait(timeout=1),
+                "Stateful streaming contract test did not receive the first upstream event",
+            )
+            self.assertTrue(
+                response_ready.wait(timeout=0.2),
+                "Stateful streaming bridge should return a Response before the terminal upstream event arrives",
+            )
+        finally:
+            allow_terminal_event.set()
+            worker.join(timeout=2)
+
+        if thread_errors:
+            raise thread_errors[0]
+        self.assertFalse(worker.is_alive(), "Stateful streaming bridge thread did not finish")
+        self.assertTrue(response_holder["response"].content_type.startswith("text/event-stream"))
+        self.assertNotIsInstance(response_holder["response"].response, list)
 
     @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
