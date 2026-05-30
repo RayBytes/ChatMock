@@ -41,7 +41,7 @@ Set `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM=true` to opt into websocket upst
 - Stateful follow-up turns continue by sending `previous_response_id`. ChatMock retains websocket ownership by response marker rather than by explicit session header.
 - Repeating the same follow-up marker is a deterministic conflict that returns HTTP `409`.
 - For non-streaming stateful HTTP requests, a stale marker or lost retained socket returns HTTP `400` with `error.code=previous_response_not_found`. Clients such as VS Code can retry without `previous_response_id`.
-- In stateful mode, streaming HTTP `/v1/responses` are buffered inside ChatMock until the upstream response completes, then returned as SSE. Invalid-marker parity is not provided in this change: the current behavior is HTTP `200` plus an SSE-embedded error characterization, not a pre-commit HTTP `400`.
+- In stateful mode, streaming HTTP `/v1/responses` now stay incremental: ChatMock passes through SSE events as the upstream websocket produces them while still finalizing retained websocket ownership when the stream completes, fails, or is aborted. Invalid-marker parity is not provided in this change: the current behavior is HTTP `200` plus an SSE-embedded error characterization, not a pre-commit HTTP `400`.
 - Retained websocket ownership is process-local only. There is no shared registry across workers, containers, or processes, so follow-up requests must keep hitting the same ChatMock process.
 - If the websocket upstream path fails, the request fails clearly instead of silently falling back to the legacy HTTP POST upstream transport.
 - Rollback is immediate: set `CHATGPT_LOCAL_RESPONSES_WEBSOCKET_UPSTREAM_STATEFUL=false` or unset it, and ChatMock returns to the existing one-shot bridge behavior.

@@ -208,6 +208,7 @@ def _iter_streaming_events(
     retain_upstream = retained_lease is not None
     retained_response_id: str | None = None
     released = False
+    terminal_event_reached = False
     try:
         while True:
             try:
@@ -252,6 +253,7 @@ def _iter_streaming_events(
                 clear_responses_reuse_state(session_id)
                 retain_upstream = False
             if _terminal_event(event):
+                terminal_event_reached = True
                 _release_upstream_websocket(
                     upstream_ws,
                     retained_lease=retained_lease,
@@ -267,7 +269,7 @@ def _iter_streaming_events(
             _release_upstream_websocket(
                 upstream_ws,
                 retained_lease=retained_lease,
-                retain=retain_upstream,
+                retain=retain_upstream and terminal_event_reached,
                 response_id=retained_response_id,
             )
 
@@ -452,8 +454,6 @@ def send_responses_request_via_websocket(
             verbose=verbose,
             retained_lease=retained_lease,
         )
-        if retained_lease is not None:
-            return _sse_response(list(stream_iter))
         return _sse_response(stream_iter)
 
     response_obj, error_obj, status_code = _collect_response(

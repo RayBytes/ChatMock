@@ -12,7 +12,10 @@ from unittest.mock import patch
 from chatmock import responses_websocket_bridge
 from chatmock.app import create_app
 from chatmock.responses_api import normalize_responses_payload
-from chatmock.responses_websocket_sessions import reset_retained_upstream_websocket_sessions
+from chatmock.responses_websocket_sessions import (
+    RetainedUpstreamWebsocketLease,
+    reset_retained_upstream_websocket_sessions,
+)
 from chatmock.session import reset_session_state
 from flask import Response
 from websockets.sync.client import connect as ws_connect
@@ -1633,6 +1636,7 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
                 "/v1/responses",
                 json={"model": "gpt-5.4", "input": "hello", "stream": True},
             )
+            first_body = first.get_data(as_text=True)
             second = self.client.post(
                 "/v1/responses",
                 json={
@@ -1642,6 +1646,7 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
                     "input": "stream follow-up",
                 },
             )
+            second_body = second.get_data(as_text=True)
             third = self.client.post(
                 "/v1/responses",
                 json={
@@ -1651,6 +1656,7 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
                     "input": "stream third",
                 },
             )
+            third_body = third.get_data(as_text=True)
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
@@ -1658,8 +1664,9 @@ class ResponsesWebsocketUpstreamStatefulContractTests(unittest.TestCase):
         self.assertEqual(mock_connect.call_count, 1)
         self.assertTrue(second.content_type.startswith("text/event-stream"))
         self.assertTrue(third.content_type.startswith("text/event-stream"))
-        self.assertIn("response.output_text.delta", second.get_data(as_text=True))
-        self.assertIn("response.output_text.delta", third.get_data(as_text=True))
+        self.assertIn("response.output_item.done", first_body)
+        self.assertIn("response.output_text.delta", second_body)
+        self.assertIn("response.output_text.delta", third_body)
         second_payload = json.loads(fake_upstream.sent[1])
         self.assertEqual(second_payload["previous_response_id"], "resp_stream_stateful_1")
         self.assertEqual(
@@ -2302,7 +2309,7 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
     @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
     def test_stateful_bridge_streaming_returns_response_before_terminal_event_contract(self, mock_connect, _mock_auth) -> None:
-        first_event_received = threading.Event()
+        recv_started = threading.Event()
         allow_terminal_event = threading.Event()
         response_ready = threading.Event()
         response_holder: dict[str, Response] = {}
@@ -2317,13 +2324,12 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
                 return None
 
             def recv(self) -> str:
-                if self._recv_index == 0:
-                    self._recv_index += 1
-                    first_event_received.set()
-                    return json.dumps({"type": "response.created", "response": {"id": "resp_stateful_stream_contract_1"}})
+                recv_started.set()
                 if not allow_terminal_event.wait(timeout=2):
                     raise AssertionError("Stateful streaming contract test never released the terminal event")
                 self._recv_index += 1
+                if self._recv_index == 1:
+                    return json.dumps({"type": "response.created", "response": {"id": "resp_stateful_stream_contract_1"}})
                 return json.dumps(
                     {
                         "type": "response.completed",
@@ -2355,14 +2361,17 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
         worker.start()
         try:
             self.assertTrue(
-                first_event_received.wait(timeout=1),
-                "Stateful streaming contract test did not receive the first upstream event",
-            )
-            self.assertTrue(
                 response_ready.wait(timeout=0.2),
                 "Stateful streaming bridge should return a Response before the terminal upstream event arrives",
             )
+            self.assertFalse(
+                recv_started.is_set(),
+                "Stateful streaming bridge should not consume the upstream iterator before the HTTP response is returned",
+            )
         finally:
+            response = response_holder.get("response")
+            if response is not None:
+                response.close()
             allow_terminal_event.set()
             worker.join(timeout=2)
 
@@ -2371,6 +2380,128 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
         self.assertFalse(worker.is_alive(), "Stateful streaming bridge thread did not finish")
         self.assertTrue(response_holder["response"].content_type.startswith("text/event-stream"))
         self.assertNotIsInstance(response_holder["response"].response, list)
+
+    @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
+    @patch("chatmock.responses_websocket_bridge._sse_response")
+    def test_stateful_streaming_passes_a_generator_to__sse_response(
+        self,
+        mock_sse_response,
+        mock_connect,
+        _mock_auth,
+    ) -> None:
+        fake_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps({"type": "response.created", "response": {"id": "resp_stateful_stream_1"}}),
+                json.dumps({"type": "response.completed", "response": {"id": "resp_stateful_stream_1", "output": []}}),
+            ]
+        )
+        mock_connect.return_value = fake_upstream
+
+        def make_response(payload_iter) -> Response:
+            return Response(payload_iter, status=200, mimetype="text/event-stream")
+
+        mock_sse_response.side_effect = make_response
+
+        with self.app.test_request_context("/v1/responses", method="POST"):
+            response = responses_websocket_bridge.send_responses_request_via_websocket(
+                payload={"type": "response.create", "model": "gpt-5.4", "stream": True},
+                session_id="session-stateful-stream-generator",
+                stream=True,
+                stateful=True,
+            )
+
+        try:
+            payload_iter = mock_sse_response.call_args.args[0]
+            self.assertTrue(inspect.isgenerator(payload_iter))
+            self.assertNotIsInstance(payload_iter, list)
+            self.assertTrue(response.content_type.startswith("text/event-stream"))
+        finally:
+            response.close()
+
+    @patch("chatmock.responses_websocket_bridge.release_retained_upstream_websocket")
+    def test_stateful_streaming_terminal_success_retains_lease_once(self, mock_release_retained) -> None:
+        fake_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps({"type": "response.created", "response": {"id": "resp_stateful_stream_success_1"}}),
+                json.dumps({"type": "response.completed", "response": {"id": "resp_stateful_stream_success_1", "output": []}}),
+            ]
+        )
+        lease = RetainedUpstreamWebsocketLease(response_id=None, upstream_ws=fake_upstream, created=True)
+
+        list(
+            responses_websocket_bridge._iter_streaming_events(
+                fake_upstream,
+                session_id="session-stateful-stream-success",
+                verbose=False,
+                retained_lease=lease,
+            )
+        )
+
+        mock_release_retained.assert_called_once_with(
+            lease,
+            retain=True,
+            response_id="resp_stateful_stream_success_1",
+        )
+
+    @patch("chatmock.responses_websocket_bridge.release_retained_upstream_websocket")
+    def test_stateful_streaming_terminal_error_releases_lease_once(self, mock_release_retained) -> None:
+        fake_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps({"type": "response.created", "response": {"id": "resp_stateful_stream_error_1"}}),
+                json.dumps(
+                    {
+                        "type": "response.failed",
+                        "response": {
+                            "id": "resp_stateful_stream_error_1",
+                            "error": {"message": "upstream failed"},
+                        },
+                    }
+                ),
+            ]
+        )
+        lease = RetainedUpstreamWebsocketLease(response_id=None, upstream_ws=fake_upstream, created=True)
+
+        list(
+            responses_websocket_bridge._iter_streaming_events(
+                fake_upstream,
+                session_id="session-stateful-stream-error",
+                verbose=False,
+                retained_lease=lease,
+            )
+        )
+
+        mock_release_retained.assert_called_once_with(
+            lease,
+            retain=False,
+            response_id="resp_stateful_stream_error_1",
+        )
+
+    @patch("chatmock.responses_websocket_bridge.release_retained_upstream_websocket")
+    def test_stateful_streaming_abort_releases_retained_lease_once(self, mock_release_retained) -> None:
+        fake_upstream = FakeUpstreamWebsocket(
+            [
+                json.dumps({"type": "response.created", "response": {"id": "resp_stateful_stream_abort_1"}}),
+                json.dumps({"type": "response.output_text.delta", "delta": "partial"}),
+            ]
+        )
+        lease = RetainedUpstreamWebsocketLease(response_id=None, upstream_ws=fake_upstream, created=True)
+
+        stream_iter = responses_websocket_bridge._iter_streaming_events(
+            fake_upstream,
+            session_id="session-stateful-stream-abort",
+            verbose=False,
+            retained_lease=lease,
+        )
+
+        next(stream_iter)
+        stream_iter.close()
+
+        mock_release_retained.assert_called_once_with(
+            lease,
+            retain=False,
+            response_id="resp_stateful_stream_abort_1",
+        )
 
     @patch("chatmock.responses_websocket_bridge.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.responses_websocket_bridge.connect_upstream_websocket")
