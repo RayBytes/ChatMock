@@ -29,6 +29,7 @@ class _ResponsesSessionState:
     last_request_payload: Dict[str, Any] | None = None
     last_response_id: str | None = None
     last_response_items: List[Dict[str, Any]] = field(default_factory=list)
+    last_authoritative_empty_response_items: List[Dict[str, Any]] = field(default_factory=list)
     inflight_request_payload: Dict[str, Any] | None = None
     inflight_track_result: bool = False
     inflight_response_id: str | None = None
@@ -134,6 +135,7 @@ def _clear_reuse_state(state: _ResponsesSessionState) -> None:
     state.last_request_payload = None
     state.last_response_id = None
     state.last_response_items = []
+    state.last_authoritative_empty_response_items = []
     state.inflight_request_payload = None
     state.inflight_track_result = False
     state.inflight_response_id = None
@@ -145,6 +147,21 @@ def _clear_inflight(state: _ResponsesSessionState) -> None:
     state.inflight_track_result = False
     state.inflight_response_id = None
     state.inflight_response_items = []
+
+
+def _resolve_response_output_items(
+    response: Dict[str, Any] | None,
+    inflight_items: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    output_items: List[Dict[str, Any]] = copy.deepcopy(inflight_items)
+    authoritative_empty_items: List[Dict[str, Any]] = []
+    if isinstance(response, dict) and "output" in response:
+        output = response.get("output")
+        if isinstance(output, list):
+            output_items = [copy.deepcopy(item) for item in output if isinstance(item, dict)]
+            if not output_items:
+                authoritative_empty_items = _conversation_output_items(copy.deepcopy(inflight_items))
+    return output_items, authoritative_empty_items
 
 
 def ensure_session_id(
@@ -209,8 +226,14 @@ def prepare_responses_request_for_session(
             baseline.extend(copy.deepcopy(state.last_response_items))
             baseline_len = len(baseline)
             if request_input[:baseline_len] == baseline and baseline_len <= len(request_input):
-                outbound_payload["input"] = copy.deepcopy(request_input[baseline_len:])
-                outbound_payload["previous_response_id"] = state.last_response_id
+                remaining_input = copy.deepcopy(request_input[baseline_len:])
+                authoritative_empty_items = state.last_authoritative_empty_response_items
+                if not (
+                    authoritative_empty_items
+                    and remaining_input[: len(authoritative_empty_items)] == authoritative_empty_items
+                ):
+                    outbound_payload["input"] = remaining_input
+                    outbound_payload["previous_response_id"] = state.last_response_id
 
         state.inflight_request_payload = full_payload
         state.inflight_track_result = True
@@ -252,12 +275,14 @@ def note_responses_stream_event(session_id: str, event: Dict[str, Any]) -> None:
             response = event.get("response")
             response_id = None
             response_items: List[Dict[str, Any]] = copy.deepcopy(state.inflight_response_items)
+            authoritative_empty_items: List[Dict[str, Any]] = []
             if isinstance(response, dict):
                 if isinstance(response.get("id"), str):
                     response_id = response.get("id")
-                output = response.get("output")
-                if isinstance(output, list) and output:
-                    response_items = [copy.deepcopy(item) for item in output if isinstance(item, dict)]
+                response_items, authoritative_empty_items = _resolve_response_output_items(
+                    response,
+                    state.inflight_response_items,
+                )
             if not response_id:
                 response_id = state.inflight_response_id
 
@@ -265,10 +290,12 @@ def note_responses_stream_event(session_id: str, event: Dict[str, Any]) -> None:
                 state.last_request_payload = copy.deepcopy(state.inflight_request_payload)
                 state.last_response_id = response_id
                 state.last_response_items = _conversation_output_items(response_items)
+                state.last_authoritative_empty_response_items = authoritative_empty_items
             else:
                 state.last_request_payload = None
                 state.last_response_id = None
                 state.last_response_items = []
+                state.last_authoritative_empty_response_items = []
             _clear_inflight(state)
             return
 
@@ -290,18 +317,20 @@ def note_responses_final_response(session_id: str, response_obj: Dict[str, Any])
         response_id = response_obj.get("id") if isinstance(response_obj.get("id"), str) else None
         if not response_id:
             response_id = state.inflight_response_id
-        output = response_obj.get("output")
-        output_items: List[Dict[str, Any]] = copy.deepcopy(state.inflight_response_items)
-        if isinstance(output, list) and output:
-            output_items = [copy.deepcopy(item) for item in output if isinstance(item, dict)]
+        output_items, authoritative_empty_items = _resolve_response_output_items(
+            response_obj,
+            state.inflight_response_items,
+        )
         if state.inflight_track_result and state.inflight_request_payload is not None and response_id:
             state.last_request_payload = copy.deepcopy(state.inflight_request_payload)
             state.last_response_id = response_id
             state.last_response_items = _conversation_output_items(output_items)
+            state.last_authoritative_empty_response_items = authoritative_empty_items
         else:
             state.last_request_payload = None
             state.last_response_id = None
             state.last_response_items = []
+            state.last_authoritative_empty_response_items = []
         _clear_inflight(state)
 
 

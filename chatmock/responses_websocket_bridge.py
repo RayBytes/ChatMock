@@ -413,12 +413,7 @@ def send_responses_request_via_websocket(
         clear_responses_reuse_state(session_id)
         if stateful and response_marker:
             evict_retained_upstream_websocket(response_marker)
-        if not stateful and isinstance(exc, RuntimeError) and str(exc).startswith("Missing ChatGPT credentials"):
-            return _json_response(
-                {"error": {"message": str(exc)}},
-                status_code=401,
-            )
-        if stateful and isinstance(exc, RuntimeError) and str(exc).startswith("Missing ChatGPT credentials"):
+        if isinstance(exc, RuntimeError) and str(exc).startswith("Missing ChatGPT credentials"):
             return _json_response(
                 {"error": {"message": str(exc)}},
                 status_code=401,

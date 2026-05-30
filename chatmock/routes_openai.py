@@ -631,9 +631,10 @@ def responses_create() -> Response:
     if normalized.service_tier_resolution.warning_message and verbose:
         print(f"[FastMode] {normalized.service_tier_resolution.warning_message}")
 
+    previous_response_id = normalized.payload.get("previous_response_id")
     explicit_previous_response_id = (
-        isinstance(normalized.payload.get("previous_response_id"), str)
-        and bool(normalized.payload.get("previous_response_id").strip())
+        isinstance(previous_response_id, str)
+        and bool(previous_response_id.strip())
     )
     if stateful_http_bridge_enabled:
         prepared_payload = dict(normalized.payload)

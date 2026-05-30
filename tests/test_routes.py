@@ -16,7 +16,12 @@ from chatmock.responses_websocket_sessions import (
     RetainedUpstreamWebsocketLease,
     reset_retained_upstream_websocket_sessions,
 )
-from chatmock.session import reset_session_state
+from chatmock.session import (
+    note_responses_final_response,
+    note_responses_stream_event,
+    prepare_responses_request_for_session,
+    reset_session_state,
+)
 from flask import Response
 from websockets.sync.client import connect as ws_connect
 
@@ -119,6 +124,135 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.4", model_ids)
         self.assertIn("gpt-5.4-mini", model_ids)
         self.assertIn("gpt-5.3-codex-spark", model_ids)
+
+    def test_session_reuse_keeps_explicit_empty_output_authoritative_for_follow_up_reuse(self) -> None:
+        initial_payload = {
+            "model": "gpt-5.4",
+            "input": [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+            ],
+        }
+        assistant_item = {
+            "type": "message",
+            "role": "assistant",
+            "id": "msg_contract_1",
+            "content": [{"type": "output_text", "text": "assistant output"}],
+        }
+        follow_up_payload = {
+            "model": "gpt-5.4",
+            "input": [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+                assistant_item,
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+            ],
+        }
+
+        for label, record_response in (
+            (
+                "stream",
+                lambda: (
+                    note_responses_stream_event("session-contract", {"type": "response.created", "response": {"id": "resp_contract_1"}}),
+                    note_responses_stream_event(
+                        "session-contract",
+                        {"type": "response.output_item.done", "item": assistant_item},
+                    ),
+                    note_responses_stream_event(
+                        "session-contract",
+                        {"type": "response.completed", "response": {"id": "resp_contract_1", "output": []}},
+                    ),
+                ),
+            ),
+            (
+                "final",
+                lambda: (
+                    note_responses_stream_event("session-contract", {"type": "response.created", "response": {"id": "resp_contract_1"}}),
+                    note_responses_stream_event(
+                        "session-contract",
+                        {"type": "response.output_item.done", "item": assistant_item},
+                    ),
+                    note_responses_final_response(
+                        "session-contract",
+                        {"id": "resp_contract_1", "output": []},
+                    ),
+                ),
+            ),
+        ):
+            with self.subTest(path=label):
+                reset_session_state()
+                prepare_responses_request_for_session("session-contract", initial_payload)
+                record_response()
+
+                prepared = prepare_responses_request_for_session("session-contract", follow_up_payload)
+
+                self.assertNotIn("previous_response_id", prepared.payload)
+                self.assertEqual(prepared.payload["input"], follow_up_payload["input"])
+
+    def test_session_reuse_uses_inflight_items_when_completed_output_is_missing(self) -> None:
+        initial_payload = {
+            "model": "gpt-5.4",
+            "input": [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+            ],
+        }
+        assistant_item = {
+            "type": "message",
+            "role": "assistant",
+            "id": "msg_contract_1",
+            "content": [{"type": "output_text", "text": "assistant output"}],
+        }
+        follow_up_payload = {
+            "model": "gpt-5.4",
+            "input": [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+                assistant_item,
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+            ],
+        }
+
+        for label, record_response in (
+            (
+                "stream",
+                lambda: (
+                    note_responses_stream_event("session-contract", {"type": "response.created", "response": {"id": "resp_contract_1"}}),
+                    note_responses_stream_event(
+                        "session-contract",
+                        {"type": "response.output_item.done", "item": assistant_item},
+                    ),
+                    note_responses_stream_event(
+                        "session-contract",
+                        {"type": "response.completed", "response": {"id": "resp_contract_1"}},
+                    ),
+                ),
+            ),
+            (
+                "final",
+                lambda: (
+                    note_responses_stream_event("session-contract", {"type": "response.created", "response": {"id": "resp_contract_1"}}),
+                    note_responses_stream_event(
+                        "session-contract",
+                        {"type": "response.output_item.done", "item": assistant_item},
+                    ),
+                    note_responses_final_response(
+                        "session-contract",
+                        {"id": "resp_contract_1"},
+                    ),
+                ),
+            ),
+        ):
+            with self.subTest(path=label):
+                reset_session_state()
+                prepare_responses_request_for_session("session-contract", initial_payload)
+                record_response()
+
+                prepared = prepare_responses_request_for_session("session-contract", follow_up_payload)
+
+                self.assertEqual(prepared.payload["previous_response_id"], "resp_contract_1")
+                self.assertEqual(
+                    prepared.payload["input"],
+                    [
+                        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+                    ],
+                )
 
     def test_ollama_tags_list(self) -> None:
         response = self.client.get("/api/tags")
@@ -538,7 +672,7 @@ class RouteTests(unittest.TestCase):
 
     @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.websocket_routes.connect_upstream_websocket")
-    def test_responses_websocket_keeps_explicit_empty_output_authoritative_for_follow_up_contract(self, mock_connect, _mock_auth) -> None:
+    def test_responses_websocket_respects_explicit_empty_output_without_backfilling_follow_up_contract(self, mock_connect, _mock_auth) -> None:
         class FakeUpstreamWebsocket:
             def __init__(self) -> None:
                 self.sent: list[str] = []
@@ -2252,17 +2386,7 @@ class ResponsesWebsocketBridgeTests(unittest.TestCase):
 
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            body["output"],
-            [
-                {
-                    "type": "message",
-                    "role": "assistant",
-                    "id": "msg_ws_1",
-                    "content": [{"type": "output_text", "text": "assistant output"}],
-                }
-            ],
-        )
+        self.assertEqual(body["output"], [])
         self.assertEqual(fake_upstream.close_calls, 1)
         mock_note_final_response.assert_called_once_with("session-fixed", body)
 
