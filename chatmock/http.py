@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from flask import Response, jsonify, request
 
 
@@ -16,9 +18,25 @@ def build_cors_headers() -> dict:
 
 
 def json_error(message: str, status: int = 400) -> Response:
-    resp = jsonify({"error": {"message": message}})
+    resp = jsonify(openai_error_payload(message))
     response: Response = Response(response=resp.response, status=status, mimetype="application/json")
     for k, v in build_cors_headers().items():
         response.headers.setdefault(k, v)
     return response
 
+
+def openai_error_payload(
+    message: str,
+    *,
+    error_type: str = "invalid_request_error",
+    param: str | None = None,
+    code: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "error": {
+            "message": message,
+            "type": error_type,
+            "param": param,
+            "code": code,
+        }
+    }

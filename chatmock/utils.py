@@ -247,6 +247,21 @@ def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def normalize_tool_choice_for_responses(tool_choice: Any) -> Any:
+    if isinstance(tool_choice, str):
+        return tool_choice if tool_choice in ("auto", "none", "required") else "auto"
+    if not isinstance(tool_choice, dict):
+        return "auto"
+    if tool_choice.get("type") != "function":
+        return tool_choice
+    if isinstance(tool_choice.get("name"), str) and tool_choice.get("name"):
+        return {"type": "function", "name": tool_choice["name"]}
+    function = tool_choice.get("function")
+    if isinstance(function, dict) and isinstance(function.get("name"), str) and function.get("name"):
+        return {"type": "function", "name": function["name"]}
+    return tool_choice
+
+
 def load_chatgpt_tokens(
     ensure_fresh: bool = True,
     *,

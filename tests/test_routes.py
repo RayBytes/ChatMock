@@ -63,6 +63,19 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.4-mini", model_ids)
         self.assertIn("gpt-5.3-codex-spark", model_ids)
 
+    def test_openai_errors_include_standard_fields(self) -> None:
+        response = self.client.post(
+            "/v1/chat/completions",
+            data="{bad json",
+            content_type="application/json",
+        )
+        body = response.get_json()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(body["error"]["message"], "Invalid JSON body")
+        self.assertEqual(body["error"]["type"], "invalid_request_error")
+        self.assertIn("param", body["error"])
+        self.assertIn("code", body["error"])
+
     def test_ollama_tags_list(self) -> None:
         response = self.client.get("/api/tags")
         body = response.get_json()
@@ -214,6 +227,41 @@ class RouteTests(unittest.TestCase):
         self.assertIn("Fast mode is not supported", body["error"]["message"])
         mock_start.assert_not_called()
 
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_normalizes_official_function_tool_choice(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "description": "Get weather",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                ],
+                "tool_choice": {"type": "function", "function": {"name": "get_weather"}},
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            mock_start.call_args.kwargs["tool_choice"],
+            {"type": "function", "name": "get_weather"},
+        )
+
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_returns_completed_response_object(self, mock_start) -> None:
         mock_start.return_value = (
@@ -253,6 +301,122 @@ class RouteTests(unittest.TestCase):
         )
         self.assertEqual(outbound_payload["reasoning"]["effort"], "medium")
         self.assertIsInstance(outbound_payload["prompt_cache_key"], str)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_compacts_completed_response_object(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.output_text.delta",
+                        "delta": "hello",
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_compact",
+                            "object": "response",
+                            "created_at": 123,
+                            "status": "completed",
+                            "model": "gpt-5.4",
+                            "instructions": "internal prompt",
+                            "parallel_tool_calls": True,
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], "resp_compact")
+        self.assertNotIn("instructions", body)
+        self.assertNotIn("parallel_tool_calls", body)
+        self.assertEqual(body["output"][0]["content"][0]["text"], "hello")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_preserves_reasoning_summary_and_output(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_summary",
+                            "object": "response",
+                            "created_at": 123,
+                            "status": "completed",
+                            "model": "gpt-5.4",
+                            "instructions": "internal prompt",
+                            "output": [
+                                {
+                                    "type": "reasoning",
+                                    "id": "rs_1",
+                                    "summary": [{"type": "summary_text", "text": "reasoning summary"}],
+                                    "encrypted_content": "encrypted",
+                                    "content": [],
+                                },
+                                {
+                                    "type": "message",
+                                    "id": "msg_1",
+                                    "role": "assistant",
+                                    "content": [{"type": "output_text", "text": "final output"}],
+                                },
+                            ],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/responses",
+            json={
+                "model": "gpt-5.4",
+                "input": "hello",
+                "reasoning": {"effort": "medium", "summary": "detailed"},
+            },
+        )
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("instructions", body)
+        self.assertEqual(body["output"][0]["summary"][0]["text"], "reasoning summary")
+        self.assertEqual(body["output"][1]["content"][0]["text"], "final output")
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["reasoning"]["summary"], "detailed")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_normalizes_official_function_tool_choice(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.completed",
+                        "response": {"id": "resp_tool_choice", "object": "response", "status": "completed", "output": []},
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/responses",
+            json={
+                "model": "gpt-5.4",
+                "input": "hello",
+                "tool_choice": {"type": "function", "function": {"name": "get_weather"}},
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["tool_choice"], {"type": "function", "name": "get_weather"})
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
@@ -530,7 +694,10 @@ class RouteTests(unittest.TestCase):
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_stream_passthrough(self, mock_start) -> None:
-        chunk = b'data: {"type":"response.output_text.delta","delta":"hello"}\n\n'
+        chunk = (
+            b'data: {"type":"response.reasoning_summary_text.delta","delta":"reasoning summary"}\n\n'
+            b'data: {"type":"response.output_text.delta","delta":"hello"}\n\n'
+        )
         mock_start.return_value = (
             FakeUpstream(
                 headers={"Content-Type": "text/event-stream"},
@@ -543,7 +710,11 @@ class RouteTests(unittest.TestCase):
             json={"model": "gpt-5.4", "input": "hello", "stream": True},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("response.output_text.delta", response.get_data(as_text=True))
+        text = response.get_data(as_text=True)
+        self.assertIn("response.reasoning_summary_text.delta", text)
+        self.assertIn("reasoning summary", text)
+        self.assertIn("response.output_text.delta", text)
+        self.assertIn("hello", text)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_rejects_unsupported_explicit_priority(self, mock_start) -> None:

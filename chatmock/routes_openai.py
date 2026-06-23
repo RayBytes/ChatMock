@@ -9,11 +9,12 @@ from flask import Blueprint, Response, current_app, jsonify, make_response, requ
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .fast_mode import resolve_service_tier
 from .limits import record_rate_limits_from_response
-from .http import build_cors_headers
+from .http import build_cors_headers, openai_error_payload
 from .model_registry import list_public_models, uses_codex_instructions
 from .responses_api import (
     ResponsesRequestError,
     aggregate_response_from_sse,
+    compact_response_object,
     extract_client_session_id,
     instructions_for_model,
     normalize_responses_payload,
@@ -35,6 +36,7 @@ from .upstream import normalize_model_name, start_upstream_raw_request, start_up
 from .utils import (
     convert_chat_messages_to_responses_input,
     convert_tools_chat_to_responses,
+    normalize_tool_choice_for_responses,
     sse_translate_chat,
     sse_translate_text,
 )
@@ -92,7 +94,7 @@ def _service_tier_from_payload(
     if resolution.warning_message and verbose:
         print(f"[FastMode] {resolution.warning_message}")
     if resolution.error_message:
-        err = {"error": {"message": resolution.error_message}}
+        err = openai_error_payload(resolution.error_message, code="unsupported_service_tier")
         if verbose:
             _log_json("OUT POST service_tier resolution", err)
         resp = make_response(jsonify(err), 400)
@@ -122,7 +124,7 @@ def chat_completions() -> Response:
         try:
             payload = json.loads(raw.replace("\r", "").replace("\n", ""))
         except Exception:
-            err = {"error": {"message": "Invalid JSON body"}}
+            err = openai_error_payload("Invalid JSON body")
             if verbose:
                 _log_json("OUT POST /v1/chat/completions", err)
             return jsonify(err), 400
@@ -137,7 +139,7 @@ def chat_completions() -> Response:
     if messages is None:
         messages = []
     if not isinstance(messages, list):
-        err = {"error": {"message": "Request must include messages: []"}}
+        err = openai_error_payload("Request must include messages: []", param="messages")
         if verbose:
             _log_json("OUT POST /v1/chat/completions", err)
         return jsonify(err), 400
@@ -153,7 +155,7 @@ def chat_completions() -> Response:
     include_usage = bool(stream_options.get("include_usage", False))
 
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
-    tool_choice = payload.get("tool_choice", "auto")
+    tool_choice = normalize_tool_choice_for_responses(payload.get("tool_choice", "auto"))
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
@@ -164,10 +166,11 @@ def chat_completions() -> Response:
                 continue
             if _t.get("type") not in ("web_search", "web_search_preview"):
                 err = {
-                    "error": {
-                        "message": "Only web_search/web_search_preview are supported in responses_tools",
-                        "code": "RESPONSES_TOOL_UNSUPPORTED",
-                    }
+                    **openai_error_payload(
+                        "Only web_search/web_search_preview are supported in responses_tools",
+                        param="responses_tools",
+                        code="RESPONSES_TOOL_UNSUPPORTED",
+                    )
                 }
                 if verbose:
                     _log_json("OUT POST /v1/chat/completions", err)
@@ -187,7 +190,11 @@ def chat_completions() -> Response:
             except Exception:
                 size = 0
             if size > MAX_TOOLS_BYTES:
-                err = {"error": {"message": "responses_tools too large", "code": "RESPONSES_TOOLS_TOO_LARGE"}}
+                err = openai_error_payload(
+                    "responses_tools too large",
+                    param="responses_tools",
+                    code="RESPONSES_TOOLS_TOO_LARGE",
+                )
                 if verbose:
                     _log_json("OUT POST /v1/chat/completions", err)
                 return jsonify(err), 400
@@ -253,7 +260,7 @@ def chat_completions() -> Response:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
             base_tools_only = convert_tools_chat_to_responses(payload.get("tools"))
-            safe_choice = payload.get("tool_choice", "auto")
+            safe_choice = normalize_tool_choice_for_responses(payload.get("tool_choice", "auto"))
             upstream2, err2 = start_upstream_request(
                 model,
                 input_items,
@@ -269,10 +276,11 @@ def chat_completions() -> Response:
                 upstream = upstream2
             else:
                 err = {
-                    "error": {
-                        "message": (err_body.get("error", {}) or {}).get("message", "Upstream error"),
-                        "code": "RESPONSES_TOOLS_REJECTED",
-                    }
+                    **openai_error_payload(
+                        (err_body.get("error", {}) or {}).get("message", "Upstream error"),
+                        error_type="api_error",
+                        code="RESPONSES_TOOLS_REJECTED",
+                    )
                 }
                 if verbose:
                     _log_json("OUT POST /v1/chat/completions", err)
@@ -280,7 +288,10 @@ def chat_completions() -> Response:
         else:
             if verbose:
                 print("Upstream error status=", upstream.status_code)
-            err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}
+            err = openai_error_payload(
+                (err_body.get("error", {}) or {}).get("message", "Upstream error"),
+                error_type="api_error",
+            )
             if verbose:
                 _log_json("OUT POST /v1/chat/completions", err)
             return jsonify(err), upstream.status_code
@@ -377,7 +388,7 @@ def chat_completions() -> Response:
         upstream.close()
 
     if error_message:
-        resp = make_response(jsonify({"error": {"message": error_message}}), 502)
+        resp = make_response(jsonify(openai_error_payload(error_message, error_type="api_error")), 502)
         for k, v in build_cors_headers().items():
             resp.headers.setdefault(k, v)
         return resp
@@ -424,7 +435,7 @@ def completions() -> Response:
     try:
         payload = json.loads(raw) if raw else {}
     except Exception:
-        err = {"error": {"message": "Invalid JSON body"}}
+        err = openai_error_payload("Invalid JSON body")
         if verbose:
             _log_json("OUT POST /v1/completions", err)
         return jsonify(err), 400
@@ -483,7 +494,10 @@ def completions() -> Response:
             err_body = json.loads(upstream.content.decode("utf-8", errors="ignore")) if upstream.content else {"raw": upstream.text}
         except Exception:
             err_body = {"raw": upstream.text}
-        err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}
+        err = openai_error_payload(
+            (err_body.get("error", {}) or {}).get("message", "Upstream error"),
+            error_type="api_error",
+        )
         if verbose:
             _log_json("OUT POST /v1/completions", err)
         return jsonify(err), upstream.status_code
@@ -584,13 +598,13 @@ def responses_create() -> Response:
     try:
         payload = json.loads(raw) if raw else {}
     except Exception:
-        err = {"error": {"message": "Invalid JSON body"}}
+        err = openai_error_payload("Invalid JSON body")
         if verbose:
             _log_json("OUT POST /v1/responses", err)
         return jsonify(err), 400
 
     if not isinstance(payload, dict):
-        err = {"error": {"message": "Request body must be a JSON object"}}
+        err = openai_error_payload("Request body must be a JSON object")
         if verbose:
             _log_json("OUT POST /v1/responses", err)
         return jsonify(err), 400
@@ -602,9 +616,7 @@ def responses_create() -> Response:
             client_session_id=extract_client_session_id(request.headers),
         )
     except ResponsesRequestError as exc:
-        err: Dict[str, Any] = {"error": {"message": str(exc)}}
-        if exc.code:
-            err["error"]["code"] = exc.code
+        err: Dict[str, Any] = openai_error_payload(str(exc), code=exc.code)
         if verbose:
             _log_json("OUT POST /v1/responses", err)
         return jsonify(err), exc.status_code
@@ -688,6 +700,7 @@ def responses_create() -> Response:
             upstream.close()
         if isinstance(body, dict):
             note_responses_final_response(normalized.session_id, body)
+            body = compact_response_object(body, normalized.requested_model or normalized.normalized_model)
             if verbose:
                 _log_json("OUT POST /v1/responses", body)
             resp = make_response(jsonify(body), upstream.status_code)
@@ -698,6 +711,7 @@ def responses_create() -> Response:
     response_obj, error_obj = aggregate_response_from_sse(
         upstream,
         on_event=lambda evt: note_responses_stream_event(normalized.session_id, evt),
+        model=normalized.requested_model or normalized.normalized_model,
     )
     if error_obj is not None:
         clear_responses_reuse_state(normalized.session_id)
@@ -710,7 +724,10 @@ def responses_create() -> Response:
 
     if response_obj is None:
         clear_responses_reuse_state(normalized.session_id)
-        err = {"error": {"message": "Upstream response stream did not contain a completed response object"}}
+        err = openai_error_payload(
+            "Upstream response stream did not contain a completed response object",
+            error_type="api_error",
+        )
         if verbose:
             _log_json("OUT POST /v1/responses", err)
         resp = make_response(jsonify(err), 502)

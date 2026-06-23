@@ -14,6 +14,7 @@ from .model_registry import (
 )
 from .reasoning import build_reasoning_param
 from .session import ensure_session_id
+from .utils import normalize_tool_choice_for_responses
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,7 @@ def normalize_responses_payload(
     if "reasoning.encrypted_content" not in include_list:
         include_list.append("reasoning.encrypted_content")
     normalized["include"] = include_list
+    normalized["tool_choice"] = normalize_tool_choice_for_responses(normalized.get("tool_choice", "auto"))
 
     tools = normalized.get("tools")
     if (not isinstance(tools, list) or not tools) and bool(config.get("DEFAULT_WEB_SEARCH")):
@@ -176,23 +178,77 @@ def iter_sse_event_payloads(upstream: Any) -> Iterator[Dict[str, Any]]:
             yield evt
 
 
+def compact_response_object(response_obj: Dict[str, Any], model: str | None = None) -> Dict[str, Any]:
+    compact = {
+        "id": response_obj.get("id"),
+        "object": response_obj.get("object") or "response",
+        "created_at": response_obj.get("created_at"),
+        "status": response_obj.get("status") or "completed",
+        "output": response_obj.get("output") if isinstance(response_obj.get("output"), list) else [],
+        "model": response_obj.get("model") if isinstance(response_obj.get("model"), str) else model,
+    }
+    if not isinstance(compact["id"], str) or not compact["id"]:
+        compact["id"] = "resp"
+    if not isinstance(compact["created_at"], int):
+        compact["created_at"] = 0
+    return {k: v for k, v in compact.items() if v is not None}
+
+
+def response_object_from_events(events: List[Dict[str, Any]], model: str | None = None) -> Dict[str, Any] | None:
+    response_obj: Dict[str, Any] | None = None
+    text_parts: List[str] = []
+    done_items: List[tuple[int, Dict[str, Any]]] = []
+    for evt in events:
+        response = evt.get("response")
+        if isinstance(response, dict):
+            response_obj = response
+        kind = evt.get("type")
+        if kind == "response.output_text.delta" and isinstance(evt.get("delta"), str):
+            text_parts.append(evt["delta"])
+        elif kind == "response.output_item.done" and isinstance(evt.get("item"), dict):
+            index = evt.get("output_index")
+            done_items.append((index if isinstance(index, int) else len(done_items), evt["item"]))
+    if response_obj is None:
+        return None
+    compact = compact_response_object(response_obj, model)
+    if not compact.get("output"):
+        if done_items:
+            compact["output"] = [item for _, item in sorted(done_items, key=lambda item: item[0])]
+        elif text_parts:
+            compact["output"] = [
+                {
+                    "id": f"{compact['id']}_msg",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "".join(text_parts),
+                            "annotations": [],
+                        }
+                    ],
+                }
+            ]
+    return compact
+
+
 def aggregate_response_from_sse(
     upstream: Any,
     *,
     on_event: Any | None = None,
+    model: str | None = None,
 ) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
-    response_obj: Dict[str, Any] | None = None
+    events: List[Dict[str, Any]] = []
     error_obj: Dict[str, Any] | None = None
     try:
         for evt in iter_sse_event_payloads(upstream):
+            events.append(evt)
             if callable(on_event):
                 try:
                     on_event(evt)
                 except Exception:
                     pass
             response = evt.get("response")
-            if isinstance(response, dict):
-                response_obj = response
             kind = evt.get("type")
             if kind == "response.failed":
                 if isinstance(response, dict) and isinstance(response.get("error"), dict):
@@ -204,7 +260,7 @@ def aggregate_response_from_sse(
                 break
     finally:
         upstream.close()
-    return response_obj, error_obj
+    return response_object_from_events(events, model), error_obj
 
 
 def stream_upstream_bytes(
