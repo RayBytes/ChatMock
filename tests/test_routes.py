@@ -295,12 +295,65 @@ class RouteTests(unittest.TestCase):
         outbound_payload = mock_start.call_args.args[0]
         self.assertEqual(outbound_payload["model"], "gpt-5.4-mini")
         self.assertEqual(outbound_payload["store"], False)
+        self.assertIn("instructions", outbound_payload)
         self.assertEqual(
             outbound_payload["input"],
             [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]}],
         )
         self.assertEqual(outbound_payload["reasoning"]["effort"], "medium")
         self.assertIsInstance(outbound_payload["prompt_cache_key"], str)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_can_skip_default_base_instructions(self, mock_start) -> None:
+        app = create_app(no_base_instructions=True)
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.completed",
+                        "response": {"id": "resp_no_base", "object": "response", "status": "completed", "output": []},
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertNotIn("instructions", outbound_payload)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_preserves_explicit_instructions_when_base_disabled(self, mock_start) -> None:
+        app = create_app(no_base_instructions=True)
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.completed",
+                        "response": {"id": "resp_explicit", "object": "response", "status": "completed", "output": []},
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "instructions": "custom", "input": "hello"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["instructions"], "custom")
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_compacts_completed_response_object(self, mock_start) -> None:

@@ -36,7 +36,9 @@ class NormalizedResponsesRequest:
     service_tier_resolution: ServiceTierResolution
 
 
-def instructions_for_model(config: Dict[str, Any], model: str) -> str:
+def instructions_for_model(config: Dict[str, Any], model: str) -> str | None:
+    if bool(config.get("NO_BASE_INSTRUCTIONS")):
+        return None
     base = config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
     if uses_codex_instructions(model):
         codex = config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
@@ -99,8 +101,11 @@ def normalize_responses_payload(
 
     instructions = normalized.get("instructions")
     if not isinstance(instructions, str) or not instructions.strip():
-        instructions = instructions_for_model(config, normalized_model)
-        normalized["instructions"] = instructions
+        if not bool(config.get("NO_BASE_INSTRUCTIONS")):
+            instructions = instructions_for_model(config, normalized_model)
+            normalized["instructions"] = instructions
+        else:
+            instructions = None
 
     reasoning_effort = config.get("REASONING_EFFORT", "medium")
     reasoning_summary = config.get("REASONING_SUMMARY", "auto")

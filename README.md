@@ -119,6 +119,7 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 | `--reasoning-compat` | `CHATGPT_LOCAL_REASONING_COMPAT` | legacy, o3, think-tags | think-tags | How reasoning is returned to the client |
 | `--fast-mode` | `CHATGPT_LOCAL_FAST_MODE` | true/false | false | Priority processing for supported models |
 | `--enable-web-search` | `CHATGPT_LOCAL_ENABLE_WEB_SEARCH` | true/false | false | Allow the model to search the web |
+| `--no-base-instructions` | `CHATGPT_LOCAL_NO_BASE_INSTRUCTIONS` | true/false | false | Do not inject ChatMock's default Codex instructions |
 | `--expose-reasoning-models` | `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS` | true/false | false | List each reasoning level as its own model |
 
 <details>

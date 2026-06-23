@@ -69,7 +69,6 @@ def start_upstream_request(
 
     responses_payload = {
         "model": model,
-        "instructions": instructions if isinstance(instructions, str) and instructions.strip() else instructions,
         "input": input_items,
         "tools": tools or [],
         "tool_choice": tool_choice if tool_choice in ("auto", "none") or isinstance(tool_choice, dict) else "auto",
@@ -78,6 +77,8 @@ def start_upstream_request(
         "stream": True,
         "prompt_cache_key": session_id,
     }
+    if instructions is not None:
+        responses_payload["instructions"] = instructions
     if include:
         responses_payload["include"] = include
 

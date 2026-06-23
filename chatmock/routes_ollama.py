@@ -7,7 +7,6 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
 
-from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .fast_mode import resolve_service_tier
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
@@ -72,7 +71,7 @@ def ollama_version() -> Response:
     return resp
 
 
-def _instructions_for_model(model: str) -> str:
+def _instructions_for_model(model: str) -> str | None:
     return instructions_for_model(current_app.config, model)
 
 
@@ -308,7 +307,7 @@ def ollama_chat() -> Response:
             upstream2, err2 = start_upstream_request(
                 normalize_model_name(model, current_app.config.get("DEBUG_MODEL")),
                 input_items,
-                instructions=BASE_INSTRUCTIONS,
+                instructions=_instructions_for_model(model),
                 tools=base_tools_only,
                 tool_choice=safe_choice,
                 parallel_tool_calls=parallel_tool_calls,

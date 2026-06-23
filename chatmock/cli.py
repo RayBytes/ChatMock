@@ -233,6 +233,7 @@ def cmd_serve(
     debug_model: str | None,
     expose_reasoning_models: bool,
     default_web_search: bool,
+    no_base_instructions: bool,
 ) -> int:
     app = create_app(
         verbose=verbose,
@@ -244,6 +245,7 @@ def cmd_serve(
         debug_model=debug_model,
         expose_reasoning_models=expose_reasoning_models,
         default_web_search=default_web_search,
+        no_base_instructions=no_base_instructions,
     )
 
     app.run(host=host, use_reloader=False, port=port, threaded=True)
@@ -319,6 +321,15 @@ def main() -> None:
             "Also configurable via CHATGPT_LOCAL_ENABLE_WEB_SEARCH."
         ),
     )
+    p_serve.add_argument(
+        "--no-base-instructions",
+        action="store_true",
+        default=(os.getenv("CHATGPT_LOCAL_NO_BASE_INSTRUCTIONS") or "").strip().lower() in ("1", "true", "yes", "on"),
+        help=(
+            "Do not inject ChatMock's default Codex instructions when a request omits instructions. "
+            "Also configurable via CHATGPT_LOCAL_NO_BASE_INSTRUCTIONS."
+        ),
+    )
 
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
     p_info.add_argument("--json", action="store_true", help="Output raw auth.json contents")
@@ -341,6 +352,7 @@ def main() -> None:
                 debug_model=args.debug_model,
                 expose_reasoning_models=args.expose_reasoning_models,
                 default_web_search=args.enable_web_search,
+                no_base_instructions=args.no_base_instructions,
             )
         )
     elif args.command == "info":
