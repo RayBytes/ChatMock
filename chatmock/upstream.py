@@ -69,7 +69,6 @@ def start_upstream_request(
 
     responses_payload = {
         "model": model,
-        "instructions": instructions if isinstance(instructions, str) and instructions.strip() else instructions,
         "input": input_items,
         "tools": tools or [],
         "tool_choice": tool_choice if tool_choice in ("auto", "none") or isinstance(tool_choice, dict) else "auto",
@@ -78,6 +77,8 @@ def start_upstream_request(
         "stream": True,
         "prompt_cache_key": session_id,
     }
+    if isinstance(instructions, str) and instructions.strip():
+        responses_payload["instructions"] = instructions
     if include:
         responses_payload["include"] = include
 
@@ -152,6 +153,8 @@ def start_upstream_raw_request(
         _log_json("OUTBOUND >> ChatGPT Responses API payload", responses_payload)
 
     payload_to_send = dict(responses_payload)
+    if not (isinstance(payload_to_send.get("instructions"), str) and payload_to_send["instructions"].strip()):
+        payload_to_send.pop("instructions", None)
     client_metadata = payload_to_send.get("client_metadata")
     if not isinstance(client_metadata, dict):
         client_metadata = {}

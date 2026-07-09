@@ -7,12 +7,10 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
 
-from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .fast_mode import resolve_service_tier
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
-from .model_registry import list_public_models, uses_codex_instructions
-from .responses_api import instructions_for_model
+from .model_registry import list_public_models
 from .reasoning import (
     allowed_efforts_for_model,
     build_reasoning_param,
@@ -70,10 +68,6 @@ def ollama_version() -> Response:
     if bool(current_app.config.get("VERBOSE")):
         _log_json("OUT GET /api/version", payload)
     return resp
-
-
-def _instructions_for_model(model: str) -> str:
-    return instructions_for_model(current_app.config, model)
 
 
 _OLLAMA_FAKE_EVAL = {
@@ -267,7 +261,6 @@ def ollama_chat() -> Response:
     upstream, error_resp = start_upstream_request(
         normalized_model,
         input_items,
-        instructions=_instructions_for_model(normalized_model),
         tools=tools_responses,
         tool_choice=tool_choice,
         parallel_tool_calls=parallel_tool_calls,
@@ -308,7 +301,6 @@ def ollama_chat() -> Response:
             upstream2, err2 = start_upstream_request(
                 normalize_model_name(model, current_app.config.get("DEBUG_MODEL")),
                 input_items,
-                instructions=BASE_INSTRUCTIONS,
                 tools=base_tools_only,
                 tool_choice=safe_choice,
                 parallel_tool_calls=parallel_tool_calls,

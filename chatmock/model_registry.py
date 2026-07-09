@@ -15,7 +15,6 @@ class ModelSpec:
     aliases: tuple[str, ...]
     allowed_efforts: frozenset[str]
     variant_efforts: tuple[str, ...]
-    uses_codex_instructions: bool = False
 
 
 _MODEL_SPECS = (
@@ -67,7 +66,6 @@ _MODEL_SPECS = (
         aliases=("gpt5.3-codex", "gpt-5.3-codex-latest"),
         allowed_efforts=frozenset(("low", "medium", "high", "xhigh")),
         variant_efforts=("xhigh", "high", "medium", "low"),
-        uses_codex_instructions=True,
     ),
     ModelSpec(
         public_id="gpt-5.3-codex-spark",
@@ -75,7 +73,6 @@ _MODEL_SPECS = (
         aliases=("gpt5.3-codex-spark", "gpt-5.3-codex-spark-latest"),
         allowed_efforts=frozenset(("low", "medium", "high", "xhigh")),
         variant_efforts=("xhigh", "high", "medium", "low"),
-        uses_codex_instructions=True,
     ),
     ModelSpec(
         public_id="gpt-5-codex",
@@ -83,7 +80,6 @@ _MODEL_SPECS = (
         aliases=("gpt5-codex", "gpt-5-codex-latest"),
         allowed_efforts=DEFAULT_REASONING_EFFORTS,
         variant_efforts=("high", "medium", "low"),
-        uses_codex_instructions=True,
     ),
     ModelSpec(
         public_id="gpt-5.2-codex",
@@ -91,7 +87,6 @@ _MODEL_SPECS = (
         aliases=("gpt5.2-codex", "gpt-5.2-codex-latest"),
         allowed_efforts=frozenset(("low", "medium", "high", "xhigh")),
         variant_efforts=("xhigh", "high", "medium", "low"),
-        uses_codex_instructions=True,
     ),
     ModelSpec(
         public_id="gpt-5.1-codex",
@@ -99,7 +94,6 @@ _MODEL_SPECS = (
         aliases=(),
         allowed_efforts=frozenset(("low", "medium", "high")),
         variant_efforts=("high", "medium", "low"),
-        uses_codex_instructions=True,
     ),
     ModelSpec(
         public_id="gpt-5.1-codex-max",
@@ -107,7 +101,6 @@ _MODEL_SPECS = (
         aliases=(),
         allowed_efforts=frozenset(("low", "medium", "high", "xhigh")),
         variant_efforts=("xhigh", "high", "medium", "low"),
-        uses_codex_instructions=True,
     ),
     ModelSpec(
         public_id="gpt-5.1-codex-mini",
@@ -115,7 +108,6 @@ _MODEL_SPECS = (
         aliases=(),
         allowed_efforts=frozenset(("low", "medium", "high")),
         variant_efforts=(),
-        uses_codex_instructions=True,
     ),
     ModelSpec(
         public_id="codex-mini",
@@ -123,7 +115,6 @@ _MODEL_SPECS = (
         aliases=("codex", "codex-mini-latest"),
         allowed_efforts=DEFAULT_REASONING_EFFORTS,
         variant_efforts=(),
-        uses_codex_instructions=True,
     ),
 )
 
@@ -169,13 +160,6 @@ def normalize_model_name(model: str | None, debug_model: str | None = None) -> s
         return spec.upstream_id
     base, _ = _strip_model_name(model)
     return base or "gpt-5.4"
-
-
-def uses_codex_instructions(model: str | None) -> bool:
-    spec = model_spec_for_name(model)
-    if spec is not None:
-        return spec.uses_codex_instructions
-    return "codex" in ((model or "").strip().lower())
 
 
 def allowed_efforts_for_model(model: str | None) -> frozenset[str]:

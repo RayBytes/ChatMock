@@ -4,13 +4,11 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Iterator, List
 
-from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .fast_mode import ServiceTierResolution, resolve_service_tier
 from .model_registry import (
     allowed_efforts_for_model,
     extract_reasoning_from_model_name,
     normalize_model_name,
-    uses_codex_instructions,
 )
 from .reasoning import build_reasoning_param
 from .session import ensure_session_id
@@ -33,15 +31,6 @@ class NormalizedResponsesRequest:
     normalized_model: str
     session_id: str
     service_tier_resolution: ServiceTierResolution
-
-
-def instructions_for_model(config: Dict[str, Any], model: str) -> str:
-    base = config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
-    if uses_codex_instructions(model):
-        codex = config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
-        if isinstance(codex, str) and codex.strip():
-            return codex
-    return base
 
 
 def extract_client_session_id(headers: Any) -> str | None:
@@ -98,8 +87,7 @@ def normalize_responses_payload(
 
     instructions = normalized.get("instructions")
     if not isinstance(instructions, str) or not instructions.strip():
-        instructions = instructions_for_model(config, normalized_model)
-        normalized["instructions"] = instructions
+        normalized.pop("instructions", None)
 
     reasoning_effort = config.get("REASONING_EFFORT", "medium")
     reasoning_summary = config.get("REASONING_SUMMARY", "auto")

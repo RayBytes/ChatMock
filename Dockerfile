@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md chatmock.py prompt.md prompt_gpt5_codex.md /app/
+COPY pyproject.toml README.md chatmock.py /app/
 COPY chatmock /app/chatmock
 RUN pip install --no-cache-dir .
 

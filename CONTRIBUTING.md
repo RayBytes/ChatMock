@@ -15,7 +15,7 @@ We welcome thoughtful improvements. This guide calls out the expectations that k
 - Confirm you can log in and serve a local instance, then make a couple of sample requests to understand current behaviour so you know if it broke later on.
 
 ### Working With Core Files
-- `prompt.md` and related Codex harness files are sensitive. Do not modify them or move entry points without prior maintainer approval.
+- Routing modules and public parameter names are sensitive. Do not move entry points without prior maintainer approval.
 - Be cautious with parameter names, response payload shapes, and file locations consumed by downstream clients. Coordinate before changing them.
 - When touching shared logic, update both OpenAI and Ollama routes, plus any CLI/GUI code that depends on the same behaviour.
 
@@ -29,7 +29,7 @@ We welcome thoughtful improvements. This guide calls out the expectations that k
 - [ ] Manual verification steps captured under "How to try locally" in the PR body.
 - [ ] README.md, DOCKER.md, and other docs updated—or explicitly noted as not required.
 - [ ] No generated artefacts or caches staged (`build/`, `dist/`, `__pycache__/`, `.pytest_cache/`, etc.).
-- [ ] Critical paths (`prompt.md`, routing modules, public parameter names) reviewed for unintended edits and discussed with maintainers if changes were necessary.
+- [ ] Critical paths (routing modules, public parameter names) reviewed for unintended edits and discussed with maintainers if changes were necessary.
 
 ## Need Help?
 - If you're not sure about about scope, flags, or how to implement a certain feature, always create an issue before hand.

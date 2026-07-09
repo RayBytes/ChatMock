@@ -182,10 +182,7 @@ def main() -> None:
         raise SystemExit(f"Icon PNG not found: {icon_src}")
 
     os_name = platform.system().lower()
-    extra_data: list[tuple[Path, str]] = [
-        (ROOT / "prompt.md", "."),
-        (ROOT / "prompt_gpt5_codex.md", "."),
-    ]
+    extra_data: list[tuple[Path, str]] = []
 
     bundle_icon: Path | None = None
     rr = 0.0 if args.square else float(args.radius)
