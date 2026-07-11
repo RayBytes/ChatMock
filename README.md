@@ -87,6 +87,9 @@ The server runs at `http://127.0.0.1:8000` by default. Use `http://127.0.0.1:800
 
 ## Supported Models
 
+- `gpt-5.6-sol`
+- `gpt-5.6-terra`
+- `gpt-5.6-luna`
 - `gpt-5.5`
 - `gpt-5.4`
 - `gpt-5.4-mini`
@@ -114,7 +117,7 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 
 | Flag | Env var | Options | Default | Description |
 |------|---------|---------|---------|-------------|
-| `--reasoning-effort` | `CHATGPT_LOCAL_REASONING_EFFORT` | none, minimal, low, medium, high, xhigh | medium | How hard the model thinks |
+| `--reasoning-effort` | `CHATGPT_LOCAL_REASONING_EFFORT` | none, minimal, low, medium, high, xhigh, max | medium | How hard the model thinks |
 | `--reasoning-summary` | `CHATGPT_LOCAL_REASONING_SUMMARY` | auto, concise, detailed, none | auto | Thinking summary verbosity |
 | `--reasoning-compat` | `CHATGPT_LOCAL_REASONING_COMPAT` | legacy, o3, think-tags | think-tags | How reasoning is returned to the client |
 | `--fast-mode` | `CHATGPT_LOCAL_FAST_MODE` | true/false | false | Priority processing for supported models |

@@ -9,6 +9,9 @@ from .model_registry import normalize_model_name
 PRIORITY_SUPPORTED_MODELS = frozenset(
     (
         "gpt-5.4",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
         "gpt-5.2",
         "gpt-5.1",
         "gpt-5",

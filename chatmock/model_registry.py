@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 
-ALL_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
+ALL_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 DEFAULT_REASONING_EFFORTS = frozenset(ALL_REASONING_EFFORTS)
 
 
@@ -59,6 +59,27 @@ _MODEL_SPECS = (
         aliases=("gpt5.5", "gpt-5.5-latest"),
         allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh")),
         variant_efforts=("xhigh", "high", "medium", "low", "none"),
+    ),
+    ModelSpec(
+        public_id="gpt-5.6-sol",
+        upstream_id="gpt-5.6-sol",
+        aliases=("gpt5.6-sol", "gpt-5.6-sol-latest"),
+        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("max", "xhigh", "high", "medium", "low", "none"),
+    ),
+    ModelSpec(
+        public_id="gpt-5.6-terra",
+        upstream_id="gpt-5.6-terra",
+        aliases=("gpt5.6-terra", "gpt-5.6-terra-latest"),
+        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("max", "xhigh", "high", "medium", "low", "none"),
+    ),
+    ModelSpec(
+        public_id="gpt-5.6-luna",
+        upstream_id="gpt-5.6-luna",
+        aliases=("gpt5.6-luna", "gpt-5.6-luna-latest"),
+        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("max", "xhigh", "high", "medium", "low", "none"),
     ),
     ModelSpec(
         public_id="gpt-5.3-codex",

@@ -352,7 +352,7 @@ class MainWindow(QtWidgets.QMainWindow):
         opts.setVerticalSpacing(8)
         opts.addWidget(QtWidgets.QLabel("Reasoning Effort"), 0, 0)
         self.effort = QtWidgets.QComboBox()
-        self.effort.addItems(["none", "minimal", "low", "medium", "high", "xhigh"])
+        self.effort.addItems(["none", "minimal", "low", "medium", "high", "xhigh", "max"])
         self.effort.setCurrentText("medium")
         self.effort.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.effort.setMinimumContentsLength(7)
