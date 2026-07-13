@@ -98,6 +98,67 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(body["model"], "gpt5.4-mini")
 
     @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_stream_single_finish_reason_with_tool_call(self, mock_start) -> None:
+        """A streamed response that mixes assistant text with a function call must
+        emit exactly one finish_reason ("tool_calls"), not a trailing "stop" chunk.
+
+        Clients that honor the last finish_reason otherwise treat the response as a
+        plain text turn and drop the accumulated tool calls entirely.
+        """
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "Let me look that up."},
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "type": "function_call",
+                            "call_id": "call_1",
+                            "name": "get_weather",
+                            "arguments": "{\"city\": \"Seoul\"}",
+                        },
+                    },
+                    {"type": "response.completed", "response": {"id": "resp-tool-stream"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "weather in seoul?"}],
+                "stream": True,
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"city": {"type": "string"}},
+                            },
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        finish_reasons: list[str] = []
+        saw_tool_call_delta = False
+        for line in response.get_data(as_text=True).splitlines():
+            if not line.startswith("data: ") or line == "data: [DONE]":
+                continue
+            chunk = json.loads(line[len("data: ") :])
+            for choice in chunk.get("choices", []):
+                if choice.get("finish_reason"):
+                    finish_reasons.append(choice["finish_reason"])
+                if (choice.get("delta") or {}).get("tool_calls"):
+                    saw_tool_call_delta = True
+        self.assertTrue(saw_tool_call_delta)
+        self.assertEqual(finish_reasons, ["tool_calls"])
+
+    @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_honors_debug_model_override(self, mock_start) -> None:
         app = create_app(debug_model="gpt-5.4")
         client = app.test_client()

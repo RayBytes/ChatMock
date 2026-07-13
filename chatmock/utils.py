@@ -599,6 +599,7 @@ def sse_translate_chat(
                             ],
                         }
                         yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
+                        sent_stop_chunk = True
                 except Exception:
                     pass
 
@@ -682,6 +683,7 @@ def sse_translate_chat(
                             "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
                         }
                         yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
+                        sent_stop_chunk = True
             elif kind == "response.reasoning_summary_part.added":
                 if compat in ("think-tags", "o3"):
                     if saw_any_summary:
