@@ -15,12 +15,14 @@
    docker compose up -d chatmock
 
    - Compose publishes the same host port as `PORT` from `.env`, so changing `PORT` changes the URL you should use.
+   - Published ports bind to localhost by default. Set `CHATMOCK_PUBLISH_HOST=0.0.0.0` only when the service must accept remote connections.
 
 4) Free to use it in whichever chat app you like!
 
 ## Configuration
 Set options in `.env` or pass environment variables:
 - `PORT`: Container listening port and published host port for the `chatmock` service (default 8000)
+- `CHATMOCK_PUBLISH_HOST`: Host interface used for published ports (default `127.0.0.1`; use `0.0.0.0` for remote access)
 - `CHATMOCK_IMAGE`: image tag to run (default `storagetime/chatmock:latest`)
 - `VERBOSE`: `true|false` to enable request/stream logs
 - `CHATGPT_LOCAL_REASONING_EFFORT`: minimal|low|medium|high|xhigh
@@ -37,7 +39,9 @@ Set `VERBOSE=true` to include extra logging for debugging issues in upstream or 
 ## Test
 
 ```bash
-curl -s "http://localhost:${PORT:-8000}/v1/chat/completions" \
+curl -s "http://localhost:8000/v1/chat/completions" \
    -H 'Content-Type: application/json' \
    -d '{"model":"gpt-5-codex","messages":[{"role":"user","content":"Hello world!"}]}' | jq .
 ```
+
+Replace `8000` with the `PORT` value configured in `.env` when using a custom port.

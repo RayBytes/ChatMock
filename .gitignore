@@ -4,9 +4,12 @@ __pycache__/
 *$py.class
 
 # Virtual environments
-.env/
 .venv/
 venv/
+
+# Env files
+.env*
+!.env.example
 
 # Packaging artifacts
 build/
