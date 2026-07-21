@@ -387,7 +387,7 @@ def chat_completions() -> Response:
             {
                 "index": 0,
                 "message": message,
-                "finish_reason": "stop",
+                "finish_reason": "tool_calls" if tool_calls else "stop",
             }
         ],
         **({"usage": usage_obj} if usage_obj else {}),

@@ -440,6 +440,7 @@ def sse_translate_chat(
     think_closed = False
     saw_output = False
     sent_stop_chunk = False
+    saw_function_call = False
     saw_any_summary = False
     pending_summary_paragraph = False
     upstream_usage = None
@@ -588,17 +589,6 @@ def sse_translate_chat(
                         ],
                     }
                     yield f"data: {json.dumps(delta_chunk)}\n\n".encode("utf-8")
-                    if kind.endswith(".completed") or kind.endswith(".done"):
-                        finish_chunk = {
-                            "id": response_id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "model": model,
-                            "choices": [
-                                {"index": 0, "delta": {}, "finish_reason": "tool_calls"}
-                            ],
-                        }
-                        yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
                 except Exception:
                     pass
 
@@ -674,14 +664,8 @@ def sse_translate_chat(
                         }
                         yield f"data: {json.dumps(delta_chunk)}\n\n".encode("utf-8")
 
-                        finish_chunk = {
-                            "id": response_id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "model": model,
-                            "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
-                        }
-                        yield f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8")
+                        if item.get("type") == "function_call":
+                            saw_function_call = True
             elif kind == "response.reasoning_summary_part.added":
                 if compat in ("think-tags", "o3"):
                     if saw_any_summary:
@@ -810,12 +794,13 @@ def sse_translate_chat(
                     think_open = False
                     think_closed = True
                 if not sent_stop_chunk:
+                    finish_reason = "tool_calls" if saw_function_call else "stop"
                     chunk = {
                         "id": response_id,
                         "object": "chat.completion.chunk",
                         "created": created,
                         "model": model,
-                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}],
                     }
                     yield f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
                     sent_stop_chunk = True
