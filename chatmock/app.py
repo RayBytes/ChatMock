@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
+
 from flask import Flask, jsonify
 from flask_sock import Sock
 
 from .http import build_cors_headers
+from .model_catalog import DEFAULT_REFRESH_INTERVAL_SECONDS, ModelCatalog
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
 from .websocket_routes import register_websocket_routes
@@ -19,8 +22,24 @@ def create_app(
     debug_model: str | None = None,
     expose_reasoning_models: bool = False,
     default_web_search: bool = False,
+    model_sync: bool | None = None,
+    model_refresh_interval: float | None = None,
 ) -> Flask:
     app = Flask(__name__)
+    if model_sync is None:
+        model_sync = (os.getenv("CHATGPT_LOCAL_MODEL_SYNC") or "true").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+    if model_refresh_interval is None:
+        try:
+            model_refresh_interval = float(
+                os.getenv("CHATGPT_LOCAL_MODEL_REFRESH_INTERVAL", DEFAULT_REFRESH_INTERVAL_SECONDS)
+            )
+        except (TypeError, ValueError):
+            model_refresh_interval = DEFAULT_REFRESH_INTERVAL_SECONDS
 
     app.config.update(
         VERBOSE=bool(verbose),
@@ -32,6 +51,12 @@ def create_app(
         DEBUG_MODEL=debug_model,
         EXPOSE_REASONING_MODELS=bool(expose_reasoning_models),
         DEFAULT_WEB_SEARCH=bool(default_web_search),
+        MODEL_SYNC=bool(model_sync),
+        MODEL_REFRESH_INTERVAL=float(model_refresh_interval),
+    )
+    app.extensions["chatmock_model_catalog"] = ModelCatalog(
+        enabled=bool(model_sync),
+        refresh_interval_seconds=float(model_refresh_interval),
     )
 
     @app.get("/")

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .model_registry import normalize_model_name
+from .model_registry import model_supports_service_tier, normalize_model_name
 
 
 PRIORITY_SUPPORTED_MODELS = frozenset(
@@ -37,6 +37,9 @@ def parse_optional_bool(value: Any) -> bool | None:
 
 
 def supports_priority_service_tier(model: str | None) -> bool:
+    catalog_support = model_supports_service_tier(model, "priority")
+    if catalog_support is not None:
+        return catalog_support
     return normalize_model_name(model) in PRIORITY_SUPPORTED_MODELS
 
 

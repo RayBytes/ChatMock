@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
+from .model_catalog import CatalogModel, current_model_catalog
 
-ALL_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+
+ALL_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 DEFAULT_REASONING_EFFORTS = frozenset(ALL_REASONING_EFFORTS)
 
 
@@ -64,22 +66,22 @@ _MODEL_SPECS = (
         public_id="gpt-5.6-sol",
         upstream_id="gpt-5.6-sol",
         aliases=("gpt5.6-sol", "gpt-5.6-sol-latest"),
-        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max")),
-        variant_efforts=("max", "xhigh", "high", "medium", "low", "none"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max", "ultra")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
     ),
     ModelSpec(
         public_id="gpt-5.6-terra",
         upstream_id="gpt-5.6-terra",
         aliases=("gpt5.6-terra", "gpt-5.6-terra-latest"),
-        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max")),
-        variant_efforts=("max", "xhigh", "high", "medium", "low", "none"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max", "ultra")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
     ),
     ModelSpec(
         public_id="gpt-5.6-luna",
         upstream_id="gpt-5.6-luna",
         aliases=("gpt5.6-luna", "gpt-5.6-luna-latest"),
-        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max")),
-        variant_efforts=("max", "xhigh", "high", "medium", "low", "none"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max"),
     ),
     ModelSpec(
         public_id="gpt-5.3-codex",
@@ -165,7 +167,48 @@ def _strip_model_name(model: str | None) -> tuple[str, str | None]:
     return value, None
 
 
+def _remote_model_spec(model: CatalogModel) -> ModelSpec:
+    return ModelSpec(
+        public_id=model.slug,
+        upstream_id=model.slug,
+        aliases=(),
+        allowed_efforts=frozenset(model.reasoning_efforts),
+        variant_efforts=model.reasoning_efforts,
+    )
+
+
+def _remote_models(*, wait_for_refresh: bool = False) -> tuple[CatalogModel, ...]:
+    catalog = current_model_catalog()
+    if catalog is None:
+        return ()
+    return catalog.models(wait_for_refresh=wait_for_refresh)
+
+
+def _resolve_remote_model(model: str | None) -> tuple[ModelSpec | None, str | None]:
+    if not isinstance(model, str) or not model.strip():
+        return None, None
+    requested = model.strip()
+    remote_models = _remote_models()
+
+    for remote_model in remote_models:
+        if requested == remote_model.slug:
+            return _remote_model_spec(remote_model), None
+
+    for remote_model in remote_models:
+        for effort in remote_model.reasoning_efforts:
+            if requested in (
+                f"{remote_model.slug}-{effort}",
+                f"{remote_model.slug}_{effort}",
+                f"{remote_model.slug}:{effort}",
+            ):
+                return _remote_model_spec(remote_model), effort
+    return None, None
+
+
 def model_spec_for_name(model: str | None) -> ModelSpec | None:
+    remote_spec, _ = _resolve_remote_model(model)
+    if remote_spec is not None:
+        return remote_spec
     base, _ = _strip_model_name(model)
     upstream_id = _ALIASES.get(base)
     if not upstream_id:
@@ -179,8 +222,9 @@ def normalize_model_name(model: str | None, debug_model: str | None = None) -> s
     spec = model_spec_for_name(model)
     if spec is not None:
         return spec.upstream_id
-    base, _ = _strip_model_name(model)
-    return base or "gpt-5.4"
+    if isinstance(model, str) and model.strip():
+        return model.strip()
+    return "gpt-5.4"
 
 
 def allowed_efforts_for_model(model: str | None) -> frozenset[str]:
@@ -191,13 +235,27 @@ def allowed_efforts_for_model(model: str | None) -> frozenset[str]:
 
 
 def extract_reasoning_from_model_name(model: str | None) -> dict[str, str] | None:
-    _, effort = _strip_model_name(model)
-    if not effort:
+    remote_spec, remote_effort = _resolve_remote_model(model)
+    if remote_spec is not None:
+        return {"effort": remote_effort} if remote_effort else None
+    base, effort = _strip_model_name(model)
+    if not effort or base not in _ALIASES:
         return None
     return {"effort": effort}
 
 
 def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
+    catalog = current_model_catalog()
+    if catalog is not None:
+        remote_models = catalog.visible_models(wait_for_refresh=True)
+        if remote_models:
+            model_ids: list[str] = []
+            for model in remote_models:
+                model_ids.append(model.slug)
+                if expose_reasoning_models:
+                    model_ids.extend(f"{model.slug}-{effort}" for effort in model.reasoning_efforts)
+            return model_ids
+
     model_ids: list[str] = []
     for spec in _MODEL_SPECS:
         model_ids.append(spec.public_id)
@@ -208,3 +266,13 @@ def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
 
 def iter_public_models() -> Iterable[ModelSpec]:
     return _MODEL_SPECS
+
+
+def model_supports_service_tier(model: str | None, service_tier: str) -> bool | None:
+    spec, _ = _resolve_remote_model(model)
+    if spec is None:
+        return None
+    for remote_model in _remote_models():
+        if remote_model.slug == spec.upstream_id:
+            return service_tier in remote_model.service_tiers
+    return False

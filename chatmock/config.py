@@ -8,4 +8,5 @@ OAUTH_ISSUER_DEFAULT = os.getenv("CHATGPT_LOCAL_ISSUER") or "https://auth.openai
 OAUTH_TOKEN_URL = f"{OAUTH_ISSUER_DEFAULT}/oauth/token"
 ORIGINATOR = "chatmock"
 
-CHATGPT_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
+CHATGPT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
+CHATGPT_RESPONSES_URL = f"{CHATGPT_CODEX_BASE_URL}/responses"

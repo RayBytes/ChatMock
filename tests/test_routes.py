@@ -51,7 +51,7 @@ class FakeUpstream:
 class RouteTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_session_state()
-        self.app = create_app()
+        self.app = create_app(model_sync=False)
         self.client = self.app.test_client()
 
     def test_openai_models_list(self) -> None:
@@ -99,7 +99,7 @@ class RouteTests(unittest.TestCase):
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_honors_debug_model_override(self, mock_start) -> None:
-        app = create_app(debug_model="gpt-5.4")
+        app = create_app(debug_model="gpt-5.4", model_sync=False)
         client = app.test_client()
         mock_start.return_value = (
             FakeUpstream(
@@ -139,7 +139,7 @@ class RouteTests(unittest.TestCase):
 
     @patch("chatmock.routes_ollama.start_upstream_request")
     def test_ollama_chat_honors_debug_model_override(self, mock_start) -> None:
-        app = create_app(debug_model="gpt-5.4")
+        app = create_app(debug_model="gpt-5.4", model_sync=False)
         client = app.test_client()
         mock_start.return_value = (
             FakeUpstream(
@@ -183,7 +183,7 @@ class RouteTests(unittest.TestCase):
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_fast_mode_false_overrides_server_default(self, mock_start) -> None:
-        app = create_app(fast_mode=True)
+        app = create_app(fast_mode=True, model_sync=False)
         client = app.test_client()
         mock_start.return_value = (
             FakeUpstream(
@@ -262,7 +262,7 @@ class RouteTests(unittest.TestCase):
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
-        app = create_app(debug_model="gpt-5.4")
+        app = create_app(debug_model="gpt-5.4", model_sync=False)
         client = app.test_client()
         mock_start.return_value = (
             FakeUpstream(
@@ -596,7 +596,7 @@ class RouteTests(unittest.TestCase):
         fake_upstream = FakeUpstreamWebsocket()
         mock_connect.return_value = fake_upstream
 
-        app = create_app()
+        app = create_app(model_sync=False)
 
         sock = socket.socket()
         sock.bind(("127.0.0.1", 0))

@@ -21,6 +21,13 @@ _STATUS_LIMIT_BAR_EMPTY = "░"
 _STATUS_LIMIT_BAR_PARTIAL = "▓"
 
 
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def _clamp_percent(value: float) -> float:
     try:
         percent = float(value)
@@ -233,6 +240,8 @@ def cmd_serve(
     debug_model: str | None,
     expose_reasoning_models: bool,
     default_web_search: bool,
+    model_sync: bool = True,
+    model_refresh_interval: float = 3600,
 ) -> int:
     app = create_app(
         verbose=verbose,
@@ -244,6 +253,8 @@ def cmd_serve(
         debug_model=debug_model,
         expose_reasoning_models=expose_reasoning_models,
         default_web_search=default_web_search,
+        model_sync=model_sync,
+        model_refresh_interval=model_refresh_interval,
     )
 
     app.run(host=host, use_reloader=False, port=port, threaded=True)
@@ -282,7 +293,7 @@ def main() -> None:
     )
     p_serve.add_argument(
         "--reasoning-effort",
-        choices=["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        choices=["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
         default=os.getenv("CHATGPT_LOCAL_REASONING_EFFORT", "medium").lower(),
         help="Reasoning effort level for Responses API (default: medium)",
     )
@@ -306,7 +317,7 @@ def main() -> None:
         action="store_true",
         default=(os.getenv("CHATGPT_LOCAL_EXPOSE_REASONING_MODELS") or "").strip().lower() in ("1", "true", "yes", "on"),
         help=(
-            "Expose GPT-5 family reasoning effort variants (none|minimal|low|medium|high|xhigh|max where supported) "
+            "Expose reasoning effort variants reported by each model "
             "as separate models from /v1/models. This allows choosing effort via model selection in compatible UIs."
         ),
     )
@@ -318,6 +329,20 @@ def main() -> None:
             "Enable default web_search tool when a request omits responses_tools (off by default). "
             "Also configurable via CHATGPT_LOCAL_ENABLE_WEB_SEARCH."
         ),
+    )
+    p_serve.add_argument(
+        "--model-sync",
+        action=argparse.BooleanOptionalAction,
+        default=(os.getenv("CHATGPT_LOCAL_MODEL_SYNC") or "true").strip().lower()
+        in ("1", "true", "yes", "on"),
+        help="Discover available models and capabilities from ChatGPT automatically.",
+    )
+    p_serve.add_argument(
+        "--model-refresh-interval",
+        type=float,
+        default=_float_env("CHATGPT_LOCAL_MODEL_REFRESH_INTERVAL", 3600),
+        metavar="SECONDS",
+        help="Refresh the ChatGPT model catalog after this many seconds (default: 3600).",
     )
 
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
@@ -341,6 +366,8 @@ def main() -> None:
                 debug_model=args.debug_model,
                 expose_reasoning_models=args.expose_reasoning_models,
                 default_web_search=args.enable_web_search,
+                model_sync=args.model_sync,
+                model_refresh_interval=args.model_refresh_interval,
             )
         )
     elif args.command == "info":

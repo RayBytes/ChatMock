@@ -87,6 +87,9 @@ The server runs at `http://127.0.0.1:8000` by default. Use `http://127.0.0.1:800
 
 ## Supported Models
 
+ChatMock automatically discovers the models available to the signed-in ChatGPT
+account. The current catalog commonly includes:
+
 - `gpt-5.6-sol`
 - `gpt-5.6-terra`
 - `gpt-5.6-luna`
@@ -117,12 +120,14 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 
 | Flag | Env var | Options | Default | Description |
 |------|---------|---------|---------|-------------|
-| `--reasoning-effort` | `CHATGPT_LOCAL_REASONING_EFFORT` | none, minimal, low, medium, high, xhigh, max | medium | How hard the model thinks |
+| `--reasoning-effort` | `CHATGPT_LOCAL_REASONING_EFFORT` | none, minimal, low, medium, high, xhigh, max, ultra | medium | How hard the model thinks |
 | `--reasoning-summary` | `CHATGPT_LOCAL_REASONING_SUMMARY` | auto, concise, detailed, none | auto | Thinking summary verbosity |
 | `--reasoning-compat` | `CHATGPT_LOCAL_REASONING_COMPAT` | legacy, o3, think-tags | think-tags | How reasoning is returned to the client |
 | `--fast-mode` | `CHATGPT_LOCAL_FAST_MODE` | true/false | false | Priority processing for supported models |
 | `--enable-web-search` | `CHATGPT_LOCAL_ENABLE_WEB_SEARCH` | true/false | false | Allow the model to search the web |
 | `--expose-reasoning-models` | `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS` | true/false | false | List each reasoning level as its own model |
+| `--model-sync` | `CHATGPT_LOCAL_MODEL_SYNC` | true/false | true | Discover account models automatically |
+| `--model-refresh-interval` | `CHATGPT_LOCAL_MODEL_REFRESH_INTERVAL` | seconds | 3600 | Refresh interval for model discovery |
 
 <details>
 <summary><b>Web search in a request</b></summary>
