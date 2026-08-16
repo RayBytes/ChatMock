@@ -660,5 +660,324 @@ class RouteTests(unittest.TestCase):
         )
 
 
+class ResponseFormatTests(unittest.TestCase):
+    SCHEMA = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["summary"],
+        "properties": {"summary": {"type": "string"}},
+    }
+
+    def setUp(self) -> None:
+        reset_session_state()
+        self.app = create_app(model_sync=False)
+        self.client = self.app.test_client()
+
+    def _post(self, mock_start, **extra) -> dict:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "{}"},
+                    {"type": "response.completed", "response": {"id": "resp-fmt"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hi"}], **extra},
+        )
+        self.assertEqual(response.status_code, 200)
+        return mock_start.call_args.kwargs
+
+
+
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_formats_that_are_not_forwarded(self, mock_start) -> None:
+        self.assertIsNone(self._post(mock_start)["text_format"])
+        self.assertIsNone(self._post(mock_start, response_format={"type": "text"})["text_format"])
+        self.assertIsNone(
+            self._post(mock_start, response_format={"type": "json_object"})["text_format"]
+        )
+        self.assertIsNone(
+            self._post(
+                mock_start, response_format={"type": "json_schema", "json_schema": {"schema": {}}}
+            )["text_format"]
+        )
+
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_json_content_is_not_corrupted_by_think_tags(self, mock_start) -> None:
+        events = [
+            {"type": "response.reasoning_summary_text.delta", "delta": "**Weighing it up**"},
+            {"type": "response.reasoning_text.delta", "delta": "the full trace"},
+            {"type": "response.output_text.delta", "delta": '{"summary":"ok"}'},
+            {"type": "response.completed", "response": {"id": "resp-fmt"}},
+        ]
+
+        def post(**extra):
+            mock_start.return_value = (FakeUpstream(list(events)), None)
+            return self.client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "gpt-5.6-sol",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    **extra,
+                },
+            ).get_json()["choices"][0]["message"]
+
+        self.assertTrue(post()["content"].startswith("<think>"))
+
+        message = post(
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "r", "schema": self.SCHEMA},
+            }
+        )
+        self.assertEqual(json.loads(message["content"]), {"summary": "ok"})
+        self.assertEqual(message["reasoning_summary"], "**Weighing it up**")
+        self.assertEqual(message["reasoning"], "the full trace")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_non_think_tags_compat_is_left_alone(self, mock_start) -> None:
+        client = create_app(model_sync=False, reasoning_compat="o3").test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.reasoning_summary_text.delta", "delta": "**Weighing it up**"},
+                    {"type": "response.output_text.delta", "delta": '{"summary":"ok"}'},
+                    {"type": "response.completed", "response": {"id": "resp-fmt"}},
+                ]
+            ),
+            None,
+        )
+        message = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.6-sol",
+                "messages": [{"role": "user", "content": "hi"}],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "r", "schema": self.SCHEMA},
+                },
+            },
+        ).get_json()["choices"][0]["message"]
+        self.assertEqual(
+            message["reasoning"], {"content": [{"type": "text", "text": "**Weighing it up**"}]}
+        )
+        self.assertEqual(json.loads(message["content"]), {"summary": "ok"})
+
+    def _post_ollama(self, mock_start, **extra) -> dict:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.reasoning_summary_text.delta", "delta": "**Weighing it up**"},
+                    {"type": "response.output_text.delta", "delta": '{"summary":"ok"}'},
+                    {"type": "response.completed", "response": {"id": "resp-fmt"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "model": "gpt-5.6-sol",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+                **extra,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()
+
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_bare_json_is_uncorrupted_but_not_forwarded(self, mock_start) -> None:
+        body = self._post_ollama(mock_start, format="json")
+        self.assertIsNone(mock_start.call_args.kwargs["text_format"])
+        self.assertEqual(json.loads(body["message"]["content"]), {"summary": "ok"})
+
+
+
+class StructuredOutputWireTests(unittest.TestCase):
+    """Asserts past the start_upstream_request boundary, onto the actual payload.
+
+    The route tests mock that call, so they pass whether or not the schema is
+    ever put on the wire.
+    """
+
+    SCHEMA = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["summary"],
+        "properties": {"summary": {"type": "string"}},
+    }
+
+    EVENTS = [
+        {"type": "response.reasoning_summary_text.delta", "delta": "**T**"},
+        {"type": "response.output_text.delta", "delta": '{"summary":"ok"}'},
+        {"type": "response.completed", "response": {"id": "resp-wire"}},
+    ]
+
+    def setUp(self) -> None:
+        reset_session_state()
+        self.client = create_app(model_sync=False).test_client()
+
+    def _send(self, mock_post, path: str, body: dict) -> tuple[dict, str]:
+        mock_post.return_value = FakeUpstream(list(self.EVENTS))
+        response = self.client.post(path, json=body)
+        self.assertEqual(response.status_code, 200)
+        sent = mock_post.call_args.kwargs["json"]
+        return sent, response.get_data(as_text=True)
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_schema_reaches_the_upstream_payload(self, mock_post, _auth) -> None:
+        sent, _ = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {
+                "model": "gpt-5.6-sol",
+                "messages": [{"role": "user", "content": "hi"}],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "weather", "schema": self.SCHEMA},
+                },
+            },
+        )
+        self.assertEqual(
+            sent["text"],
+            {
+                "format": {
+                    "type": "json_schema",
+                    "name": "weather",
+                    "schema": self.SCHEMA,
+                    "strict": False,
+                }
+            },
+        )
+
+        flat, _ = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {
+                "model": "gpt-5.6-sol",
+                "messages": [{"role": "user", "content": "hi"}],
+                "response_format": {
+                    "type": "json_schema",
+                    "name": "weather",
+                    "schema": self.SCHEMA,
+                    "strict": True,
+                },
+            },
+        )
+        self.assertEqual(flat["text"]["format"]["strict"], True)
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_ollama_schema_reaches_the_upstream_payload(self, mock_post, _auth) -> None:
+        sent, _ = self._send(
+            mock_post,
+            "/api/chat",
+            {
+                "model": "gpt-5.6-sol",
+                "stream": False,
+                "messages": [{"role": "user", "content": "hi"}],
+                "format": self.SCHEMA,
+            },
+        )
+        self.assertEqual(sent["text"]["format"]["schema"], self.SCHEMA)
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_no_text_key_without_a_format(self, mock_post, _auth) -> None:
+        sent, _ = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        self.assertNotIn("text", sent)
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_streaming_content_is_uncorrupted(self, mock_post, _auth) -> None:
+        for path, body, extract in (
+            (
+                "/v1/chat/completions",
+                {
+                    "model": "gpt-5.6-sol",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {"name": "r", "schema": self.SCHEMA},
+                    },
+                },
+                lambda line: json.loads(line[len("data: ") :])["choices"][0]["delta"].get("content"),
+            ),
+            (
+                "/api/chat",
+                {
+                    "model": "gpt-5.6-sol",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "format": self.SCHEMA,
+                },
+                lambda line: json.loads(line)["message"].get("content"),
+            ),
+        ):
+            with self.subTest(path=path):
+                _, raw = self._send(mock_post, path, body)
+                self.assertNotIn("<think>", raw)
+                chunks = []
+                for line in raw.splitlines():
+                    if not line.strip() or line.startswith("data: [DONE]"):
+                        continue
+                    try:
+                        chunks.append(extract(line) or "")
+                    except (ValueError, KeyError, IndexError):
+                        continue
+                self.assertEqual(json.loads("".join(chunks)), {"summary": "ok"})
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_schema_survives_the_rejected_tools_retry(self, mock_post, _auth) -> None:
+        mock_post.side_effect = [
+            FakeUpstream(status_code=400, content=b'{"error":{"message":"nope"}}'),
+            FakeUpstream(list(self.EVENTS)),
+        ]
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.6-sol",
+                "messages": [{"role": "user", "content": "hi"}],
+                "responses_tools": [{"type": "web_search"}],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "r", "schema": self.SCHEMA},
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_post.call_count, 2)
+        retried = mock_post.call_args_list[1].kwargs["json"]
+        self.assertEqual(retried["text"]["format"]["schema"], self.SCHEMA)
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_streaming_keeps_think_tags_without_a_format(self, mock_post, _auth) -> None:
+        _, raw = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {
+                "model": "gpt-5.6-sol",
+                "stream": True,
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        self.assertIn("<think>", raw)
+
+
 if __name__ == "__main__":
     unittest.main()

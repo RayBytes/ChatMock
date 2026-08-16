@@ -32,6 +32,8 @@ from .session import (
 from .upstream import normalize_model_name, start_upstream_raw_request, start_upstream_request
 from .utils import (
     convert_chat_messages_to_responses_input,
+    convert_response_format_to_text_format,
+    response_format_requests_json,
     convert_tools_chat_to_responses,
     sse_translate_chat,
     sse_translate_text,
@@ -210,6 +212,15 @@ def chat_completions() -> Response:
     if tier_error is not None:
         return tier_error
 
+    text_format = convert_response_format_to_text_format(payload.get("response_format"))
+
+    if (
+        response_format_requests_json(payload.get("response_format"))
+        and (reasoning_compat or "").strip().lower() == "think-tags"
+    ):
+        # think tags would be prepended to content the caller asked to be json
+        reasoning_compat = "legacy"
+
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
@@ -218,6 +229,7 @@ def chat_completions() -> Response:
         parallel_tool_calls=parallel_tool_calls,
         reasoning_param=reasoning_param,
         service_tier=service_tier,
+        text_format=text_format,
     )
     if error_resp is not None:
         if verbose:
@@ -255,6 +267,7 @@ def chat_completions() -> Response:
                 parallel_tool_calls=parallel_tool_calls,
                 reasoning_param=reasoning_param,
                 service_tier=service_tier,
+                text_format=text_format,
             )
             record_rate_limits_from_response(upstream2)
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
