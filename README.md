@@ -166,4 +166,4 @@ Use responsibly and at your own risk. This project is not affiliated with OpenAI
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=RayBytes/ChatMock&type=Timeline)](https://www.star-history.com/#RayBytes/ChatMock&Timeline)
+[![Star History Chart](https://star-history.dera.page/svg?repos=RayBytes/ChatMock&type=Timeline)](https://star-history.dera.page/#RayBytes/ChatMock&Timeline)
