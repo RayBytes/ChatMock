@@ -23,7 +23,11 @@ from .transform import (
     ollama_format_requests_json,
 )
 from .upstream import normalize_model_name, start_upstream_request
-from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_to_responses
+from .utils import (
+    convert_chat_messages_to_responses_input,
+    convert_tool_choice_chat_to_responses,
+    convert_tools_chat_to_responses,
+)
 
 
 ollama_bp = Blueprint("ollama", __name__)
@@ -188,19 +192,13 @@ def ollama_chat() -> Response:
     messages = convert_ollama_messages(
         raw_messages, payload.get("images") if isinstance(payload.get("images"), list) else None
     )
-    if isinstance(messages, list):
-        sys_idx = next((i for i, m in enumerate(messages) if isinstance(m, dict) and m.get("role") == "system"), None)
-        if isinstance(sys_idx, int):
-            sys_msg = messages.pop(sys_idx)
-            content = sys_msg.get("content") if isinstance(sys_msg, dict) else ""
-            messages.insert(0, {"role": "user", "content": content})
     stream_req = payload.get("stream")
     if stream_req is None:
         stream_req = True
     stream_req = bool(stream_req)
     tools_req = payload.get("tools") if isinstance(payload.get("tools"), list) else []
     tools_responses = convert_tools_chat_to_responses(normalize_ollama_tools(tools_req))
-    tool_choice = payload.get("tool_choice", "auto")
+    tool_choice = convert_tool_choice_chat_to_responses(payload.get("tool_choice", "auto"))
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
 
     text_format = convert_ollama_format_to_text_format(payload.get("format"))
@@ -312,7 +310,7 @@ def ollama_chat() -> Response:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extras (args redacted)")
             base_tools_only = convert_tools_chat_to_responses(normalize_ollama_tools(tools_req))
-            safe_choice = payload.get("tool_choice", "auto")
+            safe_choice = convert_tool_choice_chat_to_responses(payload.get("tool_choice", "auto"))
             upstream2, err2 = start_upstream_request(
                 normalize_model_name(model, current_app.config.get("DEBUG_MODEL")),
                 input_items,

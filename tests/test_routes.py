@@ -981,3 +981,231 @@ class StructuredOutputWireTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChatRouteFidelityTests(unittest.TestCase):
+    """The chat-compat routes carry what the client sent, in the spelling upstream reads."""
+
+    EVENTS = [
+        {"type": "response.output_text.delta", "delta": "ok"},
+        {
+            "type": "response.completed",
+            "response": {
+                "id": "resp-fidelity",
+                "usage": {
+                    "input_tokens": 1200,
+                    "input_tokens_details": {"cached_tokens": 1024, "cache_write_tokens": 0},
+                    "output_tokens": 30,
+                    "output_tokens_details": {"reasoning_tokens": 25},
+                    "total_tokens": 1230,
+                },
+            },
+        },
+    ]
+
+    def setUp(self) -> None:
+        reset_session_state()
+        self.client = create_app(model_sync=False).test_client()
+
+    def _send(self, mock_post, path: str, body: dict, *, events: list | None = None) -> tuple[dict, str]:
+        mock_post.return_value = FakeUpstream(list(events if events is not None else self.EVENTS))
+        response = self.client.post(path, json=body)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return mock_post.call_args.kwargs["json"], response.get_data(as_text=True)
+
+    @staticmethod
+    def _sse_payloads(text: str) -> list[dict]:
+        out = []
+        for line in text.splitlines():
+            if line.startswith("data: ") and line[6:].strip() not in ("", "[DONE]"):
+                out.append(json.loads(line[6:]))
+        return out
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_system_and_developer_messages_keep_their_role(self, mock_post, _auth) -> None:
+        sent, _ = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {
+                "model": "gpt-5.6-sol",
+                "messages": [
+                    {"role": "system", "content": "You are terse."},
+                    {"role": "user", "content": "hi"},
+                    {"role": "developer", "content": [{"type": "text", "text": "Answer in French."}]},
+                ],
+            },
+        )
+        self.assertEqual(
+            [(item["role"], item["content"][0]["type"]) for item in sent["input"]],
+            [("developer", "input_text"), ("user", "input_text"), ("developer", "input_text")],
+        )
+        self.assertEqual(sent["input"][0]["content"][0]["text"], "You are terse.")
+        # Position is preserved rather than the system message being hoisted.
+        self.assertEqual(sent["input"][2]["content"][0]["text"], "Answer in French.")
+
+        ollama, _ = self._send(
+            mock_post,
+            "/api/chat",
+            {
+                "model": "gpt-5.6-sol",
+                "stream": False,
+                "messages": [
+                    {"role": "system", "content": "You are terse."},
+                    {"role": "user", "content": "hi"},
+                ],
+            },
+        )
+        self.assertEqual([item["role"] for item in ollama["input"]], ["developer", "user"])
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_tool_choice_is_spelled_the_responses_way(self, mock_post, _auth) -> None:
+        tools = [
+            {
+                "type": "function",
+                "function": {"name": "get_time", "parameters": {"type": "object", "properties": {}}},
+            }
+        ]
+        cases = [
+            ({"type": "function", "function": {"name": "get_time"}}, {"type": "function", "name": "get_time"}),
+            ("required", "required"),
+            ("bogus", "auto"),
+            (
+                {
+                    "type": "allowed_tools",
+                    "allowed_tools": {
+                        "mode": "auto",
+                        "tools": [{"type": "function", "function": {"name": "get_time"}}],
+                    },
+                },
+                {"type": "allowed_tools", "mode": "auto", "tools": [{"type": "function", "name": "get_time"}]},
+            ),
+        ]
+        for given, expected in cases:
+            with self.subTest(tool_choice=given):
+                sent, _ = self._send(
+                    mock_post,
+                    "/v1/chat/completions",
+                    {
+                        "model": "gpt-5.6-sol",
+                        "messages": [{"role": "user", "content": "hi"}],
+                        "tools": tools,
+                        "tool_choice": given,
+                    },
+                )
+                self.assertEqual(sent["tool_choice"], expected)
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_verbosity_reaches_text(self, mock_post, _auth) -> None:
+        sent, _ = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hi"}], "verbosity": "low"},
+        )
+        self.assertEqual(sent["text"], {"verbosity": "low"})
+
+        both, _ = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {
+                "model": "gpt-5.6-sol",
+                "messages": [{"role": "user", "content": "hi"}],
+                "verbosity": "high",
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "r", "schema": {"type": "object", "properties": {}}},
+                },
+            },
+        )
+        self.assertEqual(both["text"]["verbosity"], "high")
+        self.assertEqual(both["text"]["format"]["name"], "r")
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_usage_carries_cached_and_reasoning_token_details(self, mock_post, _auth) -> None:
+        expected = {
+            "prompt_tokens": 1200,
+            "completion_tokens": 30,
+            "total_tokens": 1230,
+            "prompt_tokens_details": {"cached_tokens": 1024},
+            "completion_tokens_details": {"reasoning_tokens": 25},
+        }
+        _, body = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        self.assertEqual(json.loads(body)["usage"], expected)
+
+        _, stream = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {
+                "model": "gpt-5.6-sol",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            },
+        )
+        usage_chunks = [chunk["usage"] for chunk in self._sse_payloads(stream) if chunk.get("usage")]
+        self.assertEqual(usage_chunks, [expected])
+
+        # An upstream that sends no detail objects yields the bare triple, not empty details.
+        bare_events = [
+            {"type": "response.output_text.delta", "delta": "ok"},
+            {
+                "type": "response.completed",
+                "response": {"id": "r", "usage": {"input_tokens": 5, "output_tokens": 1, "total_tokens": 6}},
+            },
+        ]
+        _, body = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hi"}]},
+            events=bare_events,
+        )
+        self.assertEqual(
+            json.loads(body)["usage"], {"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6}
+        )
+
+    @patch("chatmock.upstream.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.upstream.requests.post")
+    def test_explicit_effort_is_forwarded_for_upstream_to_judge(self, mock_post, _auth) -> None:
+        # The catalog lists no `none` for gpt-5.6-luna; upstream accepts and honours it.
+        sent, _ = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {
+                "model": "gpt-5.6-luna",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning": {"effort": "none"},
+            },
+        )
+        self.assertEqual(sent["reasoning"]["effort"], "none")
+
+        # An effort upstream would not recognise at all is not forwarded.
+        sent, _ = self._send(
+            mock_post,
+            "/v1/chat/completions",
+            {
+                "model": "gpt-5.6-luna",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning": {"effort": "turbo"},
+            },
+        )
+        self.assertEqual(sent["reasoning"]["effort"], "medium")
+
+    def test_server_default_effort_is_still_clamped_to_the_model(self) -> None:
+        # No override: a server default the model does not list falls back to medium as before.
+        from chatmock.reasoning import build_reasoning_param
+
+        self.assertEqual(
+            build_reasoning_param("ultra", "none", None, allowed_efforts=frozenset(("low", "medium", "high"))),
+            {"effort": "medium"},
+        )
+        self.assertEqual(
+            build_reasoning_param("ultra", "none", {"effort": "none"}, allowed_efforts=frozenset(("low", "medium"))),
+            {"effort": "none"},
+        )
