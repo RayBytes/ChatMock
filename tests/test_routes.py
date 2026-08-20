@@ -291,8 +291,10 @@ class RouteTests(unittest.TestCase):
                 "response": {"id": "resp_items", "object": "response", "status": "in_progress"},
             },
             *[
-                {"type": "response.output_item.done", "output_index": index, "item": item}
-                for index, item in enumerate(output)
+                {"type": "response.output_item.done", "output_index": index, "item": output[index]}
+                # Completion order is not output order; the protocol supplies
+                # output_index so non-stream aggregation can reconstruct it.
+                for index in (2, 0, 1)
             ],
             {
                 "type": "response.completed",

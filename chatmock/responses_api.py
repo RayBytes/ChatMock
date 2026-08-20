@@ -172,7 +172,8 @@ def aggregate_response_from_sse(
 ) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
     response_obj: Dict[str, Any] | None = None
     error_obj: Dict[str, Any] | None = None
-    completed_output_items: List[Dict[str, Any]] = []
+    completed_output_items: Dict[int, Dict[str, Any]] = {}
+    unindexed_output_items = 0
     try:
         for evt in iter_sse_event_payloads(upstream):
             if callable(on_event):
@@ -187,7 +188,14 @@ def aggregate_response_from_sse(
             if kind == "response.output_item.done":
                 item = evt.get("item")
                 if isinstance(item, dict):
-                    completed_output_items.append(copy.deepcopy(item))
+                    output_index = evt.get("output_index")
+                    if not isinstance(output_index, int):
+                        # Indexed items are the protocol norm. Keep malformed or
+                        # older unindexed events deterministically after them,
+                        # preserving their arrival order.
+                        output_index = 1_000_000 + unindexed_output_items
+                        unindexed_output_items += 1
+                    completed_output_items[output_index] = copy.deepcopy(item)
             if kind == "response.failed":
                 if isinstance(response, dict) and isinstance(response.get("error"), dict):
                     error_obj = {"error": response.get("error")}
@@ -201,7 +209,10 @@ def aggregate_response_from_sse(
                     and not response_obj.get("output")
                 ):
                     response_obj = dict(response_obj)
-                    response_obj["output"] = completed_output_items
+                    response_obj["output"] = [
+                        completed_output_items[index]
+                        for index in sorted(completed_output_items)
+                    ]
                 break
     finally:
         upstream.close()
