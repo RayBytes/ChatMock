@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
+from .codex_status import build_status_payload
 from .fast_mode import resolve_service_tier
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
@@ -712,6 +713,14 @@ def responses_create() -> Response:
     if verbose:
         _log_json("OUT POST /v1/responses", response_obj)
     resp = make_response(jsonify(response_obj), upstream.status_code)
+    for k, v in build_cors_headers().items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
+@openai_bp.route("/v1/status", methods=["GET"])
+def codex_status() -> Response:
+    resp = make_response(jsonify(build_status_payload()), 200)
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp

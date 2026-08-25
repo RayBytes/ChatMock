@@ -18,14 +18,20 @@ def build_reasoning_param(
     valid_efforts = allowed_efforts or DEFAULT_REASONING_EFFORTS
     valid_summaries = {"auto", "concise", "detailed", "none"}
 
+    # A caller's explicit effort is forwarded when upstream knows it at all;
+    # upstream validates per model. Filtering against the catalog here silently
+    # rewrote efforts the catalog omits but upstream honours (e.g. `none`).
+    explicit_effort: str | None = None
     if isinstance(overrides, dict):
         o_eff = str(overrides.get("effort", "")).strip().lower()
         o_sum = str(overrides.get("summary", "")).strip().lower()
-        if o_eff in valid_efforts and o_eff:
-            effort = o_eff
+        if o_eff in DEFAULT_REASONING_EFFORTS:
+            explicit_effort = o_eff
         if o_sum in valid_summaries and o_sum:
             summary = o_sum
-    if effort not in valid_efforts:
+    if explicit_effort is not None:
+        effort = explicit_effort
+    elif effort not in valid_efforts:
         effort = "medium"
     if summary not in valid_summaries:
         summary = "auto"

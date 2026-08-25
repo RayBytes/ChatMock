@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
+import tempfile
 import threading
 import time
 import unittest
 from unittest.mock import patch
 
 from chatmock.app import create_app
+from chatmock.codex_status import reset_account_info_cache
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
@@ -760,6 +763,236 @@ class RouteTests(unittest.TestCase):
             follow_up["input"],
             [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]}],
         )
+
+
+def _unsigned_jwt(claims: dict[str, object]) -> str:
+    import base64
+
+    def _b64(obj: dict[str, object]) -> str:
+        raw = json.dumps(obj, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    return f"{_b64({'alg': 'none', 'typ': 'JWT'})}.{_b64(claims)}.sig"
+
+
+ACCESS_TOKEN = "access-token-secret-do-not-leak"
+ID_TOKEN_CLAIMS = {
+    "email": "athlete@example.com",
+    "name": "Athlete Example",
+    "preferred_username": "athlete",
+    "https://api.openai.com/auth": {"chatgpt_account_id": "acct_0123456789"},
+}
+ACCESS_TOKEN_CLAIMS = {"https://api.openai.com/auth": {"chatgpt_plan_type": "pro"}}
+
+USAGE_HEADERS = {
+    "x-codex-primary-used-percent": "12.5",
+    "x-codex-primary-window-minutes": "10080",
+    "x-codex-primary-reset-after-seconds": "345600",
+    "x-codex-secondary-used-percent": "3",
+    "x-codex-secondary-window-minutes": "300",
+    "x-codex-secondary-reset-after-seconds": "1799",
+}
+
+COMPLETED_EVENTS = [
+    {"type": "response.created", "response": {"id": "resp_1", "object": "response", "status": "in_progress"}},
+    {
+        "type": "response.output_item.done",
+        "output_index": 0,
+        "item": {"id": "msg_1", "type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "ok"}]},
+    },
+    {"type": "response.completed", "response": {"id": "resp_1", "object": "response", "status": "completed", "output": []}},
+]
+
+
+class CodexStatusTests(unittest.TestCase):
+    """GET /v1/status reports the signed-in account and the last usage snapshot."""
+
+    def setUp(self) -> None:
+        reset_session_state()
+        reset_account_info_cache()
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        env = patch.dict(os.environ, {"CHATGPT_LOCAL_HOME": home.name})
+        env.start()
+        self.addCleanup(env.stop)
+        self.app = create_app(model_sync=False, verbose=True)
+        self.client = self.app.test_client()
+
+    def _signed_in(self):
+        id_token = _unsigned_jwt(ID_TOKEN_CLAIMS)
+        access_token = ACCESS_TOKEN + "." + _unsigned_jwt(ACCESS_TOKEN_CLAIMS).split(".", 1)[1]
+        return patch(
+            "chatmock.codex_status.load_chatgpt_tokens",
+            return_value=(access_token, "acct_0123456789", id_token),
+        )
+
+    @patch("chatmock.codex_status.load_chatgpt_tokens", return_value=(None, None, None))
+    def test_status_before_any_request_reports_nothing(self, _tokens) -> None:
+        response = self.client.get("/v1/status")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"account": None, "rate_limits": None})
+        self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "*")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_call_feeds_the_status_snapshot(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(COMPLETED_EVENTS, headers={"Content-Type": "text/event-stream", **USAGE_HEADERS}),
+            None,
+        )
+        with self._signed_in():
+            response = self.client.post("/v1/responses", json={"model": "gpt-5.4", "input": "hello"})
+            self.assertEqual(response.status_code, 200)
+            # Nothing rides on the reply itself; the data is served by /v1/status.
+            for name in USAGE_HEADERS:
+                self.assertNotIn(name, response.headers)
+            status = self.client.get("/v1/status").get_json()
+        self.assertEqual(
+            status["account"],
+            {
+                "name": "Athlete Example",
+                "email": "athlete@example.com",
+                "plan_type": "pro",
+                "account_id": "acct_0123456789",
+            },
+        )
+        self.assertEqual(
+            status["rate_limits"]["primary"],
+            {"used_percent": 12.5, "window_minutes": 10080, "resets_in_seconds": 345600},
+        )
+        self.assertEqual(
+            status["rate_limits"]["secondary"],
+            {"used_percent": 3.0, "window_minutes": 300, "resets_in_seconds": 1799},
+        )
+        self.assertTrue(status["rate_limits"]["captured_at"])
+
+    @patch("chatmock.codex_status.load_chatgpt_tokens", return_value=(None, None, None))
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_partial_usage_is_stored_without_invention(self, mock_start, _tokens) -> None:
+        partial = {
+            "x-codex-primary-used-percent": "0",
+            "x-codex-primary-window-minutes": "10080",
+            "x-codex-primary-reset-after-seconds": "600",
+        }
+        mock_start.return_value = (
+            FakeUpstream(COMPLETED_EVENTS, headers={"Content-Type": "text/event-stream", **partial}),
+            None,
+        )
+        self.client.post("/v1/responses", json={"model": "gpt-5.4", "input": "hello"})
+        status = self.client.get("/v1/status").get_json()
+        self.assertEqual(
+            status["rate_limits"]["primary"],
+            {"used_percent": 0.0, "window_minutes": 10080, "resets_in_seconds": 600},
+        )
+        self.assertIsNone(status["rate_limits"]["secondary"])
+
+    @patch("chatmock.codex_status.load_chatgpt_tokens", return_value=(None, None, None))
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_usage_is_recorded_even_on_upstream_errors(self, mock_start, _tokens) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                status_code=429,
+                headers={"Content-Type": "application/json", **USAGE_HEADERS},
+                content=json.dumps({"error": {"message": "usage limit reached"}}).encode("utf-8"),
+                text="usage limit reached",
+            ),
+            None,
+        )
+        response = self.client.post("/v1/responses", json={"model": "gpt-5.4", "input": "hello"})
+        self.assertEqual(response.status_code, 429)
+        status = self.client.get("/v1/status").get_json()
+        self.assertEqual(status["rate_limits"]["primary"]["used_percent"], 12.5)
+
+    def test_account_falls_back_through_email_and_username(self) -> None:
+        no_name = {k: v for k, v in ID_TOKEN_CLAIMS.items() if k != "name"}
+        with patch(
+            "chatmock.codex_status.load_chatgpt_tokens",
+            return_value=("a.b.c", "acct_0123456789", _unsigned_jwt(no_name)),
+        ):
+            account = self.client.get("/v1/status").get_json()["account"]
+        self.assertEqual(account["name"], "athlete@example.com")
+        # No plan claim on that access token: the plan stays unknown rather than defaulting.
+        self.assertNotIn("plan_type", account)
+
+        reset_account_info_cache()
+        username_only = {"preferred_username": "athlete"}
+        with patch(
+            "chatmock.codex_status.load_chatgpt_tokens",
+            return_value=(None, None, _unsigned_jwt(username_only)),
+        ):
+            account = self.client.get("/v1/status").get_json()["account"]
+        self.assertEqual(account, {"name": "athlete"})
+
+    def test_account_info_is_derived_once_not_per_request(self) -> None:
+        with self._signed_in() as loader:
+            first = self.client.get("/v1/status").get_json()
+            second = self.client.get("/v1/status").get_json()
+        self.assertEqual(first["account"]["name"], "Athlete Example")
+        self.assertEqual(second, first)
+        # The auth file was parsed for the first request only; while it is
+        # unchanged on disk, later requests reuse the derived info.
+        self.assertEqual(loader.call_count, 1)
+
+    @patch("chatmock.codex_status.load_chatgpt_tokens", return_value=(None, None, None))
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_upstream_request_keeps_model_effort_stream_and_store(self, mock_start, _tokens) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                headers={"Content-Type": "text/event-stream"},
+                content=b'data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[]}}\n\n',
+            ),
+            None,
+        )
+        # The static catalog lists no `none` for gpt-5.6-luna; upstream accepts it (issue #116).
+        response = self.client.post(
+            "/v1/responses",
+            json={
+                "model": "gpt-5.6-luna",
+                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]}],
+                "tools": [],
+                "tool_choice": "auto",
+                "parallel_tool_calls": False,
+                "store": False,
+                "stream": True,
+                "reasoning": {"effort": "none"},
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        sent = mock_start.call_args.args[0]
+        self.assertEqual(sent["model"], "gpt-5.6-luna")
+        self.assertEqual(sent["reasoning"]["effort"], "none")
+        self.assertIs(sent["stream"], True)
+        self.assertIs(sent["store"], False)
+        self.assertEqual(sent["tools"], [])
+        self.assertEqual(sent["tool_choice"], "auto")
+        self.assertIs(sent["parallel_tool_calls"], False)
+        self.assertEqual(
+            sent["input"],
+            [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]}],
+        )
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_no_token_reaches_the_status_body_headers_or_logs(self, mock_start) -> None:
+        import contextlib
+        import io
+
+        mock_start.return_value = (
+            FakeUpstream(COMPLETED_EVENTS, headers={"Content-Type": "text/event-stream", **USAGE_HEADERS}),
+            None,
+        )
+        captured = io.StringIO()
+        with self._signed_in(), contextlib.redirect_stdout(captured):
+            self.client.post("/v1/responses", json={"model": "gpt-5.4", "input": "hello"})
+            response = self.client.get("/v1/status")
+        self.assertEqual(response.status_code, 200)
+        id_token = _unsigned_jwt(ID_TOKEN_CLAIMS)
+        secrets = (ACCESS_TOKEN, id_token, id_token.split(".")[1], "Bearer ")
+        body = response.get_data(as_text=True)
+        header_blob = "\n".join(f"{k}: {v}" for k, v in response.headers.items())
+        logs = captured.getvalue()
+        for secret in secrets:
+            self.assertNotIn(secret, body)
+            self.assertNotIn(secret, header_blob)
+            self.assertNotIn(secret, logs)
 
 
 if __name__ == "__main__":

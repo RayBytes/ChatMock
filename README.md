@@ -111,6 +111,7 @@ account. The current catalog commonly includes:
 - OpenAI-compatible `/v1/responses` (HTTP + WebSocket)
 - Ollama-compatible endpoints
 - Reasoning effort exposed as separate models (optional)
+- Codex usage and account status on `GET /v1/status` (see below)
 
 <br>
 
@@ -155,6 +156,38 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 ```
 
 </details>
+
+<br>
+
+## Usage and account status
+
+`GET /v1/status` reports the signed-in account and the plan usage Codex reported
+on the most recent proxied request — the same snapshot the `chatmock info`
+command prints. Like the Codex CLI, it is not a live probe: the backend only
+reports usage on replies it sends, so the numbers update after each request
+through the proxy and cost nothing to read.
+
+```json
+{
+  "account": {
+    "name": "Ada Lovelace",
+    "email": "ada@example.com",
+    "plan_type": "plus",
+    "account_id": "1f6f92a2-..."
+  },
+  "rate_limits": {
+    "captured_at": "2026-08-26T08:03:58+00:00",
+    "primary": { "used_percent": 12.5, "window_minutes": 10080, "resets_in_seconds": 345600 },
+    "secondary": { "used_percent": 3.0, "window_minutes": 300, "resets_in_seconds": 1799 }
+  }
+}
+```
+
+The account values are display metadata derived from the local token claims —
+no token is ever included. A field whose claim is missing is omitted; `account`
+is `null` when signed out, and `rate_limits` is `null` until a first request
+has been proxied. Do not assume `primary` is the shorter window; classify by
+`window_minutes`.
 
 <br>
 
