@@ -104,6 +104,7 @@ account. The current catalog commonly includes:
 
 - Tool / function calling
 - Vision / image input
+- Image generation (`/v1/images/generations`, or as a tool in a chat request)
 - Thinking summaries (via think tags)
 - Configurable thinking effort
 - Fast mode for supported models
@@ -128,6 +129,7 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 | `--expose-reasoning-models` | `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS` | true/false | false | List each reasoning level as its own model |
 | `--model-sync` | `CHATGPT_LOCAL_MODEL_SYNC` | true/false | true | Discover account models automatically |
 | `--model-refresh-interval` | `CHATGPT_LOCAL_MODEL_REFRESH_INTERVAL` | seconds | 3600 | Refresh interval for model discovery |
+| `--image-model` | `CHATGPT_LOCAL_IMAGE_MODEL` | model slug | gpt-5.4-mini | Model that orchestrates image requests |
 
 <details>
 <summary><b>Web search in a request</b></summary>
@@ -140,6 +142,53 @@ All flags go after `chatmock serve`. These can also be set as environment variab
   "responses_tool_choice": "auto"
 }
 ```
+
+</details>
+
+<details>
+<summary><b>Generating an image</b></summary>
+
+`/v1/images/generations` mirrors the OpenAI Images API, so existing clients work
+unchanged:
+
+```bash
+curl http://127.0.0.1:8000/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "a minimalist geometric fox logo", "size": "1024x1024"}'
+```
+
+```json
+{ "created": 1786806013,
+  "data": [{ "b64_json": "...", "revised_prompt": "...", "size": "1254x1254" }],
+  "usage": { "input_tokens": 52, "output_tokens": 915, "total_tokens": 967 } }
+```
+
+The same tool works inside a chat request on `/v1/chat/completions` and
+`/api/chat`, where the image comes back embedded in the message content as
+`![alt](data:image/png;base64,...)`:
+
+```json
+{
+  "model": "gpt-5.4-mini",
+  "messages": [{"role": "user", "content": "draw a blue cube"}],
+  "responses_tools": [{"type": "image_generation"}]
+}
+```
+
+Worth knowing:
+
+- The picture is always drawn by the backend's own image model. `model` in the
+  request body changes nothing; it is accepted so clients that always send
+  `gpt-image-1` keep working.
+- `n` goes up to 4, and each unit is a separate upstream request, because the
+  backend refuses `n` inside the tool.
+- `size` is passed along but the backend decides the final resolution from the
+  prompt, so it is written into the instructions as well. Treat it as a request,
+  not a guarantee.
+- `response_format: "url"` is rejected: the backend returns base64 and ChatMock
+  hosts no files.
+- One image is a couple of megabytes of base64. `--verbose` prints request bodies,
+  so leave it off when passing reference images.
 
 </details>
 

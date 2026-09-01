@@ -660,5 +660,248 @@ class RouteTests(unittest.TestCase):
         )
 
 
+IMAGE_ITEM = {
+    "id": "ig_1",
+    "type": "image_generation_call",
+    "status": "completed",
+    "output_format": "png",
+    "size": "1024x1024",
+    "result": "QUJD",
+    "revised_prompt": "a blue cube",
+}
+
+
+def image_sse_events(usage_tokens: int = 10) -> list[dict[str, object]]:
+    return [
+        {"type": "response.output_item.done", "output_index": 0, "item": IMAGE_ITEM},
+        {
+            "type": "response.completed",
+            "response": {
+                "id": "resp_img",
+                "status": "completed",
+                "output": [],
+                "tool_usage": {
+                    "image_gen": {
+                        "input_tokens": 1,
+                        "output_tokens": usage_tokens,
+                        "total_tokens": usage_tokens + 1,
+                    }
+                },
+            },
+        },
+    ]
+
+
+class ImageRouteTests(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_session_state()
+        self.app = create_app(model_sync=False)
+        self.client = self.app.test_client()
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_images_generations_returns_b64(self, mock_start) -> None:
+        mock_start.return_value = (FakeUpstream(image_sse_events()), None)
+        response = self.client.post(
+            "/v1/images/generations",
+            json={"prompt": "a blue cube", "size": "1024x1024", "quality": "low"},
+        )
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(body["data"]), 1)
+        self.assertEqual(body["data"][0]["b64_json"], "QUJD")
+        self.assertEqual(body["data"][0]["revised_prompt"], "a blue cube")
+        self.assertEqual(body["usage"]["output_tokens"], 10)
+
+        sent = mock_start.call_args.args[0]
+        self.assertEqual(sent["tool_choice"], {"type": "image_generation"})
+        self.assertEqual(sent["tools"][0]["size"], "1024x1024")
+        self.assertNotIn("n", sent["tools"][0])
+        self.assertIn("1024x1024", sent["instructions"])
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_images_generations_repeats_request_for_n(self, mock_start) -> None:
+        mock_start.side_effect = [
+            (FakeUpstream(image_sse_events(4)), None),
+            (FakeUpstream(image_sse_events(6)), None),
+        ]
+        response = self.client.post("/v1/images/generations", json={"prompt": "x", "n": 2})
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_count, 2)
+        self.assertEqual(len(body["data"]), 2)
+        self.assertEqual(body["usage"]["output_tokens"], 10)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_images_generations_retries_without_rejected_tool_params(self, mock_start) -> None:
+        rejection = json.dumps(
+            {
+                "error": {
+                    "code": "unknown_parameter",
+                    "message": "Unknown parameter: 'tools[0].quality'.",
+                    "param": "tools[0].quality",
+                }
+            }
+        ).encode("utf-8")
+        mock_start.side_effect = [
+            (FakeUpstream(status_code=400, content=rejection), None),
+            (FakeUpstream(image_sse_events()), None),
+        ]
+        response = self.client.post(
+            "/v1/images/generations", json={"prompt": "x", "quality": "low"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_count, 2)
+        self.assertEqual(mock_start.call_args_list[1].args[0]["tools"], [{"type": "image_generation"}])
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_images_generations_reports_empty_result(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream([{"type": "response.completed", "response": {"id": "r", "output": []}}]),
+            None,
+        )
+        response = self.client.post("/v1/images/generations", json={"prompt": "x"})
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json()["error"]["code"], "no_image_returned")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_images_generations_reports_what_the_model_said(self, mock_start) -> None:
+        """An empty result must carry the model's own words.
+
+        The error used to assert the prompt "usually" hit moderation, which
+        nobody had verified: the text that holds the real reason was collected
+        by the stream reader and then dropped. Whoever hits this needs the
+        reason, not a guess.
+        """
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "type": "message",
+                            "content": [{"type": "output_text", "text": "I can't draw that logo."}],
+                        },
+                    },
+                    {"type": "response.completed", "response": {"id": "r", "output": []}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post("/v1/images/generations", json={"prompt": "x"})
+        self.assertEqual(response.status_code, 502)
+        body = response.get_json()["error"]
+        self.assertEqual(body["code"], "no_image_returned")
+        self.assertIn("draw that logo", body["message"])
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_images_generations_says_when_nothing_came_back(self, mock_start) -> None:
+        """No image and no text is a different failure, and says so."""
+        mock_start.return_value = (
+            FakeUpstream([{"type": "response.completed", "response": {"id": "r", "output": []}}]),
+            None,
+        )
+        response = self.client.post("/v1/images/generations", json={"prompt": "x"})
+        message = response.get_json()["error"]["message"]
+        self.assertIn("no text either", message)
+
+    def test_images_generations_rejects_url_response_format(self) -> None:
+        response = self.client.post(
+            "/v1/images/generations", json={"prompt": "x", "response_format": "url"}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"]["code"], "unsupported_value")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_embeds_image_as_data_url(self, mock_start) -> None:
+        mock_start.return_value = (FakeUpstream(image_sse_events()), None)
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4-mini",
+                "messages": [{"role": "user", "content": "draw a cube"}],
+                "responses_tools": [{"type": "image_generation"}],
+            },
+        )
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("data:image/png;base64,QUJD", body["choices"][0]["message"]["content"])
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_stream_closes_think_tag_before_image(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.reasoning_summary_text.delta", "delta": "planning"},
+                    {"type": "response.output_item.done", "output_index": 0, "item": IMAGE_ITEM},
+                    {"type": "response.completed", "response": {"id": "resp_img", "output": []}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4-mini",
+                "messages": [{"role": "user", "content": "draw a cube"}],
+                "responses_tools": [{"type": "image_generation"}],
+                "stream": True,
+            },
+        )
+        content = ""
+        for line in response.get_data(as_text=True).splitlines():
+            if not line.startswith("data: ") or line[6:].strip() == "[DONE]":
+                continue
+            event = json.loads(line[6:])
+            content += (event.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
+        image_at = content.find("data:image/")
+        self.assertGreater(image_at, -1)
+        # The image is output, not reasoning: it must land after the reasoning
+        # block is closed, or clients that hide <think> hide the image with it.
+        self.assertIn("</think>", content[:image_at])
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_chat_embeds_image_as_data_url(self, mock_start) -> None:
+        mock_start.return_value = (FakeUpstream(image_sse_events()), None)
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "model": "gpt-5.4-mini",
+                "messages": [{"role": "user", "content": "draw a cube"}],
+                "responses_tools": [{"type": "image_generation"}],
+                "stream": False,
+            },
+        )
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("data:image/png;base64,QUJD", body["message"]["content"])
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_rebuilds_output_from_done_items(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.output_item.done",
+                        "output_index": 1,
+                        "item": {"type": "message", "role": "assistant", "content": []},
+                    },
+                    {"type": "response.output_item.done", "output_index": 0, "item": {"type": "reasoning"}},
+                    {
+                        "type": "response.completed",
+                        "response": {"id": "resp_x", "status": "completed", "output": []},
+                    },
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4-mini", "input": "hi", "stream": False},
+        )
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["type"] for item in body["output"]], ["reasoning", "message"])
+
+
 if __name__ == "__main__":
     unittest.main()

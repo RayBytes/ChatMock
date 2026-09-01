@@ -10,6 +10,7 @@ from datetime import datetime
 
 from .app import create_app
 from .config import CLIENT_ID_DEFAULT
+from .images_api import DEFAULT_IMAGE_ORCHESTRATOR_MODEL
 from .limits import RateLimitWindow, compute_reset_at, load_rate_limit_snapshot
 from .oauth import OAuthHTTPServer, OAuthHandler, REQUIRED_PORT, URL_BASE, run_device_code_login
 from .utils import eprint, get_home_dir, load_chatgpt_tokens, parse_jwt_claims, read_auth_file
@@ -242,6 +243,7 @@ def cmd_serve(
     default_web_search: bool,
     model_sync: bool = True,
     model_refresh_interval: float = 3600,
+    image_orchestrator_model: str | None = None,
 ) -> int:
     app = create_app(
         verbose=verbose,
@@ -255,6 +257,7 @@ def cmd_serve(
         default_web_search=default_web_search,
         model_sync=model_sync,
         model_refresh_interval=model_refresh_interval,
+        image_orchestrator_model=image_orchestrator_model,
     )
 
     app.run(host=host, use_reloader=False, port=port, threaded=True)
@@ -345,6 +348,16 @@ def main() -> None:
         help="Refresh the ChatGPT model catalog after this many seconds (default: 3600).",
     )
 
+    p_serve.add_argument(
+        "--image-model",
+        default=os.getenv("CHATGPT_LOCAL_IMAGE_MODEL", DEFAULT_IMAGE_ORCHESTRATOR_MODEL),
+        metavar="MODEL",
+        help=(
+            "Model that orchestrates /v1/images/generations. The picture itself is always drawn "
+            f"by the backend's image model, so the cheapest one does (default: {DEFAULT_IMAGE_ORCHESTRATOR_MODEL})."
+        ),
+    )
+
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
     p_info.add_argument("--json", action="store_true", help="Output raw auth.json contents")
 
@@ -368,6 +381,7 @@ def main() -> None:
                 default_web_search=args.enable_web_search,
                 model_sync=args.model_sync,
                 model_refresh_interval=args.model_refresh_interval,
+                image_orchestrator_model=args.image_model,
             )
         )
     elif args.command == "info":

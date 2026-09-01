@@ -7,12 +7,22 @@ from typing import Any, Dict, List
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
 from .fast_mode import resolve_service_tier
+from .images_api import (
+    DEFAULT_IMAGE_ORCHESTRATOR_MODEL,
+    IMAGE_TOOL_TYPE,
+    MAX_IMAGES_PER_REQUEST,
+    build_image_request_payload,
+    image_item_to_openai,
+    image_markdown_for_item,
+    usage_to_openai,
+)
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .model_registry import list_public_models
 from .responses_api import (
     ResponsesRequestError,
     aggregate_response_from_sse,
+    collect_images_from_sse,
     extract_client_session_id,
     normalize_responses_payload,
     stream_upstream_bytes,
@@ -156,10 +166,13 @@ def chat_completions() -> Response:
         for _t in responses_tools_payload:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
                 continue
-            if _t.get("type") not in ("web_search", "web_search_preview"):
+            if _t.get("type") not in ("web_search", "web_search_preview", IMAGE_TOOL_TYPE):
                 err = {
                     "error": {
-                        "message": "Only web_search/web_search_preview are supported in responses_tools",
+                        "message": (
+                            "Only web_search/web_search_preview/image_generation are supported "
+                            "in responses_tools"
+                        ),
                         "code": "RESPONSES_TOOL_UNSUPPORTED",
                     }
                 }
@@ -349,7 +362,9 @@ def chat_completions() -> Response:
                 reasoning_full_text += evt.get("delta") or ""
             elif kind == "response.output_item.done":
                 item = evt.get("item") or {}
-                if isinstance(item, dict) and item.get("type") == "function_call":
+                if isinstance(item, dict) and item.get("type") == "image_generation_call":
+                    full_text += image_markdown_for_item(item)
+                elif isinstance(item, dict) and item.get("type") == "function_call":
                     call_id = item.get("call_id") or item.get("id") or ""
                     name = item.get("name") or ""
                     args = item.get("arguments") or ""
@@ -712,6 +727,189 @@ def responses_create() -> Response:
     if verbose:
         _log_json("OUT POST /v1/responses", response_obj)
     resp = make_response(jsonify(response_obj), upstream.status_code)
+    for k, v in build_cors_headers().items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
+def _images_error(message: str, status: int, code: str | None = None) -> Response:
+    body: Dict[str, Any] = {"error": {"message": message}}
+    if code:
+        body["error"]["code"] = code
+    resp = make_response(jsonify(body), status)
+    for k, v in build_cors_headers().items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
+def _run_image_request(
+    upstream_payload: Dict[str, Any],
+    *,
+    session_id: str | None,
+    verbose: bool,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None, Response | None, str]:
+    upstream, error_resp = start_upstream_raw_request(
+        upstream_payload,
+        session_id=session_id,
+        stream=True,
+    )
+    if error_resp is not None:
+        return [], None, error_resp, ""
+
+    record_rate_limits_from_response(upstream)
+
+    if upstream.status_code >= 400:
+        try:
+            raw = upstream.content
+            err_body = json.loads(raw.decode("utf-8", errors="ignore")) if raw else {}
+        except Exception:
+            err_body = {}
+        finally:
+            upstream.close()
+
+        err_info = err_body.get("error") if isinstance(err_body.get("error"), dict) else {}
+        param = err_info.get("param") if isinstance(err_info.get("param"), str) else ""
+        tools = upstream_payload.get("tools")
+        tool = tools[0] if isinstance(tools, list) and tools and isinstance(tools[0], dict) else {}
+        # The backend refuses image parameters it does not know (that is what
+        # happens with 'n'). Rather than forwarding the 400, retry once with a
+        # bare tool: the caller gets the image, just without the tweak it asked
+        # for.
+        if err_info.get("code") == "unknown_parameter" and param.startswith("tools[") and len(tool) > 1:
+            if verbose:
+                print(f"[Images] Backend rejected '{param}'; retrying without the tool parameters")
+            retry_payload = dict(upstream_payload)
+            retry_payload["tools"] = [{"type": IMAGE_TOOL_TYPE}]
+            return _run_image_request(retry_payload, session_id=session_id, verbose=verbose)
+
+        message = err_info.get("message") or "Upstream error"
+        return [], None, _images_error(str(message), upstream.status_code), ""
+
+    images, usage, error, said = collect_images_from_sse(upstream)
+    if error is not None:
+        message = error.get("message") if isinstance(error, dict) else None
+        return [], None, _images_error(str(message or "Upstream error"), 502), said
+    return images, usage, None, said
+
+
+@openai_bp.route("/v1/images/generations", methods=["POST"])
+def images_generations() -> Response:
+    verbose = bool(current_app.config.get("VERBOSE"))
+    raw = request.get_data(cache=True, as_text=True) or ""
+    if verbose:
+        try:
+            # Truncated on purpose: an 'image' reference arrives here as a data
+            # URL and would otherwise dump megabytes into the log.
+            print("IN POST /v1/images/generations\n" + raw[:2000])
+        except Exception:
+            pass
+
+    try:
+        payload = json.loads(raw) if raw else {}
+    except Exception:
+        return _images_error("Invalid JSON body", 400)
+    if not isinstance(payload, dict):
+        return _images_error("Request body must be a JSON object", 400)
+
+    prompt = payload.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return _images_error("Missing required parameter: 'prompt'", 400)
+
+    response_format = payload.get("response_format")
+    if isinstance(response_format, str) and response_format.strip().lower() == "url":
+        return _images_error(
+            "response_format 'url' is not available: the backend returns base64 and ChatMock "
+            "hosts no files. Use 'b64_json'.",
+            400,
+            code="unsupported_value",
+        )
+
+    try:
+        n = int(payload.get("n") or 1)
+    except (TypeError, ValueError):
+        return _images_error("Parameter 'n' must be an integer", 400)
+    if n < 1:
+        return _images_error("Parameter 'n' must be >= 1", 400)
+    if n > MAX_IMAGES_PER_REQUEST:
+        return _images_error(
+            f"Parameter 'n' must be <= {MAX_IMAGES_PER_REQUEST}: the backend draws one image per "
+            "call, so every extra unit is another request against your quota.",
+            400,
+        )
+
+    input_images = payload.get("image")
+    if isinstance(input_images, str):
+        input_images = [input_images]
+    elif not isinstance(input_images, list):
+        input_images = []
+
+    orchestrator = payload.get("chat_model")
+    if not isinstance(orchestrator, str) or not orchestrator.strip():
+        orchestrator = current_app.config.get("IMAGE_ORCHESTRATOR_MODEL") or DEFAULT_IMAGE_ORCHESTRATOR_MODEL
+    orchestrator = normalize_model_name(orchestrator, current_app.config.get("DEBUG_MODEL"))
+
+    upstream_payload = build_image_request_payload(
+        prompt.strip(),
+        model=orchestrator,
+        tool_params=payload,
+        input_images=[img for img in input_images if isinstance(img, str)],
+    )
+
+    session_id = extract_client_session_id(request.headers)
+    collected: List[Dict[str, Any]] = []
+    usage_totals: Dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    saw_usage = False
+    # Kept across rounds: with n > 1 the last round is the one that explains an
+    # empty result, and each round overwrites the previous.
+    last_text = ""
+    for _ in range(n):
+        images, usage, error_resp, said = _run_image_request(
+            upstream_payload,
+            session_id=session_id,
+            verbose=verbose,
+        )
+        if error_resp is not None:
+            return error_resp
+        if said:
+            last_text = said
+        collected.extend(images)
+        normalized_usage = usage_to_openai(usage)
+        if normalized_usage:
+            saw_usage = True
+            for key in usage_totals:
+                usage_totals[key] += int(normalized_usage.get(key) or 0)
+
+    if not collected:
+        # Say what the model said, instead of guessing why it stopped. This
+        # error used to assert the prompt "usually" hit moderation, which was
+        # never verified: the text that carries the actual reason was being
+        # thrown away one function up.
+        spoken = last_text.strip()
+        if spoken:
+            detail = f' The model answered instead of drawing: "{spoken[:400]}"'
+        else:
+            detail = (
+                " It returned no text either, so the request was most likely stopped before the "
+                "model started working."
+            )
+        return _images_error(
+            "The model finished without generating an image." + detail,
+            502,
+            code="no_image_returned",
+        )
+
+    body: Dict[str, Any] = {
+        "created": int(time.time()),
+        "data": [image_item_to_openai(item) for item in collected],
+    }
+    if saw_usage:
+        body["usage"] = usage_totals
+    if verbose:
+        # Not _log_json: a single image is a couple of megabytes of base64, and
+        # printing the body would drown the log.
+        print(f"OUT POST /v1/images/generations ({len(collected)} image(s))")
+
+    resp = make_response(jsonify(body), 200)
     for k, v in build_cors_headers().items():
         resp.headers.setdefault(k, v)
     return resp

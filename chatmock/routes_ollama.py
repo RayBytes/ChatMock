@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from flask import Blueprint, Response, current_app, jsonify, make_response, request, stream_with_context
 
 from .fast_mode import resolve_service_tier
+from .images_api import IMAGE_TOOL_TYPE, image_markdown_for_item
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
 from .model_registry import list_public_models
@@ -206,8 +207,13 @@ def ollama_chat() -> Response:
         for _t in rt_payload:
             if not (isinstance(_t, dict) and isinstance(_t.get("type"), str)):
                 continue
-            if _t.get("type") not in ("web_search", "web_search_preview"):
-                err = {"error": "Only web_search/web_search_preview are supported in responses_tools"}
+            if _t.get("type") not in ("web_search", "web_search_preview", IMAGE_TOOL_TYPE):
+                err = {
+                    "error": (
+                        "Only web_search/web_search_preview/image_generation are supported "
+                        "in responses_tools"
+                    )
+                }
                 if verbose:
                     _log_json("OUT POST /api/chat", err)
                 return jsonify(err), 400
@@ -437,6 +443,41 @@ def ollama_chat() -> Response:
                                     full_parts.append(delta_txt)
                         else:
                             pass
+                    elif kind == "response.output_item.done" and (
+                        (evt.get("item") or {}).get("type") == "image_generation_call"
+                    ):
+                        markdown = image_markdown_for_item(evt.get("item") or {})
+                        if markdown:
+                            # Same reason as the text branch below: close the
+                            # reasoning block first, or the image is hidden along
+                            # with it.
+                            if compat == "think-tags" and think_open and not think_closed:
+                                yield (
+                                    json.dumps(
+                                        {
+                                            "model": model_out,
+                                            "created_at": created_at,
+                                            "message": {"role": "assistant", "content": "</think>"},
+                                            "done": False,
+                                        }
+                                    )
+                                    + "\n"
+                                )
+                                full_parts.append("</think>")
+                                think_open = False
+                                think_closed = True
+                            yield (
+                                json.dumps(
+                                    {
+                                        "model": model_out,
+                                        "created_at": created_at,
+                                        "message": {"role": "assistant", "content": markdown},
+                                        "done": False,
+                                    }
+                                )
+                                + "\n"
+                            )
+                            full_parts.append(markdown)
                     elif kind == "response.output_text.delta":
                         delta = evt.get("delta") or ""
                         if compat == "think-tags" and think_open and not think_closed:
@@ -534,7 +575,11 @@ def ollama_chat() -> Response:
                 reasoning_full_text += evt.get("delta") or ""
             elif kind == "response.output_item.done":
                 item = evt.get("item") or {}
-                if isinstance(item, dict) and item.get("type") == "function_call":
+                if isinstance(item, dict) and item.get("type") == "image_generation_call":
+                    # Appended, not prepended: the think block is added in front
+                    # of full_text further down.
+                    full_text += image_markdown_for_item(item)
+                elif isinstance(item, dict) and item.get("type") == "function_call":
                     call_id = item.get("call_id") or item.get("id") or ""
                     name = item.get("name") or ""
                     args = item.get("arguments") or ""

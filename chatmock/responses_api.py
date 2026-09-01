@@ -171,6 +171,12 @@ def aggregate_response_from_sse(
 ) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
     response_obj: Dict[str, Any] | None = None
     error_obj: Dict[str, Any] | None = None
+    # The Codex backend sends `response.completed` with `output: []` — the items
+    # (message, function_call, image_generation_call) only ever arrive in the
+    # `response.output_item.done` events. Without rebuilding them here, every
+    # non-streaming response comes out empty.
+    done_items: Dict[int, Dict[str, Any]] = {}
+    fallback_order = 0
     try:
         for evt in iter_sse_event_payloads(upstream):
             if callable(on_event):
@@ -182,6 +188,14 @@ def aggregate_response_from_sse(
             if isinstance(response, dict):
                 response_obj = response
             kind = evt.get("type")
+            if kind == "response.output_item.done":
+                item = evt.get("item")
+                if isinstance(item, dict):
+                    index = evt.get("output_index")
+                    if not isinstance(index, int):
+                        index = 1_000_000 + fallback_order
+                    fallback_order += 1
+                    done_items[index] = item
             if kind == "response.failed":
                 if isinstance(response, dict) and isinstance(response.get("error"), dict):
                     error_obj = {"error": response.get("error")}
@@ -192,7 +206,62 @@ def aggregate_response_from_sse(
                 break
     finally:
         upstream.close()
+    if isinstance(response_obj, dict) and done_items:
+        existing = response_obj.get("output")
+        if not isinstance(existing, list) or not existing:
+            response_obj = dict(response_obj)
+            response_obj["output"] = [done_items[key] for key in sorted(done_items)]
     return response_obj, error_obj
+
+
+def collect_images_from_sse(
+    upstream: Any,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None, Dict[str, Any] | None, str]:
+    """Read the stream to the end and return (image items, usage, error, text).
+
+    Same reason as above: `response.completed` carries no output, so the image
+    items only ever exist in the `response.output_item.done` events.
+
+    The text is collected for one reason: when the model finishes without
+    drawing, that text is the only place the reason exists. It used to be
+    dropped, and the caller was left guessing — the error even said the refusal
+    "usually" came from moderation, which nobody had ever confirmed.
+    """
+    images: List[Dict[str, Any]] = []
+    usage: Dict[str, Any] | None = None
+    error: Dict[str, Any] | None = None
+    said: List[str] = []
+    try:
+        for evt in iter_sse_event_payloads(upstream):
+            kind = evt.get("type")
+            if kind == "response.output_item.done":
+                item = evt.get("item")
+                if isinstance(item, dict) and item.get("type") == "image_generation_call":
+                    images.append(item)
+                elif isinstance(item, dict) and item.get("type") == "message":
+                    for part in item.get("content") or []:
+                        if isinstance(part, dict) and isinstance(part.get("text"), str):
+                            said.append(part["text"])
+            elif kind == "response.failed":
+                response = evt.get("response")
+                if isinstance(response, dict) and isinstance(response.get("error"), dict):
+                    error = response["error"]
+                else:
+                    error = {"message": "response.failed"}
+                break
+            elif kind == "error":
+                error = evt.get("error") if isinstance(evt.get("error"), dict) else {"message": "upstream error"}
+                break
+            elif kind == "response.completed":
+                response = evt.get("response")
+                if isinstance(response, dict):
+                    tool_usage = response.get("tool_usage")
+                    if isinstance(tool_usage, dict) and isinstance(tool_usage.get("image_gen"), dict):
+                        usage = tool_usage["image_gen"]
+                break
+    finally:
+        upstream.close()
+    return images, usage, error, " ".join(said).strip()
 
 
 def stream_upstream_bytes(

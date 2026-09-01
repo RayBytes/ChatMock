@@ -34,6 +34,7 @@ Set options in `.env` or pass environment variables:
 - `CHATGPT_LOCAL_ENABLE_WEB_SEARCH`: `true|false` to enable default web search tool
 - `CHATGPT_LOCAL_MODEL_SYNC`: `true|false` to discover account models automatically (default `true`)
 - `CHATGPT_LOCAL_MODEL_REFRESH_INTERVAL`: model catalog refresh interval in seconds (default `3600`)
+- `CHATGPT_LOCAL_IMAGE_MODEL`: model that orchestrates image requests (default `gpt-5.4-mini`)
 
 ## Logs
 Set `VERBOSE=true` to include extra logging for troubleshooting upstream or chat app requests. Please include and use these logs when submitting bug reports.
