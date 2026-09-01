@@ -53,16 +53,19 @@ def resolve_installation_id() -> str:
         return str(uuid.uuid4())
 
 
-def read_auth_file() -> Dict[str, Any] | None:
-    for base in [
+def auth_file_candidates() -> List[str]:
+    """The auth.json paths considered, in read priority order."""
+    bases = (
         os.getenv("CHATGPT_LOCAL_HOME"),
         os.getenv("CODEX_HOME"),
         os.path.expanduser("~/.chatgpt-local"),
         os.path.expanduser("~/.codex"),
-    ]:
-        if not base:
-            continue
-        path = os.path.join(base, "auth.json")
+    )
+    return [os.path.join(base, "auth.json") for base in bases if base]
+
+
+def read_auth_file() -> Dict[str, Any] | None:
+    for path in auth_file_candidates():
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
