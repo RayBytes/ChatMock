@@ -261,6 +261,108 @@ class RouteTests(unittest.TestCase):
         self.assertIsInstance(outbound_payload["prompt_cache_key"], str)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_reconstructs_non_stream_output_from_item_events(self, mock_start) -> None:
+        output = [
+            {
+                "type": "reasoning",
+                "id": "reasoning_1",
+                "summary": [{"type": "summary_text", "text": "Need the tool."}],
+                "encrypted_content": "encrypted",
+            },
+            {
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call_1",
+                "name": "get_time",
+                "arguments": '{"city":"Paris"}',
+                "status": "completed",
+            },
+            {
+                "type": "message",
+                "role": "assistant",
+                "id": "msg_1",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": '{"city":"Paris"}'}],
+            },
+        ]
+        events = [
+            {
+                "type": "response.created",
+                "response": {"id": "resp_items", "object": "response", "status": "in_progress"},
+            },
+            *[
+                {"type": "response.output_item.done", "output_index": index, "item": output[index]}
+                # Completion order is not output order; the protocol supplies
+                # output_index so non-stream aggregation can reconstruct it.
+                for index in (2, 0, 1)
+            ],
+            {
+                "type": "response.completed",
+                "response": {
+                    "id": "resp_items",
+                    "object": "response",
+                    "status": "completed",
+                    "output": [],
+                },
+            },
+        ]
+        mock_start.return_value = (
+            FakeUpstream(events, headers={"Content-Type": "text/event-stream"}),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.6-luna", "input": "Return structured output."},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["output"], output)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_keeps_output_from_completed_response(self, mock_start) -> None:
+        authoritative = {
+            "type": "message",
+            "role": "assistant",
+            "id": "msg_final",
+            "content": [{"type": "output_text", "text": "final"}],
+        }
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "type": "message",
+                            "role": "assistant",
+                            "id": "msg_event",
+                            "content": [{"type": "output_text", "text": "event"}],
+                        },
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_final",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [authoritative],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.6-luna", "input": "hello"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["output"], [authoritative])
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
         app = create_app(debug_model="gpt-5.4", model_sync=False)
         client = app.test_client()
