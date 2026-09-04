@@ -32,6 +32,10 @@ from .session import (
 from .upstream import normalize_model_name, start_upstream_raw_request, start_upstream_request
 from .utils import (
     convert_chat_messages_to_responses_input,
+    convert_response_format_to_text_format,
+    convert_tool_choice_chat_to_responses,
+    convert_usage_responses_to_chat,
+    response_format_requests_json,
     convert_tools_chat_to_responses,
     sse_translate_chat,
     sse_translate_text,
@@ -136,18 +140,12 @@ def chat_completions() -> Response:
             _log_json("OUT POST /v1/chat/completions", err)
         return jsonify(err), 400
 
-    if isinstance(messages, list):
-        sys_idx = next((i for i, m in enumerate(messages) if isinstance(m, dict) and m.get("role") == "system"), None)
-        if isinstance(sys_idx, int):
-            sys_msg = messages.pop(sys_idx)
-            content = sys_msg.get("content") if isinstance(sys_msg, dict) else ""
-            messages.insert(0, {"role": "user", "content": content})
     is_stream = bool(payload.get("stream"))
     stream_options = payload.get("stream_options") if isinstance(payload.get("stream_options"), dict) else {}
     include_usage = bool(stream_options.get("include_usage", False))
 
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
-    tool_choice = payload.get("tool_choice", "auto")
+    tool_choice = convert_tool_choice_chat_to_responses(payload.get("tool_choice", "auto"))
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
@@ -210,6 +208,16 @@ def chat_completions() -> Response:
     if tier_error is not None:
         return tier_error
 
+    text_format = convert_response_format_to_text_format(payload.get("response_format"))
+    text_verbosity = payload.get("verbosity") if isinstance(payload.get("verbosity"), str) else None
+
+    if (
+        response_format_requests_json(payload.get("response_format"))
+        and (reasoning_compat or "").strip().lower() == "think-tags"
+    ):
+        # think tags would be prepended to content the caller asked to be json
+        reasoning_compat = "legacy"
+
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
@@ -218,6 +226,8 @@ def chat_completions() -> Response:
         parallel_tool_calls=parallel_tool_calls,
         reasoning_param=reasoning_param,
         service_tier=service_tier,
+        text_format=text_format,
+        text_verbosity=text_verbosity,
     )
     if error_resp is not None:
         if verbose:
@@ -246,7 +256,7 @@ def chat_completions() -> Response:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
             base_tools_only = convert_tools_chat_to_responses(payload.get("tools"))
-            safe_choice = payload.get("tool_choice", "auto")
+            safe_choice = convert_tool_choice_chat_to_responses(payload.get("tool_choice", "auto"))
             upstream2, err2 = start_upstream_request(
                 model,
                 input_items,
@@ -255,6 +265,8 @@ def chat_completions() -> Response:
                 parallel_tool_calls=parallel_tool_calls,
                 reasoning_param=reasoning_param,
                 service_tier=service_tier,
+                text_format=text_format,
+                text_verbosity=text_verbosity,
             )
             record_rate_limits_from_response(upstream2)
             if err2 is None and upstream2 is not None and upstream2.status_code < 400:
@@ -306,19 +318,10 @@ def chat_completions() -> Response:
     response_id = "chatcmpl"
     tool_calls: List[Dict[str, Any]] = []
     error_message: str | None = None
-    usage_obj: Dict[str, int] | None = None
+    usage_obj: Dict[str, Any] | None = None
 
-    def _extract_usage(evt: Dict[str, Any]) -> Dict[str, int] | None:
-        try:
-            usage = (evt.get("response") or {}).get("usage")
-            if not isinstance(usage, dict):
-                return None
-            pt = int(usage.get("input_tokens") or 0)
-            ct = int(usage.get("output_tokens") or 0)
-            tt = int(usage.get("total_tokens") or (pt + ct))
-            return {"prompt_tokens": pt, "completion_tokens": ct, "total_tokens": tt}
-        except Exception:
-            return None
+    def _extract_usage(evt: Dict[str, Any]) -> Dict[str, Any] | None:
+        return convert_usage_responses_to_chat((evt.get("response") or {}).get("usage"))
     try:
         for raw in upstream.iter_lines(decode_unicode=False):
             if not raw:
@@ -503,18 +506,9 @@ def completions() -> Response:
 
     full_text = ""
     response_id = "cmpl"
-    usage_obj: Dict[str, int] | None = None
-    def _extract_usage(evt: Dict[str, Any]) -> Dict[str, int] | None:
-        try:
-            usage = (evt.get("response") or {}).get("usage")
-            if not isinstance(usage, dict):
-                return None
-            pt = int(usage.get("input_tokens") or 0)
-            ct = int(usage.get("output_tokens") or 0)
-            tt = int(usage.get("total_tokens") or (pt + ct))
-            return {"prompt_tokens": pt, "completion_tokens": ct, "total_tokens": tt}
-        except Exception:
-            return None
+    usage_obj: Dict[str, Any] | None = None
+    def _extract_usage(evt: Dict[str, Any]) -> Dict[str, Any] | None:
+        return convert_usage_responses_to_chat((evt.get("response") or {}).get("usage"))
     try:
         for raw_line in upstream.iter_lines(decode_unicode=False):
             if not raw_line:

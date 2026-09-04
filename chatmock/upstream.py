@@ -35,6 +35,8 @@ def start_upstream_request(
     parallel_tool_calls: bool = False,
     reasoning_param: Dict[str, Any] | None = None,
     service_tier: str | None = None,
+    text_format: Dict[str, Any] | None = None,
+    text_verbosity: str | None = None,
 ):
     access_token, account_id = get_effective_chatgpt_auth()
     if not access_token or not account_id:
@@ -71,7 +73,7 @@ def start_upstream_request(
         "model": model,
         "input": input_items,
         "tools": tools or [],
-        "tool_choice": tool_choice if tool_choice in ("auto", "none") or isinstance(tool_choice, dict) else "auto",
+        "tool_choice": tool_choice if tool_choice in ("auto", "none", "required") or isinstance(tool_choice, dict) else "auto",
         "parallel_tool_calls": bool(parallel_tool_calls),
         "store": False,
         "stream": True,
@@ -86,6 +88,13 @@ def start_upstream_request(
         responses_payload["reasoning"] = reasoning_param
     if isinstance(service_tier, str) and service_tier.strip():
         responses_payload["service_tier"] = service_tier.strip().lower()
+    text: Dict[str, Any] = {}
+    if isinstance(text_format, dict) and text_format:
+        text["format"] = text_format
+    if isinstance(text_verbosity, str) and text_verbosity.strip():
+        text["verbosity"] = text_verbosity.strip().lower()
+    if text:
+        responses_payload["text"] = text
 
     return start_upstream_raw_request(
         responses_payload,
