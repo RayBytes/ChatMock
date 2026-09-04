@@ -247,6 +247,46 @@ def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def convert_response_format_to_text_format(response_format: Any) -> Dict[str, Any] | None:
+    """Map a Chat Completions response_format onto a Responses text.format."""
+
+    if not isinstance(response_format, dict):
+        return None
+
+    # json_object is deliberately not mapped: upstream rejects it unless the
+    # input mentions "json", so honouring it would 400 requests that pass today.
+    if response_format.get("type") != "json_schema":
+        return None
+
+    spec = response_format.get("json_schema")
+    if not isinstance(spec, dict):
+        spec = response_format
+    schema = spec.get("schema")
+    if not isinstance(schema, dict) or not schema:
+        return None
+
+    name = spec.get("name")
+    text_format: Dict[str, Any] = {
+        "type": "json_schema",
+        "name": name.strip() if isinstance(name, str) and name.strip() else "response",
+        "schema": schema,
+        "strict": bool(spec.get("strict")),
+    }
+    description = spec.get("description")
+    if isinstance(description, str) and description.strip():
+        text_format["description"] = description
+    return text_format
+
+
+def response_format_requests_json(response_format: Any) -> bool:
+    """Whether the caller asked for JSON content, mapped upstream or not."""
+
+    return isinstance(response_format, dict) and response_format.get("type") in (
+        "json_schema",
+        "json_object",
+    )
+
+
 def load_chatgpt_tokens(
     ensure_fresh: bool = True,
     *,
