@@ -8,6 +8,7 @@ from .model_catalog import CatalogModel, current_model_catalog
 
 ALL_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 DEFAULT_REASONING_EFFORTS = frozenset(ALL_REASONING_EFFORTS)
+ALWAYS_EXPOSE_REASONING_VARIANTS = frozenset(("gpt-6-astra",))
 
 
 @dataclass(frozen=True)
@@ -260,19 +261,22 @@ def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
             seen_ids.add(model_id)
             model_ids.append(model_id)
 
+    def expose_variants_for(model_id: str) -> bool:
+        return expose_reasoning_models or model_id in ALWAYS_EXPOSE_REASONING_VARIANTS
+
     catalog = current_model_catalog()
     if catalog is not None:
         remote_models = catalog.visible_models(wait_for_refresh=True)
         for model in remote_models:
             append_model(model.slug)
-            if expose_reasoning_models:
+            if expose_variants_for(model.slug):
                 for effort in model.reasoning_efforts:
                     append_model(f"{model.slug}-{effort}")
 
     for spec in _MODEL_SPECS:
         base_was_seen = spec.public_id in seen_ids
         append_model(spec.public_id)
-        if expose_reasoning_models:
+        if expose_variants_for(spec.public_id):
             # Prefer account-specific reasoning metadata when the remote catalog
             # contains this model; static variants are only a compatibility fallback.
             if base_was_seen:

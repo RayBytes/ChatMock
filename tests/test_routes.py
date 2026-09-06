@@ -69,6 +69,9 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.6-terra", model_ids)
         self.assertIn("gpt-5.6-luna", model_ids)
         self.assertIn("gpt-6-astra", model_ids)
+        for effort in ("low", "medium", "high", "xhigh", "max", "ultra"):
+            self.assertIn(f"gpt-6-astra-{effort}", model_ids)
+        self.assertNotIn("gpt-5.6-sol-low", model_ids)
 
     def test_ollama_tags_list(self) -> None:
         response = self.client.get("/api/tags")
@@ -81,6 +84,9 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.6-terra", model_names)
         self.assertIn("gpt-5.6-luna", model_names)
         self.assertIn("gpt-6-astra", model_names)
+        for effort in ("low", "medium", "high", "xhigh", "max", "ultra"):
+            self.assertIn(f"gpt-6-astra-{effort}", model_names)
+        self.assertNotIn("gpt-5.6-sol-low", model_names)
 
     def test_remote_catalog_is_merged_with_static_models(self) -> None:
         app = create_app(model_sync=False)
@@ -165,7 +171,7 @@ class RouteTests(unittest.TestCase):
         self.assertNotIn("gpt-5.5-high", model_ids)
 
     def test_remote_astra_reasoning_variants_override_static_variants(self) -> None:
-        app = create_app(expose_reasoning_models=True, model_sync=False)
+        app = create_app(model_sync=False)
         catalog = ModelCatalog(enabled=False)
         catalog._models = (
             CatalogModel(
@@ -187,6 +193,7 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-6-astra-low", model_ids)
         self.assertIn("gpt-6-astra-ultra", model_ids)
         self.assertNotIn("gpt-6-astra-medium", model_ids)
+        self.assertNotIn("gpt-5.5-medium", model_ids)
 
     @patch("chatmock.model_catalog._account_id_from_auth_file", return_value="acct")
     def test_model_catalog_ignores_cache_from_old_client_version(self, _mock_account) -> None:

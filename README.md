@@ -99,6 +99,11 @@ account. The current catalog commonly includes:
 - `gpt-5.4-mini`
 - `gpt-5.3-codex-spark`
 
+`gpt-6-astra` always exposes each supported reasoning effort as a separate
+model ID, such as `gpt-6-astra-low`, `gpt-6-astra-medium`, and
+`gpt-6-astra-xhigh`. The signed-in account catalog determines the exact set;
+the static fallback also includes `high`, `max`, and `ultra`.
+
 <br>
 
 ## Features
@@ -111,7 +116,7 @@ account. The current catalog commonly includes:
 - Web search tool
 - OpenAI-compatible `/v1/responses` (HTTP + WebSocket)
 - Ollama-compatible endpoints
-- Reasoning effort exposed as separate models (optional)
+- Reasoning effort exposed as separate models (`gpt-6-astra` always; other models optional)
 
 <br>
 
@@ -126,7 +131,7 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 | `--reasoning-compat` | `CHATGPT_LOCAL_REASONING_COMPAT` | legacy, o3, think-tags | think-tags | How reasoning is returned to the client |
 | `--fast-mode` | `CHATGPT_LOCAL_FAST_MODE` | true/false | false | Priority processing for supported models |
 | `--enable-web-search` | `CHATGPT_LOCAL_ENABLE_WEB_SEARCH` | true/false | false | Allow the model to search the web |
-| `--expose-reasoning-models` | `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS` | true/false | false | List each reasoning level as its own model |
+| `--expose-reasoning-models` | `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS` | true/false | false | List each reasoning level for all models; `gpt-6-astra` variants are always listed |
 | `--model-sync` | `CHATGPT_LOCAL_MODEL_SYNC` | true/false | true | Discover account models automatically |
 | `--model-refresh-interval` | `CHATGPT_LOCAL_MODEL_REFRESH_INTERVAL` | seconds | 3600 | Refresh interval for model discovery |
 
