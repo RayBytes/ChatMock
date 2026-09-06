@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 from chatmock.app import create_app
 from chatmock.model_catalog import CatalogModel, ModelCatalog
-from chatmock.model_registry import extract_reasoning_from_model_name, normalize_model_name
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
@@ -61,10 +60,6 @@ class RouteTests(unittest.TestCase):
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
         model_ids = [item["id"] for item in body["data"]]
-        self.assertIn("gpt-6", model_ids)
-        self.assertIn("gpt-6-mini", model_ids)
-        self.assertIn("gpt-6-nano", model_ids)
-        self.assertIn("gpt-6-pro", model_ids)
         self.assertIn("gpt-5.4", model_ids)
         self.assertIn("gpt-5.4-mini", model_ids)
         self.assertIn("gpt-5.3-codex-spark", model_ids)
@@ -77,35 +72,11 @@ class RouteTests(unittest.TestCase):
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
         model_names = [item["name"] for item in body["models"]]
-        self.assertIn("gpt-6", model_names)
-        self.assertIn("gpt-6-mini", model_names)
-        self.assertIn("gpt-6-nano", model_names)
-        self.assertIn("gpt-6-pro", model_names)
         self.assertIn("gpt-5.4", model_names)
         self.assertIn("gpt-5.4-mini", model_names)
         self.assertIn("gpt-5.6-sol", model_names)
         self.assertIn("gpt-5.6-terra", model_names)
         self.assertIn("gpt-5.6-luna", model_names)
-
-    def test_gpt_6_aliases_and_reasoning_levels(self) -> None:
-        self.assertEqual(normalize_model_name("gpt6"), "gpt-6")
-        self.assertEqual(normalize_model_name("gpt-6-mini-latest"), "gpt-6-mini")
-        self.assertEqual(normalize_model_name("gpt6-nano-ultra"), "gpt-6-nano")
-        self.assertEqual(
-            extract_reasoning_from_model_name("gpt-6-pro:max"),
-            {"effort": "max"},
-        )
-
-    def test_gpt_6_reasoning_models_list(self) -> None:
-        app = create_app(expose_reasoning_models=True, model_sync=False)
-        client = app.test_client()
-        response = client.get("/v1/models")
-        model_ids = [item["id"] for item in response.get_json()["data"]]
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("gpt-6-none", model_ids)
-        self.assertIn("gpt-6-mini-xhigh", model_ids)
-        self.assertIn("gpt-6-nano-max", model_ids)
-        self.assertIn("gpt-6-pro-ultra", model_ids)
 
     def test_remote_catalog_is_merged_with_static_models(self) -> None:
         app = create_app(model_sync=False)
@@ -142,12 +113,29 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(openai_ids, ollama_ids)
         self.assertEqual(openai_ids[: len(remote_slugs)], list(remote_slugs))
         self.assertEqual(len(openai_ids), len(set(openai_ids)))
-        self.assertIn("gpt-6", openai_ids)
-        self.assertIn("gpt-6-mini", openai_ids)
-        self.assertIn("gpt-6-nano", openai_ids)
-        self.assertIn("gpt-6-pro", openai_ids)
         self.assertIn("gpt-5", openai_ids)
         self.assertIn("codex-mini", openai_ids)
+
+    def test_gpt_6_is_listed_when_remote_catalog_provides_it(self) -> None:
+        app = create_app(expose_reasoning_models=True, model_sync=False)
+        catalog = ModelCatalog(enabled=False)
+        catalog._models = (
+            CatalogModel(
+                slug="gpt-6",
+                reasoning_efforts=("low", "high"),
+                service_tiers=frozenset(("priority",)),
+                priority=0,
+                visibility="list",
+                supported_in_api=True,
+            ),
+        )
+        app.extensions["chatmock_model_catalog"] = catalog
+
+        response = app.test_client().get("/v1/models")
+        model_ids = [item["id"] for item in response.get_json()["data"]]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(model_ids[:3], ["gpt-6", "gpt-6-low", "gpt-6-high"])
 
     def test_remote_reasoning_variants_override_static_variants(self) -> None:
         app = create_app(expose_reasoning_models=True, model_sync=False)
@@ -171,7 +159,6 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(model_ids.count("gpt-5.5"), 1)
         self.assertIn("gpt-5.5-medium", model_ids)
         self.assertNotIn("gpt-5.5-high", model_ids)
-        self.assertIn("gpt-6-ultra", model_ids)
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions(self, mock_start) -> None:
@@ -192,6 +179,27 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(body["choices"][0]["message"]["content"], "hello")
         self.assertEqual(body["model"], "gpt5.4-mini")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_preserves_upstream_error_message(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                status_code=400,
+                content=json.dumps({"detail": "The requested model is not available"}).encode("utf-8"),
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={"model": "unavailable-model", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()["error"]["message"],
+            "The requested model is not available",
+        )
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_honors_debug_model_override(self, mock_start) -> None:
@@ -275,29 +283,6 @@ class RouteTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(mock_start.call_args.kwargs["service_tier"], "priority")
-
-    @patch("chatmock.routes_openai.start_upstream_request")
-    def test_gpt_6_fast_mode_sets_priority_service_tier(self, mock_start) -> None:
-        mock_start.return_value = (
-            FakeUpstream(
-                [
-                    {"type": "response.output_text.delta", "delta": "hello"},
-                    {"type": "response.completed", "response": {"id": "resp-openai"}},
-                ]
-            ),
-            None,
-        )
-        response = self.client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "gpt-6-pro",
-                "fast_mode": True,
-                "messages": [{"role": "user", "content": "hi"}],
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(mock_start.call_args.args[0], "gpt-6-pro")
         self.assertEqual(mock_start.call_args.kwargs["service_tier"], "priority")
 
     @patch("chatmock.routes_openai.start_upstream_request")

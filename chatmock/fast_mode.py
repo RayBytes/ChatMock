@@ -8,10 +8,6 @@ from .model_registry import model_supports_service_tier, normalize_model_name
 
 PRIORITY_SUPPORTED_MODELS = frozenset(
     (
-        "gpt-6",
-        "gpt-6-mini",
-        "gpt-6-nano",
-        "gpt-6-pro",
         "gpt-5.4",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
