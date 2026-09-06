@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from chatmock.app import create_app
+from chatmock.model_registry import extract_reasoning_from_model_name, normalize_model_name
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
@@ -59,6 +60,10 @@ class RouteTests(unittest.TestCase):
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
         model_ids = [item["id"] for item in body["data"]]
+        self.assertIn("gpt-6", model_ids)
+        self.assertIn("gpt-6-mini", model_ids)
+        self.assertIn("gpt-6-nano", model_ids)
+        self.assertIn("gpt-6-pro", model_ids)
         self.assertIn("gpt-5.4", model_ids)
         self.assertIn("gpt-5.4-mini", model_ids)
         self.assertIn("gpt-5.3-codex-spark", model_ids)
@@ -71,11 +76,35 @@ class RouteTests(unittest.TestCase):
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
         model_names = [item["name"] for item in body["models"]]
+        self.assertIn("gpt-6", model_names)
+        self.assertIn("gpt-6-mini", model_names)
+        self.assertIn("gpt-6-nano", model_names)
+        self.assertIn("gpt-6-pro", model_names)
         self.assertIn("gpt-5.4", model_names)
         self.assertIn("gpt-5.4-mini", model_names)
         self.assertIn("gpt-5.6-sol", model_names)
         self.assertIn("gpt-5.6-terra", model_names)
         self.assertIn("gpt-5.6-luna", model_names)
+
+    def test_gpt_6_aliases_and_reasoning_levels(self) -> None:
+        self.assertEqual(normalize_model_name("gpt6"), "gpt-6")
+        self.assertEqual(normalize_model_name("gpt-6-mini-latest"), "gpt-6-mini")
+        self.assertEqual(normalize_model_name("gpt6-nano-ultra"), "gpt-6-nano")
+        self.assertEqual(
+            extract_reasoning_from_model_name("gpt-6-pro:max"),
+            {"effort": "max"},
+        )
+
+    def test_gpt_6_reasoning_models_list(self) -> None:
+        app = create_app(expose_reasoning_models=True, model_sync=False)
+        client = app.test_client()
+        response = client.get("/v1/models")
+        model_ids = [item["id"] for item in response.get_json()["data"]]
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("gpt-6-none", model_ids)
+        self.assertIn("gpt-6-mini-xhigh", model_ids)
+        self.assertIn("gpt-6-nano-max", model_ids)
+        self.assertIn("gpt-6-pro-ultra", model_ids)
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions(self, mock_start) -> None:
@@ -179,6 +208,29 @@ class RouteTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["service_tier"], "priority")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_gpt_6_fast_mode_sets_priority_service_tier(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-6-pro",
+                "fast_mode": True,
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.args[0], "gpt-6-pro")
         self.assertEqual(mock_start.call_args.kwargs["service_tier"], "priority")
 
     @patch("chatmock.routes_openai.start_upstream_request")

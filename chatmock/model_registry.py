@@ -21,6 +21,34 @@ class ModelSpec:
 
 _MODEL_SPECS = (
     ModelSpec(
+        public_id="gpt-6",
+        upstream_id="gpt-6",
+        aliases=("gpt6", "gpt-6-latest"),
+        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max", "ultra")),
+        variant_efforts=("none", "low", "medium", "high", "xhigh", "max", "ultra"),
+    ),
+    ModelSpec(
+        public_id="gpt-6-mini",
+        upstream_id="gpt-6-mini",
+        aliases=("gpt6-mini", "gpt-6-mini-latest"),
+        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max", "ultra")),
+        variant_efforts=("none", "low", "medium", "high", "xhigh", "max", "ultra"),
+    ),
+    ModelSpec(
+        public_id="gpt-6-nano",
+        upstream_id="gpt-6-nano",
+        aliases=("gpt6-nano", "gpt-6-nano-latest"),
+        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max", "ultra")),
+        variant_efforts=("none", "low", "medium", "high", "xhigh", "max", "ultra"),
+    ),
+    ModelSpec(
+        public_id="gpt-6-pro",
+        upstream_id="gpt-6-pro",
+        aliases=("gpt6-pro", "gpt-6-pro-latest"),
+        allowed_efforts=frozenset(("none", "low", "medium", "high", "xhigh", "max", "ultra")),
+        variant_efforts=("none", "low", "medium", "high", "xhigh", "max", "ultra"),
+    ),
+    ModelSpec(
         public_id="gpt-5",
         upstream_id="gpt-5",
         aliases=("gpt5", "gpt-5-latest"),
