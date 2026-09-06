@@ -273,22 +273,33 @@ def extract_reasoning_from_model_name(model: str | None) -> dict[str, str] | Non
 
 
 def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
+    model_ids: list[str] = []
+    seen_ids: set[str] = set()
+
+    def append_model(model_id: str) -> None:
+        if model_id not in seen_ids:
+            seen_ids.add(model_id)
+            model_ids.append(model_id)
+
     catalog = current_model_catalog()
     if catalog is not None:
         remote_models = catalog.visible_models(wait_for_refresh=True)
-        if remote_models:
-            model_ids: list[str] = []
-            for model in remote_models:
-                model_ids.append(model.slug)
-                if expose_reasoning_models:
-                    model_ids.extend(f"{model.slug}-{effort}" for effort in model.reasoning_efforts)
-            return model_ids
+        for model in remote_models:
+            append_model(model.slug)
+            if expose_reasoning_models:
+                for effort in model.reasoning_efforts:
+                    append_model(f"{model.slug}-{effort}")
 
-    model_ids: list[str] = []
     for spec in _MODEL_SPECS:
-        model_ids.append(spec.public_id)
+        base_was_seen = spec.public_id in seen_ids
+        append_model(spec.public_id)
         if expose_reasoning_models:
-            model_ids.extend(f"{spec.public_id}-{effort}" for effort in spec.variant_efforts)
+            # Prefer account-specific reasoning metadata when the remote catalog
+            # contains this model; static variants are only a compatibility fallback.
+            if base_was_seen:
+                continue
+            for effort in spec.variant_efforts:
+                append_model(f"{spec.public_id}-{effort}")
     return model_ids
 
 

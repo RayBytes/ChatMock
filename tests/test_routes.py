@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from chatmock.app import create_app
+from chatmock.model_catalog import CatalogModel, ModelCatalog
 from chatmock.model_registry import extract_reasoning_from_model_name, normalize_model_name
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
@@ -105,6 +106,72 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-6-mini-xhigh", model_ids)
         self.assertIn("gpt-6-nano-max", model_ids)
         self.assertIn("gpt-6-pro-ultra", model_ids)
+
+    def test_remote_catalog_is_merged_with_static_models(self) -> None:
+        app = create_app(model_sync=False)
+        catalog = ModelCatalog(enabled=False)
+        remote_slugs = (
+            "gpt-5.3-codex-spark",
+            "gpt-5.4-mini",
+            "gpt-5.5",
+            "gpt-5.6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+        )
+        catalog._models = tuple(
+            CatalogModel(
+                slug=slug,
+                reasoning_efforts=("low", "medium", "high"),
+                service_tiers=frozenset(),
+                priority=index,
+                visibility="list",
+                supported_in_api=True,
+            )
+            for index, slug in enumerate(remote_slugs)
+        )
+        app.extensions["chatmock_model_catalog"] = catalog
+        client = app.test_client()
+
+        openai_response = client.get("/v1/models")
+        ollama_response = client.get("/api/tags")
+        openai_ids = [item["id"] for item in openai_response.get_json()["data"]]
+        ollama_ids = [item["name"] for item in ollama_response.get_json()["models"]]
+
+        self.assertEqual(openai_response.status_code, 200)
+        self.assertEqual(ollama_response.status_code, 200)
+        self.assertEqual(openai_ids, ollama_ids)
+        self.assertEqual(openai_ids[: len(remote_slugs)], list(remote_slugs))
+        self.assertEqual(len(openai_ids), len(set(openai_ids)))
+        self.assertIn("gpt-6", openai_ids)
+        self.assertIn("gpt-6-mini", openai_ids)
+        self.assertIn("gpt-6-nano", openai_ids)
+        self.assertIn("gpt-6-pro", openai_ids)
+        self.assertIn("gpt-5", openai_ids)
+        self.assertIn("codex-mini", openai_ids)
+
+    def test_remote_reasoning_variants_override_static_variants(self) -> None:
+        app = create_app(expose_reasoning_models=True, model_sync=False)
+        catalog = ModelCatalog(enabled=False)
+        catalog._models = (
+            CatalogModel(
+                slug="gpt-5.5",
+                reasoning_efforts=("medium",),
+                service_tiers=frozenset(),
+                priority=0,
+                visibility="list",
+                supported_in_api=True,
+            ),
+        )
+        app.extensions["chatmock_model_catalog"] = catalog
+
+        response = app.test_client().get("/v1/models")
+        model_ids = [item["id"] for item in response.get_json()["data"]]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(model_ids.count("gpt-5.5"), 1)
+        self.assertIn("gpt-5.5-medium", model_ids)
+        self.assertNotIn("gpt-5.5-high", model_ids)
+        self.assertIn("gpt-6-ultra", model_ids)
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions(self, mock_start) -> None:
