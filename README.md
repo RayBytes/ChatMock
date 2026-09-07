@@ -99,10 +99,14 @@ account. The current catalog commonly includes:
 - `gpt-5.4-mini`
 - `gpt-5.3-codex-spark`
 
-`gpt-6-astra` always exposes each supported reasoning effort as a separate
+`gpt-6-astra` exposes reasoning efforts as separate
 model ID, such as `gpt-6-astra-low`, `gpt-6-astra-medium`, and
 `gpt-6-astra-xhigh`. The signed-in account catalog determines the exact set;
-the static fallback also includes `high`, `max`, and `ultra`.
+the static fallback also includes `high` and `max`.
+`gpt-6-astra-ultra` is excluded from both model lists, including cached or
+remote catalog entries, because its upstream support has not been verified
+and requests have been reported to fail. This removes discovery only: manually
+specified requests are not remapped to another effort or blocked by this change.
 
 <br>
 

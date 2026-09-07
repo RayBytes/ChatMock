@@ -9,6 +9,9 @@ from .model_catalog import CatalogModel, current_model_catalog
 ALL_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 DEFAULT_REASONING_EFFORTS = frozenset(ALL_REASONING_EFFORTS)
 ALWAYS_EXPOSE_REASONING_VARIANTS = frozenset(("gpt-6-astra",))
+# Do not advertise this unverified upstream model/effort combination, even
+# when it appears in a cached or remote catalog.
+HIDDEN_MODEL_IDS = frozenset(("gpt-6-astra-ultra",))
 
 
 @dataclass(frozen=True)
@@ -89,7 +92,7 @@ _MODEL_SPECS = (
         upstream_id="gpt-6-astra",
         aliases=("gpt6-astra", "gpt-6-astra-latest"),
         allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max", "ultra")),
-        variant_efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
+        variant_efforts=("low", "medium", "high", "xhigh", "max"),
     ),
     ModelSpec(
         public_id="gpt-5.3-codex",
@@ -257,6 +260,8 @@ def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
     seen_ids: set[str] = set()
 
     def append_model(model_id: str) -> None:
+        if model_id in HIDDEN_MODEL_IDS:
+            return
         if model_id not in seen_ids:
             seen_ids.add(model_id)
             model_ids.append(model_id)

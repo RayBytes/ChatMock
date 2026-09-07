@@ -69,8 +69,9 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.6-terra", model_ids)
         self.assertIn("gpt-5.6-luna", model_ids)
         self.assertIn("gpt-6-astra", model_ids)
-        for effort in ("low", "medium", "high", "xhigh", "max", "ultra"):
+        for effort in ("low", "medium", "high", "xhigh", "max"):
             self.assertIn(f"gpt-6-astra-{effort}", model_ids)
+        self.assertNotIn("gpt-6-astra-ultra", model_ids)
         self.assertNotIn("gpt-5.6-sol-low", model_ids)
 
     def test_ollama_tags_list(self) -> None:
@@ -84,8 +85,9 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.6-terra", model_names)
         self.assertIn("gpt-5.6-luna", model_names)
         self.assertIn("gpt-6-astra", model_names)
-        for effort in ("low", "medium", "high", "xhigh", "max", "ultra"):
+        for effort in ("low", "medium", "high", "xhigh", "max"):
             self.assertIn(f"gpt-6-astra-{effort}", model_names)
+        self.assertNotIn("gpt-6-astra-ultra", model_names)
         self.assertNotIn("gpt-5.6-sol-low", model_names)
 
     def test_remote_catalog_is_merged_with_static_models(self) -> None:
@@ -191,9 +193,43 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(model_ids.count("gpt-6-astra"), 1)
         self.assertIn("gpt-6-astra-low", model_ids)
-        self.assertIn("gpt-6-astra-ultra", model_ids)
+        self.assertNotIn("gpt-6-astra-ultra", model_ids)
         self.assertNotIn("gpt-6-astra-medium", model_ids)
         self.assertNotIn("gpt-5.5-medium", model_ids)
+
+    def test_astra_ultra_is_hidden_from_both_catalog_endpoints(self) -> None:
+        for expose in (False, True):
+            with self.subTest(expose_reasoning_models=expose):
+                app = create_app(expose_reasoning_models=expose, model_sync=False)
+                catalog = ModelCatalog(enabled=False)
+                catalog._models = tuple(
+                    CatalogModel(
+                        slug=slug,
+                        reasoning_efforts=efforts,
+                        service_tiers=frozenset(),
+                        priority=index,
+                        visibility="list",
+                        supported_in_api=True,
+                    )
+                    for index, (slug, efforts) in enumerate((
+                        ("gpt-6-astra", ("low", "xhigh", "ultra")),
+                        ("gpt-6-astra-ultra", ()),
+                        ("gpt-5.6-sol", ("ultra",)),
+                    ))
+                )
+                app.extensions["chatmock_model_catalog"] = catalog
+                client = app.test_client()
+                openai = client.get("/v1/models")
+                ollama = client.get("/api/tags")
+                self.assertEqual(openai.status_code, 200)
+                self.assertEqual(ollama.status_code, 200)
+                ids = [item["id"] for item in openai.get_json()["data"]]
+                self.assertEqual(ids, [item["name"] for item in ollama.get_json()["models"]])
+                self.assertNotIn("gpt-6-astra-ultra", ids)
+                self.assertIn("gpt-6-astra-low", ids)
+                self.assertIn("gpt-6-astra-xhigh", ids)
+                self.assertEqual(len(ids), len(set(ids)))
+                self.assertEqual("gpt-5.6-sol-ultra" in ids, expose)
 
     @patch("chatmock.model_catalog._account_id_from_auth_file", return_value="acct")
     def test_model_catalog_ignores_cache_from_old_client_version(self, _mock_account) -> None:
@@ -283,12 +319,12 @@ class RouteTests(unittest.TestCase):
 
         response = self.client.post(
             "/v1/chat/completions",
-            json={"model": "gpt6-astra-ultra", "messages": [{"role": "user", "content": "hi"}]},
+            json={"model": "gpt6-astra-xhigh", "messages": [{"role": "user", "content": "hi"}]},
         )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mock_start.call_args.args[0], "gpt-6-astra")
-        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["effort"], "ultra")
+        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["effort"], "xhigh")
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_preserves_upstream_error_message(self, mock_start) -> None:
