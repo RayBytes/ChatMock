@@ -78,7 +78,7 @@ def resolve_service_tier(
         normalized = normalize_model_name(model)
         message = (
             f"Fast mode is not supported for model '{normalized}'. "
-            "Use a supported GPT-5 priority-processing model or disable fast mode for this request."
+            "Use a supported GPT priority-processing model or disable fast mode for this request."
         )
         if explicit_request:
             return ServiceTierResolution(

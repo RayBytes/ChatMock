@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import socket
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from chatmock.app import create_app
+from chatmock.model_catalog import CODEX_MODELS_CLIENT_VERSION, CatalogModel, ModelCatalog
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
@@ -65,6 +68,11 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.6-sol", model_ids)
         self.assertIn("gpt-5.6-terra", model_ids)
         self.assertIn("gpt-5.6-luna", model_ids)
+        self.assertIn("gpt-6-astra", model_ids)
+        for effort in ("low", "medium", "high", "xhigh", "max"):
+            self.assertIn(f"gpt-6-astra-{effort}", model_ids)
+        self.assertNotIn("gpt-6-astra-ultra", model_ids)
+        self.assertNotIn("gpt-5.6-sol-low", model_ids)
 
     def test_ollama_tags_list(self) -> None:
         response = self.client.get("/api/tags")
@@ -76,6 +84,206 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.6-sol", model_names)
         self.assertIn("gpt-5.6-terra", model_names)
         self.assertIn("gpt-5.6-luna", model_names)
+        self.assertIn("gpt-6-astra", model_names)
+        for effort in ("low", "medium", "high", "xhigh", "max"):
+            self.assertIn(f"gpt-6-astra-{effort}", model_names)
+        self.assertNotIn("gpt-6-astra-ultra", model_names)
+        self.assertNotIn("gpt-5.6-sol-low", model_names)
+
+    def test_remote_catalog_is_merged_with_static_models(self) -> None:
+        app = create_app(model_sync=False)
+        catalog = ModelCatalog(enabled=False)
+        remote_slugs = (
+            "gpt-5.3-codex-spark",
+            "gpt-5.4-mini",
+            "gpt-5.5",
+            "gpt-5.6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+        )
+        catalog._models = tuple(
+            CatalogModel(
+                slug=slug,
+                reasoning_efforts=("low", "medium", "high"),
+                service_tiers=frozenset(),
+                priority=index,
+                visibility="list",
+                supported_in_api=True,
+            )
+            for index, slug in enumerate(remote_slugs)
+        )
+        app.extensions["chatmock_model_catalog"] = catalog
+        client = app.test_client()
+
+        openai_response = client.get("/v1/models")
+        ollama_response = client.get("/api/tags")
+        openai_ids = [item["id"] for item in openai_response.get_json()["data"]]
+        ollama_ids = [item["name"] for item in ollama_response.get_json()["models"]]
+
+        self.assertEqual(openai_response.status_code, 200)
+        self.assertEqual(ollama_response.status_code, 200)
+        self.assertEqual(openai_ids, ollama_ids)
+        self.assertEqual(openai_ids[: len(remote_slugs)], list(remote_slugs))
+        self.assertEqual(len(openai_ids), len(set(openai_ids)))
+        self.assertIn("gpt-5", openai_ids)
+        self.assertIn("codex-mini", openai_ids)
+
+    def test_gpt_6_is_listed_when_remote_catalog_provides_it(self) -> None:
+        app = create_app(expose_reasoning_models=True, model_sync=False)
+        catalog = ModelCatalog(enabled=False)
+        catalog._models = (
+            CatalogModel(
+                slug="gpt-6",
+                reasoning_efforts=("low", "high"),
+                service_tiers=frozenset(("priority",)),
+                priority=0,
+                visibility="list",
+                supported_in_api=True,
+            ),
+        )
+        app.extensions["chatmock_model_catalog"] = catalog
+
+        response = app.test_client().get("/v1/models")
+        model_ids = [item["id"] for item in response.get_json()["data"]]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(model_ids[:3], ["gpt-6", "gpt-6-low", "gpt-6-high"])
+
+    def test_remote_reasoning_variants_override_static_variants(self) -> None:
+        app = create_app(expose_reasoning_models=True, model_sync=False)
+        catalog = ModelCatalog(enabled=False)
+        catalog._models = (
+            CatalogModel(
+                slug="gpt-5.5",
+                reasoning_efforts=("medium",),
+                service_tiers=frozenset(),
+                priority=0,
+                visibility="list",
+                supported_in_api=True,
+            ),
+        )
+        app.extensions["chatmock_model_catalog"] = catalog
+
+        response = app.test_client().get("/v1/models")
+        model_ids = [item["id"] for item in response.get_json()["data"]]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(model_ids.count("gpt-5.5"), 1)
+        self.assertIn("gpt-5.5-medium", model_ids)
+        self.assertNotIn("gpt-5.5-high", model_ids)
+
+    def test_remote_astra_reasoning_variants_override_static_variants(self) -> None:
+        app = create_app(model_sync=False)
+        catalog = ModelCatalog(enabled=False)
+        catalog._models = (
+            CatalogModel(
+                slug="gpt-6-astra",
+                reasoning_efforts=("low", "ultra"),
+                service_tiers=frozenset(("priority",)),
+                priority=0,
+                visibility="list",
+                supported_in_api=True,
+            ),
+        )
+        app.extensions["chatmock_model_catalog"] = catalog
+
+        response = app.test_client().get("/v1/models")
+        model_ids = [item["id"] for item in response.get_json()["data"]]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(model_ids.count("gpt-6-astra"), 1)
+        self.assertIn("gpt-6-astra-low", model_ids)
+        self.assertNotIn("gpt-6-astra-ultra", model_ids)
+        self.assertNotIn("gpt-6-astra-medium", model_ids)
+        self.assertNotIn("gpt-5.5-medium", model_ids)
+
+    def test_astra_ultra_is_hidden_from_both_catalog_endpoints(self) -> None:
+        for expose in (False, True):
+            with self.subTest(expose_reasoning_models=expose):
+                app = create_app(expose_reasoning_models=expose, model_sync=False)
+                catalog = ModelCatalog(enabled=False)
+                catalog._models = tuple(
+                    CatalogModel(
+                        slug=slug,
+                        reasoning_efforts=efforts,
+                        service_tiers=frozenset(),
+                        priority=index,
+                        visibility="list",
+                        supported_in_api=True,
+                    )
+                    for index, (slug, efforts) in enumerate((
+                        ("gpt-6-astra", ("low", "xhigh", "ultra")),
+                        ("gpt-6-astra-ultra", ()),
+                        ("gpt-5.6-sol", ("ultra",)),
+                    ))
+                )
+                app.extensions["chatmock_model_catalog"] = catalog
+                client = app.test_client()
+                openai = client.get("/v1/models")
+                ollama = client.get("/api/tags")
+                self.assertEqual(openai.status_code, 200)
+                self.assertEqual(ollama.status_code, 200)
+                ids = [item["id"] for item in openai.get_json()["data"]]
+                self.assertEqual(ids, [item["name"] for item in ollama.get_json()["models"]])
+                self.assertNotIn("gpt-6-astra-ultra", ids)
+                self.assertIn("gpt-6-astra-low", ids)
+                self.assertIn("gpt-6-astra-xhigh", ids)
+                self.assertEqual(len(ids), len(set(ids)))
+                self.assertEqual("gpt-5.6-sol-ultra" in ids, expose)
+
+    @patch("chatmock.model_catalog._account_id_from_auth_file", return_value="acct")
+    def test_model_catalog_ignores_cache_from_old_client_version(self, _mock_account) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "models.json"
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "client_version": "0.146.0",
+                        "account_id": "acct",
+                        "fetched_at": "2026-01-01T00:00:00Z",
+                        "models": [
+                            {
+                                "slug": "stale-model",
+                                "visibility": "list",
+                                "supported_in_api": True,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            catalog = ModelCatalog(cache_path=cache_path)
+
+        self.assertEqual(CODEX_MODELS_CLIENT_VERSION, "0.153.4")
+        self.assertEqual(catalog._models, ())
+
+    @patch("chatmock.model_catalog._account_id_from_auth_file", return_value="acct")
+    def test_model_catalog_loads_current_client_version_cache(self, _mock_account) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "models.json"
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "client_version": CODEX_MODELS_CLIENT_VERSION,
+                        "account_id": "acct",
+                        "fetched_at": "2026-01-01T00:00:00Z",
+                        "models": [
+                            {
+                                "slug": "gpt-6-astra",
+                                "supported_reasoning_levels": [{"effort": "ultra"}],
+                                "visibility": "list",
+                                "supported_in_api": True,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            catalog = ModelCatalog(cache_path=cache_path)
+
+        self.assertEqual([model.slug for model in catalog._models], ["gpt-6-astra"])
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions(self, mock_start) -> None:
@@ -96,6 +304,48 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(body["choices"][0]["message"]["content"], "hello")
         self.assertEqual(body["model"], "gpt5.4-mini")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_maps_astra_alias_and_reasoning_effort(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-astra"}},
+                ]
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt6-astra-xhigh", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.args[0], "gpt-6-astra")
+        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["effort"], "xhigh")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_preserves_upstream_error_message(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                status_code=400,
+                content=json.dumps({"detail": "The requested model is not available"}).encode("utf-8"),
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={"model": "unavailable-model", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()["error"]["message"],
+            "The requested model is not available",
+        )
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_honors_debug_model_override(self, mock_start) -> None:

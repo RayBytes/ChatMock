@@ -71,6 +71,32 @@ def _wrap_stream_logging(label: str, iterator, enabled: bool):
     return _gen()
 
 
+def _upstream_error_message(upstream: Any) -> str:
+    raw = getattr(upstream, "content", b"") or b""
+    text = getattr(upstream, "text", "") or ""
+    try:
+        body = json.loads(raw.decode("utf-8", errors="replace")) if raw else None
+    except (TypeError, ValueError):
+        body = None
+
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+        elif isinstance(error, str) and error.strip():
+            return error.strip()
+        for key in ("message", "detail", "title"):
+            value = body.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    return "Upstream error"
+
+
 def _service_tier_from_payload(
     model: str,
     payload: Dict[str, Any],
@@ -237,11 +263,6 @@ def chat_completions() -> Response:
 
     created = int(time.time())
     if upstream.status_code >= 400:
-        try:
-            raw = upstream.content
-            err_body = json.loads(raw.decode("utf-8", errors="ignore")) if raw else {"raw": upstream.text}
-        except Exception:
-            err_body = {"raw": upstream.text}
         if had_responses_tools:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
@@ -262,7 +283,7 @@ def chat_completions() -> Response:
             else:
                 err = {
                     "error": {
-                        "message": (err_body.get("error", {}) or {}).get("message", "Upstream error"),
+                        "message": _upstream_error_message(upstream2 or upstream),
                         "code": "RESPONSES_TOOLS_REJECTED",
                     }
                 }
@@ -272,7 +293,7 @@ def chat_completions() -> Response:
         else:
             if verbose:
                 print("Upstream error status=", upstream.status_code)
-            err = {"error": {"message": (err_body.get("error", {}) or {}).get("message", "Upstream error")}}
+            err = {"error": {"message": _upstream_error_message(upstream)}}
             if verbose:
                 _log_json("OUT POST /v1/chat/completions", err)
             return jsonify(err), upstream.status_code

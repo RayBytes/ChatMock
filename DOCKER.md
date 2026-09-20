@@ -30,7 +30,7 @@ Set options in `.env` or pass environment variables:
 - `CHATGPT_LOCAL_REASONING_COMPAT`: legacy|o3|think-tags|current
 - `CHATGPT_LOCAL_FAST_MODE`: `true|false` to enable fast mode by default for supported models
 - `CHATGPT_LOCAL_CLIENT_ID`: OAuth client id override (rarely needed)
-- `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS`: `true|false` to add reasoning model variants to `/v1/models`
+- `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS`: `true|false` to add reasoning variants for all models to `/v1/models`; `gpt-6-astra` variants are always listed
 - `CHATGPT_LOCAL_ENABLE_WEB_SEARCH`: `true|false` to enable default web search tool
 - `CHATGPT_LOCAL_MODEL_SYNC`: `true|false` to discover account models automatically (default `true`)
 - `CHATGPT_LOCAL_MODEL_REFRESH_INTERVAL`: model catalog refresh interval in seconds (default `3600`)

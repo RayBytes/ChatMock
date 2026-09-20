@@ -22,3 +22,5 @@ dist/
 
 # OS clutter
 .DS_Store
+MAC_OSX/
+__MACOSX/
