@@ -91,6 +91,10 @@ ChatMock automatically discovers the models available to the signed-in ChatGPT
 account. The current catalog commonly includes:
 
 - `gpt-6-astra`
+- `gpt-6-astra-high`
+- `gpt-6-astra-low`
+- `gpt-6-astra-medium`
+- `gpt-6-astra-xhigh`
 - `gpt-5.6-sol`
 - `gpt-5.6-terra`
 - `gpt-5.6-luna`
@@ -100,7 +104,7 @@ account. The current catalog commonly includes:
 - `gpt-5.3-codex-spark`
 
 `gpt-6-astra` exposes reasoning efforts as separate
-model ID, such as `gpt-6-astra-low`, `gpt-6-astra-medium`, and
+model IDs, such as `gpt-6-astra-low`, `gpt-6-astra-medium`, and
 `gpt-6-astra-xhigh`. The signed-in account catalog determines the exact set;
 the static fallback also includes `high` and `max`.
 `gpt-6-astra-ultra` is excluded from both model lists, including cached or
