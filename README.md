@@ -90,6 +90,9 @@ The server runs at `http://127.0.0.1:8000` by default. Use `http://127.0.0.1:800
 ChatMock automatically discovers the models available to the signed-in ChatGPT
 account. The current catalog commonly includes:
 
+- `gpt-6-astra`
+- `gpt-6-sol`
+- `gpt-6-luna`
 - `gpt-5.6-sol`
 - `gpt-5.6-terra`
 - `gpt-5.6-luna`

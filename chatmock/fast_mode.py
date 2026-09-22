@@ -12,6 +12,9 @@ PRIORITY_SUPPORTED_MODELS = frozenset(
         "gpt-5.6-sol",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
         "gpt-5.2",
         "gpt-5.1",
         "gpt-5",
@@ -78,7 +81,7 @@ def resolve_service_tier(
         normalized = normalize_model_name(model)
         message = (
             f"Fast mode is not supported for model '{normalized}'. "
-            "Use a supported GPT-5 priority-processing model or disable fast mode for this request."
+            "Use a model with priority processing or disable fast mode for this request."
         )
         if explicit_request:
             return ServiceTierResolution(
