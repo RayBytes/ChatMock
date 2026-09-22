@@ -65,6 +65,8 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.6-sol", model_ids)
         self.assertIn("gpt-5.6-terra", model_ids)
         self.assertIn("gpt-5.6-luna", model_ids)
+        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
+            self.assertIn(model, model_ids)
 
     def test_ollama_tags_list(self) -> None:
         response = self.client.get("/api/tags")
@@ -76,6 +78,8 @@ class RouteTests(unittest.TestCase):
         self.assertIn("gpt-5.6-sol", model_names)
         self.assertIn("gpt-5.6-terra", model_names)
         self.assertIn("gpt-5.6-luna", model_names)
+        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
+            self.assertIn(model, model_names)
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions(self, mock_start) -> None:
