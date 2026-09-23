@@ -62,15 +62,17 @@ class ModelCatalogTests(unittest.TestCase):
 
     def test_environment_override_skips_github(self) -> None:
         session = Mock()
-        with patch.dict("os.environ", {CLIENT_VERSION_ENV: "0.157.0-alpha.9"}):
+        with patch.dict("os.environ", {CLIENT_VERSION_ENV: "0.155.0"}):
             catalog = ModelCatalog(enabled=False, session=session)
-        self.assertEqual(catalog._resolve_client_version(), "0.157.0-alpha.9")
+        self.assertEqual(catalog._resolve_client_version(), "0.155.0")
         session.get.assert_not_called()
 
     def test_invalid_environment_override_fails_loudly(self) -> None:
-        with patch.dict("os.environ", {CLIENT_VERSION_ENV: "latest"}):
-            with self.assertRaises(ValueError):
-                ModelCatalog(enabled=False)
+        for version in ("latest", "0.157.0-alpha.9"):
+            with self.subTest(version=version):
+                with patch.dict("os.environ", {CLIENT_VERSION_ENV: version}):
+                    with self.assertRaises(ValueError):
+                        ModelCatalog(enabled=False)
 
     def test_cache_from_older_version_is_refreshed_without_losing_last_models(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

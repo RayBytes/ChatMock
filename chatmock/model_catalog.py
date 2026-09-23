@@ -30,7 +30,7 @@ MODEL_CACHE_FILE = "chatmock_models_cache.json"
 CODEX_MODELS_CLIENT_VERSION = "0.156.0"
 CODEX_RELEASE_URL = "https://api.github.com/repos/openai/codex/releases/latest"
 CLIENT_VERSION_ENV = "CHATGPT_LOCAL_MODELS_CLIENT_VERSION"
-CLIENT_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
+CLIENT_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 STABLE_RELEASE_TAG_PATTERN = re.compile(r"^rust-v(\d+\.\d+\.\d+)$")
 
 

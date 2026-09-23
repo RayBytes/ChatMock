@@ -90,8 +90,8 @@ The server runs at `http://127.0.0.1:8000` by default. Use `http://127.0.0.1:800
 ChatMock automatically discovers the models available to the signed-in ChatGPT
 account. It checks the latest stable Codex release on GitHub when refreshing the
 catalog and uses that version for the account's model request. An optional
-`CHATGPT_LOCAL_MODELS_CLIENT_VERSION` override accepts a stable or prerelease
-version. If GitHub is unavailable, ChatMock uses the last successful version or
+`CHATGPT_LOCAL_MODELS_CLIENT_VERSION` override accepts a stable release
+version only. If GitHub is unavailable, ChatMock uses the last successful version or
 its bundled verified fallback. The model list and capabilities come from the
 account catalog; `/v1/models` and `/api/tags` return 503 until one is available.
 The catalog refresh interval defaults to one hour.
