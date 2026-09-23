@@ -5,21 +5,6 @@ from typing import Any
 
 from .model_registry import model_supports_service_tier, normalize_model_name
 
-
-PRIORITY_SUPPORTED_MODELS = frozenset(
-    (
-        "gpt-5.4",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.6-luna",
-        "gpt-5.2",
-        "gpt-5.1",
-        "gpt-5",
-        "gpt-5.1-codex",
-        "gpt-5-codex",
-    )
-)
-
 _TRUE_STRINGS = {"1", "true", "yes", "on"}
 _FALSE_STRINGS = {"0", "false", "no", "off"}
 
@@ -36,11 +21,8 @@ def parse_optional_bool(value: Any) -> bool | None:
     return None
 
 
-def supports_priority_service_tier(model: str | None) -> bool:
-    catalog_support = model_supports_service_tier(model, "priority")
-    if catalog_support is not None:
-        return catalog_support
-    return normalize_model_name(model) in PRIORITY_SUPPORTED_MODELS
+def supports_priority_service_tier(model: str | None) -> bool | None:
+    return model_supports_service_tier(model, "priority")
 
 
 @dataclass(frozen=True)
@@ -74,11 +56,11 @@ def resolve_service_tier(
         tier = "priority"
         used_server_default = True
 
-    if tier == "priority" and not supports_priority_service_tier(model):
+    if tier == "priority" and supports_priority_service_tier(model) is False:
         normalized = normalize_model_name(model)
         message = (
             f"Fast mode is not supported for model '{normalized}'. "
-            "Use a supported GPT-5 priority-processing model or disable fast mode for this request."
+            "Use a model with priority processing or disable fast mode for this request."
         )
         if explicit_request:
             return ServiceTierResolution(

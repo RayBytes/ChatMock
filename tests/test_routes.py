@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from chatmock.app import create_app
+from chatmock.model_catalog import CatalogModel
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
@@ -54,28 +55,25 @@ class RouteTests(unittest.TestCase):
         self.app = create_app(model_sync=False)
         self.client = self.app.test_client()
 
-    def test_openai_models_list(self) -> None:
+    def test_model_lists_require_a_discovered_catalog(self) -> None:
         response = self.client.get("/v1/models")
-        body = response.get_json()
-        self.assertEqual(response.status_code, 200)
-        model_ids = [item["id"] for item in body["data"]]
-        self.assertIn("gpt-5.4", model_ids)
-        self.assertIn("gpt-5.4-mini", model_ids)
-        self.assertIn("gpt-5.3-codex-spark", model_ids)
-        self.assertIn("gpt-5.6-sol", model_ids)
-        self.assertIn("gpt-5.6-terra", model_ids)
-        self.assertIn("gpt-5.6-luna", model_ids)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.client.get("/api/tags").status_code, 503)
 
-    def test_ollama_tags_list(self) -> None:
-        response = self.client.get("/api/tags")
-        body = response.get_json()
-        self.assertEqual(response.status_code, 200)
-        model_names = [item["name"] for item in body["models"]]
-        self.assertIn("gpt-5.4", model_names)
-        self.assertIn("gpt-5.4-mini", model_names)
-        self.assertIn("gpt-5.6-sol", model_names)
-        self.assertIn("gpt-5.6-terra", model_names)
-        self.assertIn("gpt-5.6-luna", model_names)
+    @patch("chatmock.model_catalog.ModelCatalog.visible_models")
+    def test_model_lists_use_discovered_models_without_registration(self, mock_visible) -> None:
+        mock_visible.return_value = (
+            CatalogModel("future-model", ("low", "high"), frozenset(("priority",)), 1, "list", True),
+        )
+        app = create_app(model_sync=True, expose_reasoning_models=True)
+        client = app.test_client()
+        openai = client.get("/v1/models")
+        ollama = client.get("/api/tags")
+        self.assertEqual(openai.status_code, 200)
+        self.assertEqual(ollama.status_code, 200)
+        expected = ["future-model", "future-model-low", "future-model-high"]
+        self.assertEqual([item["id"] for item in openai.get_json()["data"]], expected)
+        self.assertEqual([item["name"] for item in ollama.get_json()["models"]], expected)
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions(self, mock_start) -> None:
@@ -159,8 +157,9 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(mock_start.call_args.args[0], "gpt-5.4")
         self.assertEqual(body["model"], "gpt-5.4")
 
+    @patch("chatmock.fast_mode.model_supports_service_tier", return_value=True)
     @patch("chatmock.routes_openai.start_upstream_request")
-    def test_chat_completions_fast_mode_sets_priority_service_tier(self, mock_start) -> None:
+    def test_chat_completions_fast_mode_sets_priority_service_tier(self, mock_start, _mock_support) -> None:
         mock_start.return_value = (
             FakeUpstream(
                 [
@@ -205,8 +204,9 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(mock_start.call_args.kwargs["service_tier"])
 
+    @patch("chatmock.fast_mode.model_supports_service_tier", return_value=False)
     @patch("chatmock.routes_openai.start_upstream_request")
-    def test_chat_completions_rejects_unsupported_explicit_fast_mode(self, mock_start) -> None:
+    def test_chat_completions_rejects_unsupported_explicit_fast_mode(self, mock_start, _mock_support) -> None:
         response = self.client.post(
             "/v1/chat/completions",
             json={
@@ -551,8 +551,9 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("response.output_text.delta", response.get_data(as_text=True))
 
+    @patch("chatmock.fast_mode.model_supports_service_tier", return_value=False)
     @patch("chatmock.routes_openai.start_upstream_raw_request")
-    def test_responses_route_rejects_unsupported_explicit_priority(self, mock_start) -> None:
+    def test_responses_route_rejects_unsupported_explicit_priority(self, mock_start, _mock_support) -> None:
         response = self.client.post(
             "/v1/responses",
             json={"model": "gpt-5.3-codex", "input": "hello", "service_tier": "priority"},
@@ -562,9 +563,10 @@ class RouteTests(unittest.TestCase):
         self.assertIn("Fast mode is not supported", body["error"]["message"])
         mock_start.assert_not_called()
 
+    @patch("chatmock.fast_mode.model_supports_service_tier", return_value=True)
     @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
     @patch("chatmock.websocket_routes.connect_upstream_websocket")
-    def test_responses_websocket_rewrites_response_create(self, mock_connect, _mock_auth) -> None:
+    def test_responses_websocket_rewrites_response_create(self, mock_connect, _mock_auth, _mock_support) -> None:
         class FakeUpstreamWebsocket:
             def __init__(self) -> None:
                 self.sent: list[str] = []
