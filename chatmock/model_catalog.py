@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -24,9 +25,18 @@ from .utils import (
 DEFAULT_REFRESH_INTERVAL_SECONDS = 60 * 60
 FAILED_REFRESH_RETRY_SECONDS = 60
 FETCH_TIMEOUT_SECONDS = 5
+RELEASE_FETCH_TIMEOUT_SECONDS = 2
 MODEL_CACHE_FILE = "chatmock_models_cache.json"
-# Bump only after verifying ChatMock against a newer Codex catalog contract.
-CODEX_MODELS_CLIENT_VERSION = "0.146.0"
+CODEX_MODELS_CLIENT_VERSION = "0.156.0"
+CODEX_RELEASE_URL = "https://api.github.com/repos/openai/codex/releases/latest"
+CLIENT_VERSION_ENV = "CHATGPT_LOCAL_MODELS_CLIENT_VERSION"
+CLIENT_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+STABLE_RELEASE_TAG_PATTERN = re.compile(r"^rust-v(\d+\.\d+\.\d+)$")
+
+
+def _version_parts(version: str) -> tuple[int, int, int]:
+    major, minor, patch = version.split("-", 1)[0].split(".")
+    return int(major), int(minor), int(patch)
 
 
 @dataclass(frozen=True)
@@ -121,6 +131,11 @@ class ModelCatalog:
         self.refresh_interval_seconds = max(float(refresh_interval_seconds), 0.0)
         self.cache_path = Path(cache_path) if cache_path else Path(get_home_dir()) / MODEL_CACHE_FILE
         self._session = session or requests.Session()
+        override = (os.getenv(CLIENT_VERSION_ENV) or "").strip()
+        if override and not CLIENT_VERSION_PATTERN.fullmatch(override):
+            raise ValueError(f"{CLIENT_VERSION_ENV} must be a Codex version such as 0.156.0")
+        self._version_override = override or None
+        self._client_version = self._version_override or CODEX_MODELS_CLIENT_VERSION
         self._lock = threading.Lock()
         self._models: tuple[CatalogModel, ...] = ()
         self._raw_models: list[dict[str, Any]] = []
@@ -171,7 +186,7 @@ class ModelCatalog:
                 refresh_active = True
 
         if wait_for_refresh and refresh_active:
-            event.wait(FETCH_TIMEOUT_SECONDS + 1)
+            event.wait(RELEASE_FETCH_TIMEOUT_SECONDS + FETCH_TIMEOUT_SECONDS + 1)
 
     def _is_due_locked(self) -> bool:
         if not self._models or self._fetched_at is None:
@@ -201,12 +216,13 @@ class ModelCatalog:
         if not access_token or not account_id:
             return
 
-        response = self._request_models(access_token, account_id)
+        client_version = self._resolve_client_version()
+        response = self._request_models(access_token, account_id, client_version)
         if response.status_code == 401:
             access_token, account_id = get_effective_chatgpt_auth(force_refresh=True)
             if not access_token or not account_id:
                 return
-            response = self._request_models(access_token, account_id)
+            response = self._request_models(access_token, account_id, client_version)
         response.raise_for_status()
 
         payload = response.json()
@@ -223,12 +239,36 @@ class ModelCatalog:
             self._fetched_at = fetched_at
             self._etag = etag
             self._account_id = account_id
+            self._client_version = client_version
         self._persist_cache()
 
-    def _request_models(self, access_token: str, account_id: str) -> requests.Response:
+    def _resolve_client_version(self) -> str:
+        if self._version_override:
+            return self._version_override
+        try:
+            response = self._session.get(
+                CODEX_RELEASE_URL,
+                headers={"Accept": "application/vnd.github+json"},
+                timeout=RELEASE_FETCH_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            release = response.json()
+            if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+                return self._client_version
+            tag = release.get("tag_name")
+            match = STABLE_RELEASE_TAG_PATTERN.fullmatch(tag) if isinstance(tag, str) else None
+            if match and _version_parts(match.group(1)) > _version_parts(self._client_version):
+                return match.group(1)
+        except (requests.RequestException, ValueError, TypeError):
+            pass
+        return self._client_version
+
+    def _request_models(
+        self, access_token: str, account_id: str, client_version: str
+    ) -> requests.Response:
         return self._session.get(
             f"{CHATGPT_CODEX_BASE_URL}/models",
-            params={"client_version": CODEX_MODELS_CLIENT_VERSION},
+            params={"client_version": client_version},
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "Accept": "application/json",
@@ -258,6 +298,15 @@ class ModelCatalog:
         ):
             return
 
+        cached_version = payload.get("client_version")
+        if (
+            not self._version_override
+            and isinstance(cached_version, str)
+            and STABLE_RELEASE_TAG_PATTERN.fullmatch(f"rust-v{cached_version}")
+            and _version_parts(cached_version) > _version_parts(self._client_version)
+        ):
+            self._client_version = cached_version
+
         raw_models = payload.get("models")
         parsed_models = _parse_models(raw_models)
         if not parsed_models or not any(model.visibility == "list" for model in parsed_models):
@@ -265,7 +314,11 @@ class ModelCatalog:
         with self._lock:
             self._models = parsed_models
             self._raw_models = [dict(item) for item in raw_models if isinstance(item, dict)]
-            self._fetched_at = _parse_timestamp(payload.get("fetched_at"))
+            self._fetched_at = (
+                _parse_timestamp(payload.get("fetched_at"))
+                if cached_version == self._client_version
+                else None
+            )
             self._etag = payload.get("etag") if isinstance(payload.get("etag"), str) else None
             self._account_id = cached_account_id
 
@@ -276,7 +329,7 @@ class ModelCatalog:
                 if self._fetched_at
                 else None,
                 "etag": self._etag,
-                "client_version": CODEX_MODELS_CLIENT_VERSION,
+                "client_version": self._client_version,
                 "account_id": self._account_id,
                 "models": self._raw_models,
             }

@@ -86,6 +86,8 @@ def ollama_tags() -> Response:
         print("IN GET /api/tags")
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
     model_ids = list_public_models(expose_reasoning_models=expose_variants)
+    if not model_ids:
+        return make_response(jsonify({"error": "Model catalog unavailable"}), 503)
     models = []
     for model_id in model_ids:
         models.append(

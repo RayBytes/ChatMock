@@ -721,6 +721,8 @@ def responses_create() -> Response:
 def list_models() -> Response:
     expose_variants = bool(current_app.config.get("EXPOSE_REASONING_MODELS"))
     model_ids = list_public_models(expose_reasoning_models=expose_variants)
+    if not model_ids:
+        return make_response(jsonify({"error": {"message": "Model catalog unavailable"}}), 503)
     data = [{"id": mid, "object": "model", "owned_by": "owner"} for mid in model_ids]
     models = {"object": "list", "data": data}
     resp = make_response(jsonify(models), 200)
