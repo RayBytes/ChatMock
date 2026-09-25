@@ -98,6 +98,58 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(body["model"], "gpt5.4-mini")
 
     @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_translates_forced_tool_choice(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream([{"type": "response.completed", "response": {"id": "resp-openai"}}]),
+            None,
+        )
+        tools = [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}]
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.5",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": tools,
+                "tool_choice": {"type": "function", "function": {"name": "lookup"}},
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["tool_choice"], {"type": "function", "name": "lookup"})
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_passes_required_tool_choice(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream([{"type": "response.completed", "response": {"id": "resp-openai"}}]),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-5.5", "messages": [{"role": "user", "content": "hi"}], "tool_choice": "required"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["tool_choice"], "required")
+
+    @patch("chatmock.routes_ollama.start_upstream_request")
+    def test_ollama_chat_translates_forced_tool_choice(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream([{"type": "response.completed", "response": {"id": "resp-ollama"}}]),
+            None,
+        )
+        tools = [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}]
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "model": "gpt-5.5",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": tools,
+                "tool_choice": {"type": "function", "function": {"name": "lookup"}},
+                "stream": False,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["tool_choice"], {"type": "function", "name": "lookup"})
+
+    @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_honors_debug_model_override(self, mock_start) -> None:
         app = create_app(debug_model="gpt-5.4", model_sync=False)
         client = app.test_client()

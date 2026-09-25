@@ -32,6 +32,7 @@ from .session import (
 from .upstream import normalize_model_name, start_upstream_raw_request, start_upstream_request
 from .utils import (
     convert_chat_messages_to_responses_input,
+    convert_tool_choice_chat_to_responses,
     convert_tools_chat_to_responses,
     sse_translate_chat,
     sse_translate_text,
@@ -147,7 +148,7 @@ def chat_completions() -> Response:
     include_usage = bool(stream_options.get("include_usage", False))
 
     tools_responses = convert_tools_chat_to_responses(payload.get("tools"))
-    tool_choice = payload.get("tool_choice", "auto")
+    tool_choice = convert_tool_choice_chat_to_responses(payload.get("tool_choice", "auto"))
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
     responses_tools_payload = payload.get("responses_tools") if isinstance(payload.get("responses_tools"), list) else []
     extra_tools: List[Dict[str, Any]] = []
@@ -246,7 +247,7 @@ def chat_completions() -> Response:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extra tools (args redacted)")
             base_tools_only = convert_tools_chat_to_responses(payload.get("tools"))
-            safe_choice = payload.get("tool_choice", "auto")
+            safe_choice = convert_tool_choice_chat_to_responses(payload.get("tool_choice", "auto"))
             upstream2, err2 = start_upstream_request(
                 model,
                 input_items,

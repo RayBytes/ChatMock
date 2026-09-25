@@ -218,6 +218,28 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
     return input_items
 
 
+def convert_tool_choice_chat_to_responses(tool_choice: Any) -> Any:
+    """Translate a Chat Completions ``tool_choice`` into the Responses API shape.
+
+    Chat Completions forces a function with ``{"type": "function", "function": {"name": ...}}``
+    while the Responses API expects ``{"type": "function", "name": ...}``. String modes
+    (``auto``/``none``/``required``) pass through unchanged and anything unrecognised
+    falls back to ``auto``.
+    """
+    if isinstance(tool_choice, str):
+        mode = tool_choice.strip().lower()
+        return mode if mode in ("auto", "none", "required") else "auto"
+    if isinstance(tool_choice, dict):
+        if tool_choice.get("type") == "function":
+            fn = tool_choice.get("function")
+            name = fn.get("name") if isinstance(fn, dict) else tool_choice.get("name")
+            if isinstance(name, str) and name.strip():
+                return {"type": "function", "name": name.strip()}
+            return "auto"
+        return tool_choice
+    return "auto"
+
+
 def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     if not isinstance(tools, list):

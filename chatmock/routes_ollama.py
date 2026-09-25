@@ -18,7 +18,11 @@ from .reasoning import (
 )
 from .transform import convert_ollama_messages, normalize_ollama_tools
 from .upstream import normalize_model_name, start_upstream_request
-from .utils import convert_chat_messages_to_responses_input, convert_tools_chat_to_responses
+from .utils import (
+    convert_chat_messages_to_responses_input,
+    convert_tool_choice_chat_to_responses,
+    convert_tools_chat_to_responses,
+)
 
 
 ollama_bp = Blueprint("ollama", __name__)
@@ -195,7 +199,7 @@ def ollama_chat() -> Response:
     stream_req = bool(stream_req)
     tools_req = payload.get("tools") if isinstance(payload.get("tools"), list) else []
     tools_responses = convert_tools_chat_to_responses(normalize_ollama_tools(tools_req))
-    tool_choice = payload.get("tool_choice", "auto")
+    tool_choice = convert_tool_choice_chat_to_responses(payload.get("tool_choice", "auto"))
     parallel_tool_calls = bool(payload.get("parallel_tool_calls", False))
 
     # Passthrough Responses API tools (web_search) via ChatMock extension fields
@@ -297,7 +301,7 @@ def ollama_chat() -> Response:
             if verbose:
                 print("[Passthrough] Upstream rejected tools; retrying without extras (args redacted)")
             base_tools_only = convert_tools_chat_to_responses(normalize_ollama_tools(tools_req))
-            safe_choice = payload.get("tool_choice", "auto")
+            safe_choice = convert_tool_choice_chat_to_responses(payload.get("tool_choice", "auto"))
             upstream2, err2 = start_upstream_request(
                 normalize_model_name(model, current_app.config.get("DEBUG_MODEL")),
                 input_items,

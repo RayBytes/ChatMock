@@ -71,7 +71,7 @@ def start_upstream_request(
         "model": model,
         "input": input_items,
         "tools": tools or [],
-        "tool_choice": tool_choice if tool_choice in ("auto", "none") or isinstance(tool_choice, dict) else "auto",
+        "tool_choice": tool_choice if tool_choice in ("auto", "none", "required") or isinstance(tool_choice, dict) else "auto",
         "parallel_tool_calls": bool(parallel_tool_calls),
         "store": False,
         "stream": True,
