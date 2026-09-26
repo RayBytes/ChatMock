@@ -10,7 +10,7 @@ from flask import Response, current_app, jsonify, make_response
 
 from .config import CHATGPT_RESPONSES_URL, ORIGINATOR
 from .http import build_cors_headers
-from .model_registry import normalize_model_name
+from .model_registry import current_model_catalog, model_supports_service_tier, normalize_model_name
 from .session import ensure_session_id
 from flask import request as flask_request
 from .utils import get_codex_user_agent, get_effective_chatgpt_auth, resolve_installation_id
@@ -87,10 +87,62 @@ def start_upstream_request(
     if isinstance(service_tier, str) and service_tier.strip():
         responses_payload["service_tier"] = service_tier.strip().lower()
 
-    return start_upstream_raw_request(
+    return start_upstream_with_429_fallback(
         responses_payload,
         session_id=session_id,
         stream=True,
+    )
+
+
+def _fallback_model_for_429(requested_model: str | None) -> str | None:
+    if not current_app.config.get("FALLBACK_ON_429", False):
+        return None
+    candidate = str(current_app.config.get("FALLBACK_MODEL", "")).strip()
+    if not candidate or normalize_model_name(requested_model) == normalize_model_name(candidate):
+        return None
+    catalog = current_model_catalog()
+    if catalog is None:
+        return None
+    for entry in catalog.models():
+        if entry.slug == candidate and entry.supported_in_api:
+            return candidate
+    return None
+
+
+def start_upstream_with_429_fallback(
+    responses_payload: Dict[str, Any],
+    *,
+    session_id: str | None = None,
+    stream: bool = True,
+):
+    """Make one upstream request, optionally retrying a 429 with a catalog model."""
+    upstream, error_resp = _start_upstream_raw_request(
+        responses_payload,
+        session_id=session_id,
+        stream=stream,
+    )
+    if error_resp is not None or upstream is None or upstream.status_code != 429:
+        return upstream, error_resp
+
+    requested_model = responses_payload.get("model")
+    fallback_model = _fallback_model_for_429(requested_model)
+    if fallback_model is None:
+        return upstream, error_resp
+
+    try:
+        upstream.close()
+    except Exception:
+        pass
+    fallback_payload = dict(responses_payload)
+    fallback_payload["model"] = fallback_model
+    service_tier = fallback_payload.get("service_tier")
+    if service_tier and not model_supports_service_tier(fallback_model, service_tier):
+        fallback_payload.pop("service_tier", None)
+    print(f"[429 fallback] {normalize_model_name(requested_model)} -> {fallback_model}", flush=True)
+    return _start_upstream_raw_request(
+        fallback_payload,
+        session_id=session_id,
+        stream=stream,
     )
 
 
@@ -114,7 +166,7 @@ def build_upstream_headers(
     }
 
 
-def start_upstream_raw_request(
+def _start_upstream_raw_request(
     responses_payload: Dict[str, Any],
     *,
     session_id: str | None = None,
@@ -217,6 +269,20 @@ def start_upstream_raw_request(
                     resp.headers.setdefault(k, v)
                 return None, resp
     return upstream, None
+
+
+def start_upstream_raw_request(
+    responses_payload: Dict[str, Any],
+    *,
+    session_id: str | None = None,
+    stream: bool = True,
+):
+    """Compatibility entry point with the optional 429 fallback applied."""
+    return start_upstream_with_429_fallback(
+        responses_payload,
+        session_id=session_id,
+        stream=stream,
+    )
 
 
 def build_upstream_websocket_url() -> str:
