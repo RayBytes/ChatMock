@@ -90,6 +90,9 @@ The server runs at `http://127.0.0.1:8000` by default. Use `http://127.0.0.1:800
 ChatMock automatically discovers the models available to the signed-in ChatGPT
 account. The current catalog commonly includes:
 
+- `gpt-6-astra`
+- `gpt-6-sol`
+- `gpt-6-luna`
 - `gpt-5.6-sol`
 - `gpt-5.6-terra`
 - `gpt-5.6-luna`
@@ -128,6 +131,8 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 | `--expose-reasoning-models` | `CHATGPT_LOCAL_EXPOSE_REASONING_MODELS` | true/false | false | List each reasoning level as its own model |
 | `--model-sync` | `CHATGPT_LOCAL_MODEL_SYNC` | true/false | true | Discover account models automatically |
 | `--model-refresh-interval` | `CHATGPT_LOCAL_MODEL_REFRESH_INTERVAL` | seconds | 3600 | Refresh interval for model discovery |
+| `--fallback-on-429` / `--no-fallback-on-429` | `CHATGPT_LOCAL_FALLBACK_ON_429` | true/false | false | Retry one upstream 429 with the configured catalog fallback model |
+| `--429-fallback-model` | `CHATGPT_LOCAL_429_FALLBACK_MODEL` | model slug | `gpt-reserve` | Catalog model used for the opt-in 429 retry |
 
 <details>
 <summary><b>Web search in a request</b></summary>
@@ -155,6 +160,18 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 ```
 
 </details>
+
+429 fallback is opt-in. When enabled, ChatMock retries an upstream HTTP 429
+once with the configured fallback model, but only when model sync reports that
+model as API-supported. The original requested model remains in the local API
+response. For example:
+
+```bash
+chatmock serve --fallback-on-429 --429-fallback-model gpt-reserve
+```
+
+The retry happens before a streamed response starts. If the fallback request
+also fails, ChatMock returns that upstream error without retrying again.
 
 <br>
 

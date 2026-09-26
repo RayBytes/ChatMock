@@ -242,6 +242,8 @@ def cmd_serve(
     default_web_search: bool,
     model_sync: bool = True,
     model_refresh_interval: float = 3600,
+    fallback_on_429: bool = False,
+    fallback_model: str = "gpt-reserve",
 ) -> int:
     app = create_app(
         verbose=verbose,
@@ -255,6 +257,8 @@ def cmd_serve(
         default_web_search=default_web_search,
         model_sync=model_sync,
         model_refresh_interval=model_refresh_interval,
+        fallback_on_429=fallback_on_429,
+        fallback_model=fallback_model,
     )
 
     app.run(host=host, use_reloader=False, port=port, threaded=True)
@@ -344,6 +348,20 @@ def main() -> None:
         metavar="SECONDS",
         help="Refresh the ChatGPT model catalog after this many seconds (default: 3600).",
     )
+    p_serve.add_argument(
+        "--fallback-on-429",
+        action=argparse.BooleanOptionalAction,
+        default=(os.getenv("CHATGPT_LOCAL_FALLBACK_ON_429") or "false").strip().lower()
+        in ("1", "true", "yes", "on"),
+        help="Retry one upstream 429 with the configured fallback model (default: disabled).",
+    )
+    p_serve.add_argument(
+        "--429-fallback-model",
+        dest="fallback_model",
+        default=os.getenv("CHATGPT_LOCAL_429_FALLBACK_MODEL", "gpt-reserve").strip(),
+        metavar="MODEL",
+        help="Catalog model to use for the opt-in 429 retry (default: gpt-reserve).",
+    )
 
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
     p_info.add_argument("--json", action="store_true", help="Output raw auth.json contents")
@@ -368,6 +386,8 @@ def main() -> None:
                 default_web_search=args.enable_web_search,
                 model_sync=args.model_sync,
                 model_refresh_interval=args.model_refresh_interval,
+                fallback_on_429=args.fallback_on_429,
+                fallback_model=args.fallback_model,
             )
         )
     elif args.command == "info":
