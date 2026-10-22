@@ -147,3 +147,20 @@ def normalize_ollama_tools(tools: List[Dict[str, Any]] | None) -> List[Dict[str,
             )
     return out
 
+
+def ollama_format_requests_json(fmt: Any) -> bool:
+    if isinstance(fmt, str):
+        return fmt.strip().lower() == "json"
+    return isinstance(fmt, dict) and bool(fmt)
+
+
+def convert_ollama_format_to_text_format(fmt: Any) -> Dict[str, Any] | None:
+    """Map Ollama's format, when it holds a schema, onto a Responses text.format.
+
+    The bare "json" string is left alone: upstream refuses json_object unless
+    the input mentions "json".
+    """
+
+    if not isinstance(fmt, dict) or not fmt:
+        return None
+    return {"type": "json_schema", "name": "response", "schema": fmt, "strict": False}

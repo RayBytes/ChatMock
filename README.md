@@ -103,6 +103,7 @@ account. The current catalog commonly includes:
 ## Features
 
 - Tool / function calling
+- Structured outputs via JSON schema (`response_format`, or `format` on the Ollama routes)
 - Vision / image input
 - Thinking summaries (via think tags)
 - Configurable thinking effort

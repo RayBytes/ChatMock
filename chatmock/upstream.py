@@ -35,6 +35,7 @@ def start_upstream_request(
     parallel_tool_calls: bool = False,
     reasoning_param: Dict[str, Any] | None = None,
     service_tier: str | None = None,
+    text_format: Dict[str, Any] | None = None,
 ):
     access_token, account_id = get_effective_chatgpt_auth()
     if not access_token or not account_id:
@@ -86,6 +87,8 @@ def start_upstream_request(
         responses_payload["reasoning"] = reasoning_param
     if isinstance(service_tier, str) and service_tier.strip():
         responses_payload["service_tier"] = service_tier.strip().lower()
+    if isinstance(text_format, dict) and text_format:
+        responses_payload["text"] = {"format": text_format}
 
     return start_upstream_raw_request(
         responses_payload,
