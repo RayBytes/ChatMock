@@ -26,7 +26,7 @@ FAILED_REFRESH_RETRY_SECONDS = 60
 FETCH_TIMEOUT_SECONDS = 5
 MODEL_CACHE_FILE = "chatmock_models_cache.json"
 # Bump only after verifying ChatMock against a newer Codex catalog contract.
-CODEX_MODELS_CLIENT_VERSION = "0.146.0"
+CODEX_MODELS_CLIENT_VERSION = "0.160.0"
 
 
 @dataclass(frozen=True)
@@ -247,6 +247,8 @@ class ModelCatalog:
         except (FileNotFoundError, OSError, ValueError):
             return
         if not isinstance(payload, dict):
+            return
+        if payload.get("client_version") != CODEX_MODELS_CLIENT_VERSION:
             return
 
         cached_account_id = payload.get("account_id")

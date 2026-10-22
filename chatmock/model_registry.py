@@ -84,6 +84,27 @@ _MODEL_SPECS = (
         variant_efforts=("low", "medium", "high", "xhigh", "max"),
     ),
     ModelSpec(
+        public_id="gpt-6-astra",
+        upstream_id="gpt-6-astra",
+        aliases=("gpt6-astra", "gpt-6-astra-latest"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max", "ultra")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
+    ),
+    ModelSpec(
+        public_id="gpt-6-sol",
+        upstream_id="gpt-6-sol",
+        aliases=("gpt6-sol", "gpt-6-sol-latest"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max", "ultra")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
+    ),
+    ModelSpec(
+        public_id="gpt-6-luna",
+        upstream_id="gpt-6-luna",
+        aliases=("gpt6-luna", "gpt-6-luna-latest"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max"),
+    ),
+    ModelSpec(
         public_id="gpt-5.3-codex",
         upstream_id="gpt-5.3-codex",
         aliases=("gpt5.3-codex", "gpt-5.3-codex-latest"),
