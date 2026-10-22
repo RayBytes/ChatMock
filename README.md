@@ -162,9 +162,9 @@ All flags go after `chatmock serve`. These can also be set as environment variab
 
 <br>
 
-## Important notice
+## Note
 
-Use responsibly and at your own risk. This project is not affiliated with OpenAI.
+This project is not affiliated with OpenAI.
 
 <br>
 
