@@ -145,8 +145,6 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
     input_items: List[Dict[str, Any]] = []
     for message in messages:
         role = message.get("role")
-        if role == "system":
-            continue
 
         if role == "tool":
             call_id = message.get("tool_call_id") or message.get("id")
@@ -213,9 +211,64 @@ def convert_chat_messages_to_responses_input(messages: List[Dict[str, Any]]) -> 
 
         if not content_items:
             continue
-        role_out = "assistant" if role == "assistant" else "user"
+        # Upstream refuses `system` but honours `developer`, so instructions
+        # keep their authority rather than arriving as one more user turn.
+        if role == "assistant":
+            role_out = "assistant"
+        elif role in ("system", "developer"):
+            role_out = "developer"
+        else:
+            role_out = "user"
         input_items.append({"type": "message", "role": role_out, "content": content_items})
     return input_items
+
+
+def convert_tool_choice_chat_to_responses(tool_choice: Any) -> Any:
+    """Map a Chat Completions tool_choice onto the flat Responses spelling."""
+
+    if not isinstance(tool_choice, dict):
+        return tool_choice
+    kind = tool_choice.get("type")
+    if kind == "function":
+        fn = tool_choice.get("function")
+        if isinstance(fn, dict) and isinstance(fn.get("name"), str):
+            return {"type": "function", "name": fn["name"]}
+        return tool_choice
+    if kind == "allowed_tools" and isinstance(tool_choice.get("allowed_tools"), dict):
+        body = tool_choice["allowed_tools"]
+        out: Dict[str, Any] = {"type": "allowed_tools"}
+        if isinstance(body.get("mode"), str):
+            out["mode"] = body["mode"]
+        tools = body.get("tools")
+        if isinstance(tools, list):
+            out["tools"] = [convert_tool_choice_chat_to_responses(t) for t in tools if isinstance(t, dict)]
+        return out
+    return tool_choice
+
+
+def convert_usage_responses_to_chat(usage: Any) -> Dict[str, Any] | None:
+    """Map a Responses usage object onto the Chat Completions usage shape."""
+
+    if not isinstance(usage, dict):
+        return None
+    try:
+        prompt_tokens = int(usage.get("input_tokens") or 0)
+        completion_tokens = int(usage.get("output_tokens") or 0)
+        total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
+    except Exception:
+        return None
+    out: Dict[str, Any] = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+    }
+    input_details = usage.get("input_tokens_details")
+    if isinstance(input_details, dict) and isinstance(input_details.get("cached_tokens"), int):
+        out["prompt_tokens_details"] = {"cached_tokens": input_details["cached_tokens"]}
+    output_details = usage.get("output_tokens_details")
+    if isinstance(output_details, dict) and isinstance(output_details.get("reasoning_tokens"), int):
+        out["completion_tokens_details"] = {"reasoning_tokens": output_details["reasoning_tokens"]}
+    return out
 
 
 def convert_tools_chat_to_responses(tools: Any) -> List[Dict[str, Any]]:
@@ -512,17 +565,8 @@ def sse_translate_chat(
         else:
             return "{}"
     
-    def _extract_usage(evt: Dict[str, Any]) -> Dict[str, int] | None:
-        try:
-            usage = (evt.get("response") or {}).get("usage")
-            if not isinstance(usage, dict):
-                return None
-            pt = int(usage.get("input_tokens") or 0)
-            ct = int(usage.get("output_tokens") or 0)
-            tt = int(usage.get("total_tokens") or (pt + ct))
-            return {"prompt_tokens": pt, "completion_tokens": ct, "total_tokens": tt}
-        except Exception:
-            return None
+    def _extract_usage(evt: Dict[str, Any]) -> Dict[str, Any] | None:
+        return convert_usage_responses_to_chat((evt.get("response") or {}).get("usage"))
     try:
         try:
             line_iterator = upstream.iter_lines(decode_unicode=False)
@@ -868,17 +912,8 @@ def sse_translate_text(upstream, model: str, created: int, verbose: bool = False
     response_id = "cmpl-stream"
     upstream_usage = None
     
-    def _extract_usage(evt: Dict[str, Any]) -> Dict[str, int] | None:
-        try:
-            usage = (evt.get("response") or {}).get("usage")
-            if not isinstance(usage, dict):
-                return None
-            pt = int(usage.get("input_tokens") or 0)
-            ct = int(usage.get("output_tokens") or 0)
-            tt = int(usage.get("total_tokens") or (pt + ct))
-            return {"prompt_tokens": pt, "completion_tokens": ct, "total_tokens": tt}
-        except Exception:
-            return None
+    def _extract_usage(evt: Dict[str, Any]) -> Dict[str, Any] | None:
+        return convert_usage_responses_to_chat((evt.get("response") or {}).get("usage"))
     try:
         for raw_line in upstream.iter_lines(decode_unicode=False):
             if not raw_line:
