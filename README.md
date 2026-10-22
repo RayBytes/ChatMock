@@ -31,9 +31,6 @@ brew install chatmock
 pipx install chatmock
 ```
 
-#### GUI
-Download from [releases](https://github.com/RayBytes/ChatMock/releases) (macOS & Windows)
-
 #### Docker
 See [DOCKER.md](DOCKER.md)
 
