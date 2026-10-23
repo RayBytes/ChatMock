@@ -47,6 +47,8 @@ class CatalogModel:
     priority: int
     visibility: str
     supported_in_api: bool
+    context_window: int | None = None
+    input_modalities: tuple[str, ...] = ()
 
 
 def _now_utc() -> datetime.datetime:
@@ -102,7 +104,15 @@ def _parse_models(value: Any) -> tuple[CatalogModel, ...]:
                 if isinstance(tier, str) and tier.strip():
                     service_tiers.add(tier.strip())
 
+        modalities: list[str] = []
+        raw_modalities = item.get("input_modalities")
+        if isinstance(raw_modalities, list):
+            for modality in raw_modalities:
+                if isinstance(modality, str) and modality.strip() and modality.strip() not in modalities:
+                    modalities.append(modality.strip())
+
         priority = item.get("priority")
+        context_window = item.get("context_window")
         models.append(
             CatalogModel(
                 slug=slug.strip(),
@@ -111,6 +121,10 @@ def _parse_models(value: Any) -> tuple[CatalogModel, ...]:
                 priority=priority if isinstance(priority, int) else 1_000_000,
                 visibility=item.get("visibility") if isinstance(item.get("visibility"), str) else "none",
                 supported_in_api=bool(item.get("supported_in_api", False)),
+                context_window=context_window
+                if isinstance(context_window, int) and not isinstance(context_window, bool) and context_window > 0
+                else None,
+                input_modalities=tuple(modalities),
             )
         )
     return tuple(models)

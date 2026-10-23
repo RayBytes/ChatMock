@@ -17,6 +17,7 @@ from chatmock.model_catalog import (
 )
 from chatmock.app import create_app
 from chatmock.fast_mode import supports_priority_service_tier
+from chatmock.model_registry import FALLBACK_DEFAULT_MODEL, normalize_model_name
 
 
 def response(payload: dict, status: int = 200) -> Mock:
@@ -103,6 +104,38 @@ class ModelCatalogTests(unittest.TestCase):
             self.assertTrue(supports_priority_service_tier("future-model"))
             self.assertFalse(supports_priority_service_tier("ordinary-model"))
             self.assertIsNone(supports_priority_service_tier("unlisted-model"))
+
+    def test_catalog_metadata_is_parsed(self) -> None:
+        session = Mock()
+        session.get.side_effect = [
+            response({}, 503),
+            response({"models": [{
+                "slug": "future-model",
+                "visibility": "list",
+                "context_window": 272000,
+                "input_modalities": ["text", "image"],
+            }]}),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            catalog = ModelCatalog(
+                enabled=False, session=session, cache_path=Path(directory) / "models.json"
+            )
+            with patch("chatmock.model_catalog.get_effective_chatgpt_auth", return_value=("token", "account")):
+                catalog._fetch_and_apply()
+        model = catalog.visible_models()[0]
+        self.assertEqual(model.context_window, 272000)
+        self.assertEqual(model.input_modalities, ("text", "image"))
+
+    def test_default_model_comes_from_catalog(self) -> None:
+        app = create_app(model_sync=False)
+        with app.app_context():
+            self.assertEqual(normalize_model_name(None), FALLBACK_DEFAULT_MODEL)
+            app.extensions["chatmock_model_catalog"]._models = (
+                CatalogModel("second-model", ("low",), frozenset(), 2, "list", True),
+                CatalogModel("hidden-model", ("low",), frozenset(), 0, "hide", True),
+                CatalogModel("first-model", ("low",), frozenset(), 1, "list", True),
+            )
+            self.assertEqual(normalize_model_name(None), "first-model")
 
 
 if __name__ == "__main__":

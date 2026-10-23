@@ -75,6 +75,19 @@ class RouteTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in openai.get_json()["data"]], expected)
         self.assertEqual([item["name"] for item in ollama.get_json()["models"]], expected)
 
+    def test_ollama_show_uses_catalog_metadata(self) -> None:
+        self.app.extensions["chatmock_model_catalog"]._models = (
+            CatalogModel("future-model", ("low",), frozenset(), 1, "list", True, 272000, ("text", "image")),
+            CatalogModel("text-model", (), frozenset(), 2, "list", True, 128000, ("text",)),
+        )
+        future = self.client.post("/api/show", json={"model": "future-model"}).get_json()
+        self.assertEqual(future["model_info"]["llama.context_length"], 272000)
+        self.assertIn("PARAMETER num_ctx 272000", future["modelfile"])
+        self.assertEqual(future["capabilities"], ["completion", "tools", "vision", "thinking"])
+        text = self.client.post("/api/show", json={"model": "text-model"}).get_json()
+        self.assertEqual(text["model_info"]["llama.context_length"], 128000)
+        self.assertEqual(text["capabilities"], ["completion", "tools"])
+
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions(self, mock_start) -> None:
         mock_start.return_value = (

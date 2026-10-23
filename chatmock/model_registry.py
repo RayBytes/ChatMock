@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
-
 from .model_catalog import CatalogModel, current_model_catalog
 
 
+# Request default when no model is given and no account catalog is available.
+FALLBACK_DEFAULT_MODEL = "gpt-5.4"
 ALL_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 DEFAULT_REASONING_EFFORTS = frozenset(ALL_REASONING_EFFORTS)
 
@@ -224,7 +224,9 @@ def normalize_model_name(model: str | None, debug_model: str | None = None) -> s
         return spec.upstream_id
     if isinstance(model, str) and model.strip():
         return model.strip()
-    return "gpt-5.4"
+    catalog = current_model_catalog()
+    visible = catalog.visible_models() if catalog is not None else ()
+    return visible[0].slug if visible else FALLBACK_DEFAULT_MODEL
 
 
 def allowed_efforts_for_model(model: str | None) -> frozenset[str]:
@@ -255,15 +257,18 @@ def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
     return model_ids
 
 
-def iter_public_models() -> Iterable[ModelSpec]:
-    return _MODEL_SPECS
-
-
-def model_supports_service_tier(model: str | None, service_tier: str) -> bool | None:
+def catalog_model_for_name(model: str | None) -> CatalogModel | None:
     spec, _ = _resolve_remote_model(model)
     if spec is None:
         return None
     for remote_model in _remote_models():
         if remote_model.slug == spec.upstream_id:
-            return service_tier in remote_model.service_tiers
-    return False
+            return remote_model
+    return None
+
+
+def model_supports_service_tier(model: str | None, service_tier: str) -> bool | None:
+    remote_model = catalog_model_for_name(model)
+    if remote_model is None:
+        return None
+    return service_tier in remote_model.service_tiers
