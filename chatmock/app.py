@@ -24,6 +24,8 @@ def create_app(
     default_web_search: bool = False,
     model_sync: bool | None = None,
     model_refresh_interval: float | None = None,
+    fallback_on_429: bool | None = None,
+    fallback_model: str | None = None,
 ) -> Flask:
     app = Flask(__name__)
     if model_sync is None:
@@ -40,6 +42,15 @@ def create_app(
             )
         except (TypeError, ValueError):
             model_refresh_interval = DEFAULT_REFRESH_INTERVAL_SECONDS
+    if fallback_on_429 is None:
+        fallback_on_429 = (os.getenv("CHATGPT_LOCAL_FALLBACK_ON_429") or "false").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+    if fallback_model is None:
+        fallback_model = os.getenv("CHATGPT_LOCAL_429_FALLBACK_MODEL", "gpt-reserve").strip()
 
     app.config.update(
         VERBOSE=bool(verbose),
@@ -53,6 +64,8 @@ def create_app(
         DEFAULT_WEB_SEARCH=bool(default_web_search),
         MODEL_SYNC=bool(model_sync),
         MODEL_REFRESH_INTERVAL=float(model_refresh_interval),
+        FALLBACK_ON_429=bool(fallback_on_429),
+        FALLBACK_MODEL=fallback_model,
     )
     app.extensions["chatmock_model_catalog"] = ModelCatalog(
         enabled=bool(model_sync),
