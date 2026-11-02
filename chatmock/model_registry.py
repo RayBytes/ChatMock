@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
-
 from .model_catalog import CatalogModel, current_model_catalog
 
 
+# Request default when no model is given and no account catalog is available.
+FALLBACK_DEFAULT_MODEL = "gpt-5.4"
 ALL_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 DEFAULT_REASONING_EFFORTS = frozenset(ALL_REASONING_EFFORTS)
 
@@ -80,27 +80,6 @@ _MODEL_SPECS = (
         public_id="gpt-5.6-luna",
         upstream_id="gpt-5.6-luna",
         aliases=("gpt5.6-luna", "gpt-5.6-luna-latest"),
-        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max")),
-        variant_efforts=("low", "medium", "high", "xhigh", "max"),
-    ),
-    ModelSpec(
-        public_id="gpt-6-astra",
-        upstream_id="gpt-6-astra",
-        aliases=("gpt6-astra", "gpt-6-astra-latest"),
-        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max", "ultra")),
-        variant_efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
-    ),
-    ModelSpec(
-        public_id="gpt-6-sol",
-        upstream_id="gpt-6-sol",
-        aliases=("gpt6-sol", "gpt-6-sol-latest"),
-        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max", "ultra")),
-        variant_efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
-    ),
-    ModelSpec(
-        public_id="gpt-6-luna",
-        upstream_id="gpt-6-luna",
-        aliases=("gpt6-luna", "gpt-6-luna-latest"),
         allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max")),
         variant_efforts=("low", "medium", "high", "xhigh", "max"),
     ),
@@ -245,7 +224,9 @@ def normalize_model_name(model: str | None, debug_model: str | None = None) -> s
         return spec.upstream_id
     if isinstance(model, str) and model.strip():
         return model.strip()
-    return "gpt-5.4"
+    catalog = current_model_catalog()
+    visible = catalog.visible_models() if catalog is not None else ()
+    return visible[0].slug if visible else FALLBACK_DEFAULT_MODEL
 
 
 def allowed_efforts_for_model(model: str | None) -> frozenset[str]:
@@ -267,33 +248,27 @@ def extract_reasoning_from_model_name(model: str | None) -> dict[str, str] | Non
 
 def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
     catalog = current_model_catalog()
-    if catalog is not None:
-        remote_models = catalog.visible_models(wait_for_refresh=True)
-        if remote_models:
-            model_ids: list[str] = []
-            for model in remote_models:
-                model_ids.append(model.slug)
-                if expose_reasoning_models:
-                    model_ids.extend(f"{model.slug}-{effort}" for effort in model.reasoning_efforts)
-            return model_ids
-
+    remote_models = catalog.visible_models(wait_for_refresh=True) if catalog is not None else ()
     model_ids: list[str] = []
-    for spec in _MODEL_SPECS:
-        model_ids.append(spec.public_id)
+    for model in remote_models:
+        model_ids.append(model.slug)
         if expose_reasoning_models:
-            model_ids.extend(f"{spec.public_id}-{effort}" for effort in spec.variant_efforts)
+            model_ids.extend(f"{model.slug}-{effort}" for effort in model.reasoning_efforts)
     return model_ids
 
 
-def iter_public_models() -> Iterable[ModelSpec]:
-    return _MODEL_SPECS
-
-
-def model_supports_service_tier(model: str | None, service_tier: str) -> bool | None:
+def catalog_model_for_name(model: str | None) -> CatalogModel | None:
     spec, _ = _resolve_remote_model(model)
     if spec is None:
         return None
     for remote_model in _remote_models():
         if remote_model.slug == spec.upstream_id:
-            return service_tier in remote_model.service_tiers
-    return False
+            return remote_model
+    return None
+
+
+def model_supports_service_tier(model: str | None, service_tier: str) -> bool | None:
+    remote_model = catalog_model_for_name(model)
+    if remote_model is None:
+        return None
+    return service_tier in remote_model.service_tiers
