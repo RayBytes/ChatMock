@@ -91,6 +91,8 @@ catalog and uses that version for the account's model request. An optional
 version only. If GitHub is unavailable, ChatMock uses the last successful version or
 its bundled verified fallback. The model list and capabilities come from the
 account catalog; `/v1/models` and `/api/tags` return 503 until one is available.
+With `--no-model-sync`, they list a built-in static set instead, which may include
+models your account can't use.
 The catalog refresh interval defaults to one hour.
 
 <br>

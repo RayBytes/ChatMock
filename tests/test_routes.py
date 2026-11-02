@@ -55,10 +55,20 @@ class RouteTests(unittest.TestCase):
         self.app = create_app(model_sync=False)
         self.client = self.app.test_client()
 
-    def test_model_lists_require_a_discovered_catalog(self) -> None:
-        response = self.client.get("/v1/models")
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(self.client.get("/api/tags").status_code, 503)
+    @patch("chatmock.model_catalog.ModelCatalog.visible_models", return_value=())
+    def test_model_lists_require_a_discovered_catalog(self, _mock_visible) -> None:
+        client = create_app(model_sync=True).test_client()
+        self.assertEqual(client.get("/v1/models").status_code, 503)
+        self.assertEqual(client.get("/api/tags").status_code, 503)
+
+    def test_model_lists_use_static_registry_when_sync_is_disabled(self) -> None:
+        openai = self.client.get("/v1/models")
+        ollama = self.client.get("/api/tags")
+        self.assertEqual(openai.status_code, 200)
+        self.assertEqual(ollama.status_code, 200)
+        openai_ids = [item["id"] for item in openai.get_json()["data"]]
+        self.assertIn("gpt-6-sol", openai_ids)
+        self.assertEqual([item["name"] for item in ollama.get_json()["models"]], openai_ids)
 
     @patch("chatmock.model_catalog.ModelCatalog.visible_models")
     def test_model_lists_use_discovered_models_without_registration(self, mock_visible) -> None:

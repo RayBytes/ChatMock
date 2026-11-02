@@ -84,6 +84,27 @@ _MODEL_SPECS = (
         variant_efforts=("low", "medium", "high", "xhigh", "max"),
     ),
     ModelSpec(
+        public_id="gpt-6-astra",
+        upstream_id="gpt-6-astra",
+        aliases=("gpt6-astra", "gpt-6-astra-latest"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max"),
+    ),
+    ModelSpec(
+        public_id="gpt-6-sol",
+        upstream_id="gpt-6-sol",
+        aliases=("gpt6-sol", "gpt-6-sol-latest"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max"),
+    ),
+    ModelSpec(
+        public_id="gpt-6-luna",
+        upstream_id="gpt-6-luna",
+        aliases=("gpt6-luna", "gpt-6-luna-latest"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max"),
+    ),
+    ModelSpec(
         public_id="gpt-5.3-codex",
         upstream_id="gpt-5.3-codex",
         aliases=("gpt5.3-codex", "gpt-5.3-codex-latest"),
@@ -248,9 +269,15 @@ def extract_reasoning_from_model_name(model: str | None) -> dict[str, str] | Non
 
 def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
     catalog = current_model_catalog()
-    remote_models = catalog.visible_models(wait_for_refresh=True) if catalog is not None else ()
     model_ids: list[str] = []
-    for model in remote_models:
+    # With model sync off there is never a catalog to wait for, so the static list stands in.
+    if catalog is None or not catalog.enabled:
+        for spec in _MODEL_SPECS:
+            model_ids.append(spec.public_id)
+            if expose_reasoning_models:
+                model_ids.extend(f"{spec.public_id}-{effort}" for effort in spec.variant_efforts)
+        return model_ids
+    for model in catalog.visible_models(wait_for_refresh=True):
         model_ids.append(model.slug)
         if expose_reasoning_models:
             model_ids.extend(f"{model.slug}-{effort}" for effort in model.reasoning_efforts)
