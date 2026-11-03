@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from chatmock.app import create_app
 from chatmock.model_catalog import CatalogModel
+from chatmock.model_registry import extract_reasoning_from_model_name
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
@@ -84,6 +85,25 @@ class RouteTests(unittest.TestCase):
         expected = ["future-model", "future-model-low", "future-model-high"]
         self.assertEqual([item["id"] for item in openai.get_json()["data"]], expected)
         self.assertEqual([item["name"] for item in ollama.get_json()["models"]], expected)
+
+    @patch("chatmock.model_catalog.ModelCatalog.visible_models")
+    def test_catalog_ultra_is_not_offered_as_a_variant(self, mock_visible) -> None:
+        mock_visible.return_value = (
+            CatalogModel("future-model", ("high", "ultra"), frozenset(), 1, "list", True),
+        )
+        client = create_app(model_sync=True, expose_reasoning_models=True).test_client()
+        ids = [item["id"] for item in client.get("/v1/models").get_json()["data"]]
+        self.assertEqual(ids, ["future-model", "future-model-high"])
+
+    def test_static_list_does_not_offer_ultra_variants(self) -> None:
+        client = create_app(model_sync=False, expose_reasoning_models=True).test_client()
+        ids = [item["id"] for item in client.get("/v1/models").get_json()["data"]]
+        self.assertIn("gpt-6-sol-max", ids)
+        self.assertFalse([model_id for model_id in ids if model_id.endswith("-ultra")])
+
+    def test_explicit_ultra_still_reaches_upstream(self) -> None:
+        with self.app.test_request_context():
+            self.assertEqual(extract_reasoning_from_model_name("gpt-6-sol-ultra"), {"effort": "ultra"})
 
     def test_ollama_show_uses_catalog_metadata(self) -> None:
         self.app.extensions["chatmock_model_catalog"]._models = (

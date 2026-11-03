@@ -25,7 +25,7 @@ Set options in `.env` or pass environment variables:
 - `CHATMOCK_PUBLISH_HOST`: Host interface used for published ports (default `127.0.0.1`; use `0.0.0.0` for remote access)
 - `CHATMOCK_IMAGE`: image tag to run (default `storagetime/chatmock:latest`)
 - `VERBOSE`: `true|false` to enable request/stream logs
-- `CHATGPT_LOCAL_REASONING_EFFORT`: minimal|low|medium|high|xhigh|max|ultra
+- `CHATGPT_LOCAL_REASONING_EFFORT`: none|minimal|low|medium|high|xhigh|max
 - `CHATGPT_LOCAL_REASONING_SUMMARY`: auto|concise|detailed|none
 - `CHATGPT_LOCAL_REASONING_COMPAT`: legacy|o3|think-tags|current
 - `CHATGPT_LOCAL_FAST_MODE`: `true|false` to enable fast mode by default for supported models

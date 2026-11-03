@@ -5,9 +5,12 @@ from .model_catalog import CatalogModel, current_model_catalog
 
 
 # Request default when no model is given and no account catalog is available.
-FALLBACK_DEFAULT_MODEL = "gpt-5.4"
+FALLBACK_DEFAULT_MODEL = "gpt-6-sol"
 ALL_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 DEFAULT_REASONING_EFFORTS = frozenset(ALL_REASONING_EFFORTS)
+# The catalog advertises ultra, but Codex resolves it to another effort client-side
+# and adds task delegation. Upstream rejects it, so it is never offered as a choice.
+SELECTABLE_REASONING_EFFORTS = tuple(effort for effort in ALL_REASONING_EFFORTS if effort != "ultra")
 
 
 @dataclass(frozen=True)
@@ -66,15 +69,15 @@ _MODEL_SPECS = (
         public_id="gpt-5.6-sol",
         upstream_id="gpt-5.6-sol",
         aliases=("gpt5.6-sol", "gpt-5.6-sol-latest"),
-        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max", "ultra")),
-        variant_efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max"),
     ),
     ModelSpec(
         public_id="gpt-5.6-terra",
         upstream_id="gpt-5.6-terra",
         aliases=("gpt5.6-terra", "gpt-5.6-terra-latest"),
-        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max", "ultra")),
-        variant_efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
+        allowed_efforts=frozenset(("low", "medium", "high", "xhigh", "max")),
+        variant_efforts=("low", "medium", "high", "xhigh", "max"),
     ),
     ModelSpec(
         public_id="gpt-5.6-luna",
@@ -280,7 +283,11 @@ def list_public_models(expose_reasoning_models: bool = False) -> list[str]:
     for model in catalog.visible_models(wait_for_refresh=True):
         model_ids.append(model.slug)
         if expose_reasoning_models:
-            model_ids.extend(f"{model.slug}-{effort}" for effort in model.reasoning_efforts)
+            model_ids.extend(
+                f"{model.slug}-{effort}"
+                for effort in model.reasoning_efforts
+                if effort in SELECTABLE_REASONING_EFFORTS
+            )
     return model_ids
 
 

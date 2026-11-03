@@ -17,7 +17,7 @@ from chatmock.model_catalog import (
 )
 from chatmock.app import create_app
 from chatmock.fast_mode import supports_priority_service_tier
-from chatmock.model_registry import FALLBACK_DEFAULT_MODEL, normalize_model_name
+from chatmock.model_registry import FALLBACK_DEFAULT_MODEL, list_public_models, normalize_model_name
 
 
 def response(payload: dict, status: int = 200) -> Mock:
@@ -130,6 +130,7 @@ class ModelCatalogTests(unittest.TestCase):
         app = create_app(model_sync=False)
         with app.app_context():
             self.assertEqual(normalize_model_name(None), FALLBACK_DEFAULT_MODEL)
+            self.assertIn(FALLBACK_DEFAULT_MODEL, list_public_models())
             app.extensions["chatmock_model_catalog"]._models = (
                 CatalogModel("second-model", ("low",), frozenset(), 2, "list", True),
                 CatalogModel("hidden-model", ("low",), frozenset(), 0, "hide", True),

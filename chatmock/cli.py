@@ -11,7 +11,7 @@ from datetime import datetime
 from .app import create_app
 from .config import CLIENT_ID_DEFAULT
 from .limits import RateLimitWindow, compute_reset_at, load_rate_limit_snapshot
-from .model_registry import ALL_REASONING_EFFORTS
+from .model_registry import SELECTABLE_REASONING_EFFORTS
 from .oauth import OAuthHTTPServer, OAuthHandler, REQUIRED_PORT, URL_BASE, run_device_code_login
 from .utils import eprint, get_home_dir, load_chatgpt_tokens, parse_jwt_claims, read_auth_file
 
@@ -294,7 +294,7 @@ def main() -> None:
     )
     p_serve.add_argument(
         "--reasoning-effort",
-        choices=list(ALL_REASONING_EFFORTS),
+        choices=list(SELECTABLE_REASONING_EFFORTS),
         default=os.getenv("CHATGPT_LOCAL_REASONING_EFFORT", "medium").lower(),
         help="Reasoning effort level for Responses API (default: medium)",
     )
