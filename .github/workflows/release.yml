@@ -208,6 +208,7 @@ jobs:
           git push
 
   release-assets:
+    if: false
     needs:
       - validate
       - build-python
